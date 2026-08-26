@@ -16,10 +16,11 @@ Closed adaptive-learning platforms lock in your content, your progress history, 
 ## Core features (roadmap)
 
 ### Phase 1 — Content to course (MVP)
-- [ ] Upload a PDF / paste text or a URL
-- [ ] LLM structures it into a course: modules → lessons → key concepts
-- [ ] Auto-generated quizzes per lesson (multiple choice + short answer)
-- [ ] Progress tracking in SQLite
+- [x] Upload a PDF / paste text or a URL
+- [x] LLM structures it into a course: modules → lessons → key concepts
+- [x] Auto-generated quizzes per lesson (multiple choice + short answer)
+- [x] Progress tracking in SQLite
+- [ ] Web UI (Next.js) — currently API-only
 
 ### Phase 2 — Adaptive learning
 - [ ] Spaced repetition scheduling (FSRS algorithm) for review
@@ -59,13 +60,27 @@ Closed adaptive-learning platforms lock in your content, your progress history, 
 
 ## Getting started
 
-> ⚠️ Early days — the scaffold is being built. Watch/star the repo to follow along.
+> ⚠️ Early days — the backend MVP works (API-only); the web UI is next.
 
 ```bash
 git clone https://github.com/Akhilvallala1/studyforge.git
-cd studyforge
-# setup instructions coming with the MVP
+cd studyforge/backend
+python -m venv .venv
+# Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env   # set ANTHROPIC_API_KEY, or switch to Ollama
+uvicorn app.main:app --reload
 ```
+
+Then open http://localhost:8000/docs for the interactive API. Generate a course:
+
+```bash
+curl -X POST http://localhost:8000/courses/generate \
+  -H "Content-Type: application/json" \
+  -d '{"text": "<paste your study material here>"}'
+```
+
+Or upload a PDF to `POST /courses/generate/pdf`. Run tests with `pytest backend/tests`.
 
 ## Contributing
 
