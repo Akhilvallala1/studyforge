@@ -1,14 +1,22 @@
 # Architecture
 
-This document describes the planned architecture for StudyForge. It will evolve as the MVP takes shape.
+This document describes the architecture of StudyForge. The first two layers exist today (Phase 1); the adaptive-learning and tutor pieces are still planned. It will evolve as those take shape.
 
 ## Overview
 
 StudyForge has three layers:
 
-1. **Web UI (Next.js)** — course browsing, lesson view, quiz-taking, tutor chat, progress dashboard.
-2. **Backend API (FastAPI)** — document ingestion, course generation orchestration, quiz grading, spaced-repetition scheduling, progress persistence.
+1. **Web UI (Next.js)** — App Router + TypeScript + Tailwind, talking to the backend via `NEXT_PUBLIC_API_URL`. Current routes:
+   - `/` — course list
+   - `/courses/new` — create a course from pasted text, a URL, or a PDF upload
+   - `/courses/[courseId]` — course detail with progress
+   - `/courses/[courseId]/lessons/[lessonId]` — lesson content, quiz, mark complete
+
+   Tutor chat and a richer progress dashboard are planned, not built.
+2. **Backend API (FastAPI)** — document ingestion, course generation orchestration, quiz grading, progress persistence. CORS origins are configurable via `STUDYFORGE_CORS_ORIGINS` (default `http://localhost:3000`); generation failures return a 502 with a JSON `detail` message. Spaced-repetition scheduling is planned.
 3. **LLM adapter** — a provider-agnostic interface with two implementations: Anthropic (Claude) and Ollama (local models).
+
+**Current limits (Phase 1):** quiz answers are graded by exact case-insensitive string match, progress is per-lesson completion only, and there is no auth or multi-user support yet.
 
 ## Data model (initial sketch)
 

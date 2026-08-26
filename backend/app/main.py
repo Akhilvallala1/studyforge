@@ -1,6 +1,8 @@
-from datetime import datetime, timezone
+import os
+from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -9,6 +11,14 @@ from app.db import get_session, init_db
 from app.llm import get_provider
 
 app = FastAPI(title="StudyForge", version="0.1.0")
+
+_cors_origins = os.environ.get("STUDYFORGE_CORS_ORIGINS", "http://localhost:3000")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[origin.strip() for origin in _cors_origins.split(",") if origin.strip()],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")
@@ -57,12 +67,18 @@ def generate_from_text(body: GenerateRequest, session: Session = Depends(get_ses
     if body.text:
         chunks = ingest.chunk_text(body.text)
     elif body.url:
-        chunks = ingest.chunk_text(ingest.extract_url(body.url))
+        try:
+            chunks = ingest.chunk_text(ingest.extract_url(body.url))
+        except Exception as exc:
+            raise HTTPException(502, f"Course generation failed: {exc}") from exc
     else:
         raise HTTPException(400, "Provide 'text' or 'url'")
     if not chunks:
         raise HTTPException(400, "No usable text found in the source")
-    course = generation.generate_course(get_provider(), chunks)
+    try:
+        course = generation.generate_course(get_provider(), chunks)
+    except Exception as exc:
+        raise HTTPException(502, f"Course generation failed: {exc}") from exc
     row = _save_course(session, course)
     return {"id": row.id, "title": row.title}
 
@@ -72,7 +88,10 @@ def generate_from_pdf(file: UploadFile, session: Session = Depends(get_session))
     chunks = ingest.chunk_text(ingest.extract_pdf(file.file.read()))
     if not chunks:
         raise HTTPException(400, "No usable text found in the PDF")
-    course = generation.generate_course(get_provider(), chunks)
+    try:
+        course = generation.generate_course(get_provider(), chunks)
+    except Exception as exc:
+        raise HTTPException(502, f"Course generation failed: {exc}") from exc
     row = _save_course(session, course)
     return {"id": row.id, "title": row.title}
 
@@ -152,6 +171,6 @@ def complete_lesson(lesson_id: int, session: Session = Depends(get_session)):
     lesson = session.get(models.Lesson, lesson_id)
     if not lesson:
         raise HTTPException(404, "Lesson not found")
-    lesson.completed_at = datetime.now(timezone.utc)
+    lesson.completed_at = datetime.now(UTC)
     session.commit()
     return {"id": lesson.id, "completed": True}

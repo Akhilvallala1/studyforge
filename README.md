@@ -20,7 +20,7 @@ Closed adaptive-learning platforms lock in your content, your progress history, 
 - [x] LLM structures it into a course: modules → lessons → key concepts
 - [x] Auto-generated quizzes per lesson (multiple choice + short answer)
 - [x] Progress tracking in SQLite
-- [ ] Web UI (Next.js) — currently API-only
+- [x] Web UI (Next.js)
 
 ### Phase 2 — Adaptive learning
 - [ ] Spaced repetition scheduling (FSRS algorithm) for review
@@ -37,7 +37,7 @@ Closed adaptive-learning platforms lock in your content, your progress history, 
 - [ ] Public course registry
 - [ ] Multi-user / classroom mode
 
-## Architecture (planned)
+## Architecture
 
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────┐
@@ -53,14 +53,18 @@ Closed adaptive-learning platforms lock in your content, your progress history, 
                         └──────────────────┘
 ```
 
-- **Frontend:** Next.js + TypeScript + Tailwind
-- **Backend:** FastAPI (Python) — document ingestion, course generation, FSRS scheduling
+- **Frontend:** Next.js (App Router) + TypeScript + Tailwind — course creation, lessons, quizzes, progress
+- **Backend:** FastAPI (Python) — document ingestion, course generation, quiz grading, progress; FSRS scheduling is planned
 - **Storage:** SQLite by default (zero-config), Postgres for multi-user deployments
 - **LLM:** provider-agnostic adapter — Anthropic API first, Ollama for fully-local setups
 
+The tutor chat in the diagram and the SRS column in storage are Phase 2–3 — not built yet.
+
 ## Getting started
 
-> ⚠️ Early days — the backend MVP works (API-only); the web UI is next.
+You'll run two processes: the FastAPI backend and the Next.js frontend (Node.js 20+), one terminal each.
+
+**Terminal 1 — backend:**
 
 ```bash
 git clone https://github.com/Akhilvallala1/studyforge.git
@@ -68,11 +72,23 @@ cd studyforge/backend
 python -m venv .venv
 # Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env   # set ANTHROPIC_API_KEY, or switch to Ollama
+# Windows: copy .env.example .env    macOS/Linux: cp .env.example .env
+# then set ANTHROPIC_API_KEY, or switch to Ollama
 uvicorn app.main:app --reload
 ```
 
-Then open http://localhost:8000/docs for the interactive API. Generate a course:
+**Terminal 2 — frontend:**
+
+```bash
+cd studyforge/frontend
+npm install
+# Windows: copy .env.local.example .env.local    macOS/Linux: cp .env.local.example .env.local
+npm run dev
+```
+
+Open http://localhost:3000 and create your first course — paste text, drop in a URL, or upload a PDF. The frontend talks to the backend via `NEXT_PUBLIC_API_URL` in `frontend/.env.local` (defaults to http://localhost:8000); if you change the frontend's origin, update `STUDYFORGE_CORS_ORIGINS` in `backend/.env` to match.
+
+Prefer the raw API? The interactive docs live at http://localhost:8000/docs:
 
 ```bash
 curl -X POST http://localhost:8000/courses/generate \

@@ -29,3 +29,7 @@ include = ["app*"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
+# B008: `Depends(...)` in argument defaults is the FastAPI dependency idiom.
+ignore = ["B008"]
