@@ -114,12 +114,22 @@ export function generateFromPdf(file: File): Promise<GenerateResult> {
   return request("/courses/generate/pdf", { method: "POST", body: form });
 }
 
-export function answerQuiz(itemId: number, answer: string): Promise<AnswerResult> {
-  return postJson(`/quiz/${itemId}/answer`, { answer });
+/** `elapsedMs` is a soft timing signal; omit it when the measurement is unavailable. */
+export function answerQuiz(
+  itemId: number,
+  answer: string,
+  elapsedMs?: number,
+): Promise<AnswerResult> {
+  const body = elapsedMs === undefined ? { answer } : { answer, elapsed_ms: elapsedMs };
+  return postJson(`/quiz/${itemId}/answer`, body);
 }
 
 export function completeLesson(id: number): Promise<CompleteResult> {
   return request(`/lessons/${id}/complete`, { method: "POST" });
+}
+
+export function uncompleteLesson(id: number): Promise<CompleteResult> {
+  return request(`/lessons/${id}/complete`, { method: "DELETE" });
 }
 
 export function getUsage(limit?: number): Promise<UsageSummary> {

@@ -14,4 +14,7 @@ def test_preflight_returns_cors_headers(client):
 def test_provider_failure_returns_502(client, failing_provider):
     response = client.post("/courses/generate", json={"text": "some source material"})
     assert response.status_code == 502
-    assert response.json() == {"detail": "Course generation failed: provider exploded"}
+    # The exception text stays in the server log; the client gets copy it can act on.
+    assert response.json() == {
+        "detail": "Course generation failed. Check the server logs for details."
+    }
