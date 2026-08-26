@@ -11,6 +11,8 @@ injection line) so the UI's escaping can be verified.
 import json
 import re
 
+from app.llm.base import LLMResult
+
 HOSTILE_LESSON_TITLE = "Handling Untrusted Content"
 
 
@@ -27,10 +29,14 @@ def _topic(prompt: str) -> str:
 
 
 class FakeProvider:
-    def generate(self, system: str, prompt: str, max_tokens: int = 64000) -> str:
-        if "curriculum designer" in system:
-            return self._outline(prompt)
-        return self._lesson(prompt)
+    name = "fake"
+    model = "fake"
+    is_paid = False
+
+    def generate(self, system: str, prompt: str, max_tokens: int = 64000) -> LLMResult:
+        text = self._outline(prompt) if "curriculum designer" in system else self._lesson(prompt)
+        estimated = max(1, len(text) // 4)
+        return LLMResult(text=text, input_tokens=estimated, output_tokens=estimated)
 
     def _outline(self, prompt: str) -> str:
         topic = _topic(prompt)

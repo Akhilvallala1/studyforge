@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -66,3 +66,34 @@ class QuizItem(Base):
     concept: Mapped[str] = mapped_column(String(200), default="")
 
     lesson: Mapped[Lesson] = relationship(back_populates="quiz_items")
+
+
+class LlmCall(Base):
+    """One record per provider.generate() call, for cost tracking and usage history.
+
+    course_id is a plain nullable integer (no foreign key) so usage history
+    survives course deletion.
+    """
+
+    __tablename__ = "llm_calls"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    run_id: Mapped[str] = mapped_column(String(32), index=True)
+    course_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    provider: Mapped[str] = mapped_column(String(20))
+    model: Mapped[str] = mapped_column(String(100))
+    stage: Mapped[str] = mapped_column(String(20))
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    estimated_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    approximate: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class AppSetting(Base):
+    """Small persisted key/value store, e.g. the acknowledged cost-alert threshold."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
