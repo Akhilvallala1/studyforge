@@ -14,6 +14,8 @@ Specialist subagents live in `.claude/agents/`. Feature work follows a pipeline 
 3. **reviewer** (opus) - reviews the diff against acceptance criteria, runs pytest/ruff/build itself, returns APPROVE or REQUEST CHANGES. Findings loop back to the implementer (max 2 review rounds, then escalate to the human).
 4. **docs-writer** (haiku) - updates README/docs/env examples after the reviewer approves.
 
+5. **qa-tester** (sonnet) - runs after every BEHAVIORAL PR merge (any change to frontend/src, backend/app, or dependency files; skip for docs, agent definitions, config, and text-only PRs): starts both servers (fake LLM provider, temp DB), walks the full feature checklist in a real browser via Playwright, and reports VERDICT / BROKEN / FRICTION / SUGGESTIONS / PASSED. BROKEN items become fix tasks through the pipeline. At each PHASE completion, run a deeper pass: the full checklist plus one real-provider generation with an actual document and a fresh-clone README quickstart test.
+
 **learning-scientist** (opus) is consulted by the architect for anything touching FSRS scheduling, mastery modeling, difficulty adaptation, or quiz pedagogy (Phase 2+). It produces specs; backend-dev implements them.
 
 Small fixes (typos, one-liners, doc tweaks) skip the pipeline - do them directly.
