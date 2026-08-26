@@ -23,12 +23,47 @@ export interface CourseDetail {
   modules: ModuleDetail[];
 }
 
+/**
+ * The learner's most recent attempt at one quiz item from the lesson quiz, not from
+ * a later review session. `expected` is only ever sent inside this object, so an item
+ * nobody has attempted never carries its answer key.
+ */
+export interface LatestAttempt {
+  answer: string;
+  correct: boolean;
+  expected: string;
+  created_at: string;
+}
+
+export interface AttemptState {
+  /** Attempts made from the lesson quiz itself, excluding later review sessions. */
+  attempts: number;
+  /** Null until the item has been attempted from the lesson quiz. */
+  first_attempt_correct: boolean | null;
+  /** True if any attempt was correct, counting review sessions as well as the quiz. */
+  ever_correct: boolean;
+  /**
+   * The newest lesson-quiz attempt, not the newest activity overall. Once review
+   * sessions exist, an item can be practised recently and still show an old
+   * attempt here, so do not read it as "last practised".
+   */
+  latest_quiz_attempt: LatestAttempt | null;
+}
+
+export interface QuizProgress {
+  items: number;
+  answered: number;
+  correct: number;
+  first_try_correct: number;
+}
+
 export interface QuizItem {
   id: number;
   question: string;
   kind: "mcq" | "short";
   options: string[];
   concept: string;
+  attempt_state: AttemptState;
 }
 
 export interface LessonDetail {
@@ -38,12 +73,18 @@ export interface LessonDetail {
   content: string;
   concepts: string[];
   completed: boolean;
+  /** ISO 8601 with a UTC offset, or null while the lesson is unfinished. */
+  completed_at: string | null;
   quiz: QuizItem[];
+  quiz_progress: QuizProgress;
 }
 
 export interface AnswerResult {
   correct: boolean;
   expected: string;
+  attempt_id: number;
+  attempt_no: number;
+  attempt_state: AttemptState;
 }
 
 export interface GenerateRunUsage {
@@ -120,4 +161,5 @@ export interface UsageSummary {
 export interface CompleteResult {
   id: number;
   completed: boolean;
+  completed_at: string | null;
 }

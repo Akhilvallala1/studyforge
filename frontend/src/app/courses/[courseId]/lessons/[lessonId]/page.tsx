@@ -52,12 +52,12 @@ export default async function LessonPage(
       )}
 
       <div className="mt-8">
-        <LessonMarkdown content={lesson.content} />
+        <LessonMarkdown content={lesson.content} title={lesson.title} />
       </div>
 
       {lesson.quiz.length > 0 && (
         <div className="mt-12">
-          <QuizSection quiz={lesson.quiz} />
+          <QuizSection quiz={lesson.quiz} progress={lesson.quiz_progress} />
         </div>
       )}
     </main>
