@@ -13,7 +13,7 @@ outline as JSON. Respond with ONLY a JSON object, no prose, matching:
   "modules": [{"title": str, "lessons": [{"title": str, "summary": str}]}]
 }
 Aim for 2-5 modules with 2-4 lessons each, scaled to how much material there is. \
-Every lesson must be grounded in the source material — do not invent topics it doesn't cover."""
+Every lesson must be grounded in the source material - do not invent topics it doesn't cover."""
 
 LESSON_SYSTEM = """You are a teacher writing one lesson of a course. Given the lesson title, \
 its summary, and the relevant source material, respond with ONLY a JSON object matching:

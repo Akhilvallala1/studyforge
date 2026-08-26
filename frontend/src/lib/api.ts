@@ -29,7 +29,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         message = body.detail;
       }
     } catch {
-      // Non-JSON error body — keep the statusText fallback.
+      // Non-JSON error body - keep the statusText fallback.
     }
     throw new ApiError(res.status, message);
   }
