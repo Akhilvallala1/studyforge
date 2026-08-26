@@ -193,6 +193,101 @@ def test_recurring_cost_alert_activates_acks_and_reactivates(client, stub_paid_p
     assert usage2["alert"]["total_usd"] > usage1["alert"]["total_usd"]
 
 
+class _MultiLessonPaidProvider:
+    """Paid provider whose outline has several lessons, so a run makes many calls.
+
+    Lets a test trip the spend cap partway through a run rather than before it starts.
+    """
+
+    name = "anthropic"
+    model = "claude-opus-5"
+    is_paid = True
+
+    def __init__(self, lessons: int = 4):
+        self.lessons = lessons
+        self.calls = 0
+
+    def generate(self, system: str, prompt: str, max_tokens: int = 64000):
+        import json
+
+        from app.llm.base import LLMResult
+
+        self.calls += 1
+        if "curriculum designer" in system:
+            text = json.dumps(
+                {
+                    "title": "Multi Lesson Course",
+                    "description": "Several lessons so the cap can trip mid-run",
+                    "modules": [
+                        {
+                            "title": "Module 1",
+                            "lessons": [
+                                {"title": f"Lesson {i}", "summary": "s"}
+                                for i in range(self.lessons)
+                            ],
+                        }
+                    ],
+                }
+            )
+        else:
+            text = json.dumps(
+                {
+                    "content": "# Lesson\nStub content",
+                    "concepts": ["concept-1"],
+                    "quiz": [
+                        {
+                            "question": "Q?",
+                            "kind": "short",
+                            "options": [],
+                            "answer": "a",
+                            "concept": "concept-1",
+                        }
+                    ],
+                }
+            )
+        return LLMResult(text=text, input_tokens=1000, output_tokens=500)
+
+
+def test_hard_cap_stops_a_run_partway_not_only_at_the_start(client, monkeypatch):
+    """Regression guard: the cap must be checked before EVERY call.
+
+    If the check were hoisted into MeteredLLM.__init__ (once per run), this run would
+    complete in full instead of aborting after the calls that fit under the cap.
+    """
+    from app import main, models
+    from app.db import SessionLocal
+
+    provider = _MultiLessonPaidProvider(lessons=4)
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+
+    baseline = client.get("/usage").json()["totals"]["estimated_cost_usd"]
+    # One call costs 1000/1e6*5.00 + 500/1e6*25.00 = 0.0175 on claude-opus-5, so a
+    # 0.02 headroom admits the outline plus one lesson, then blocks the rest.
+    monkeypatch.setenv("STUDYFORGE_COST_LIMIT_USD", str(baseline + 0.02))
+
+    session = SessionLocal()
+    try:
+        rows_before = session.query(models.LlmCall).count()
+    finally:
+        session.close()
+
+    resp = client.post("/courses/generate", json={"text": "Partway cap test material."})
+    assert resp.status_code == 402
+    assert resp.json()["detail"]["error"] == "cost_limit_exceeded"
+
+    # The run started (so the cap was not checked only up front) but did not finish
+    # (so it was still checked on later calls). A full run would be 1 outline + 4 lessons.
+    assert 0 < provider.calls < 5
+
+    session = SessionLocal()
+    try:
+        rows_after = session.query(models.LlmCall).count()
+    finally:
+        session.close()
+    # Calls made before the cap tripped are still recorded, so partial spend is not lost.
+    assert rows_after == rows_before + provider.calls
+
+
 def test_hard_cap_blocks_paid_provider_but_not_fake(client, stub_paid_provider, monkeypatch):
     baseline_total = client.get("/usage").json()["totals"]["estimated_cost_usd"]
 
