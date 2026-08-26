@@ -73,8 +73,8 @@ python -m venv .venv
 # Windows: .venv\Scripts\activate    macOS/Linux: source .venv/bin/activate
 pip install -e ".[dev]"
 # Windows: copy .env.example .env    macOS/Linux: cp .env.example .env
-# then set ANTHROPIC_API_KEY, or switch to Ollama
-uvicorn app.main:app --reload
+# then edit .env and set ANTHROPIC_API_KEY, or switch to Ollama
+uvicorn app.main:app --reload   # .env is loaded automatically at startup
 ```
 
 **Terminal 2 — frontend:**
