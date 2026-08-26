@@ -156,18 +156,25 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                 <p className="mt-3 text-sm text-red-700 dark:text-red-400">{state.error}</p>
               )}
 
-              {(state.feedback?.correct || (solved && state.feedback === null)) && (
-                <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                  Correct
-                </p>
-              )}
+              {/* aria-live so the result is announced: focus stays on the submit
+                  button while the feedback renders elsewhere in the DOM. */}
+              <div aria-live="polite">
+                {/* `solved` covers an item answered correctly at some point, including
+                    from a source whose latest attempt was wrong (possible once review
+                    sessions exist), so a solved item always reads as solved. */}
+                {solved && (
+                  <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                    Correct
+                  </p>
+                )}
 
-              {state.feedback && !state.feedback.correct && (
-                <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950 dark:text-red-300">
-                  Incorrect, expected:{" "}
-                  <span className="font-medium">{state.feedback.expected}</span>
-                </p>
-              )}
+                {state.feedback && !state.feedback.correct && (
+                  <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950 dark:text-red-300">
+                    {solved ? "Last answer was incorrect, expected: " : "Incorrect, expected: "}
+                    <span className="font-medium">{state.feedback.expected}</span>
+                  </p>
+                )}
+              </div>
 
               {!solved && (
                 <button

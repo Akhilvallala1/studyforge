@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { ApiError, completeLesson, uncompleteLesson } from "@/lib/api";
@@ -17,10 +17,23 @@ export function MarkCompleteButton({
   const [refreshing, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const pending = saving || refreshing;
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const toggledRef = useRef(false);
+
+  // router.refresh() drops focus to the body even though React reuses this node, so a
+  // keyboard user who toggles by mistake cannot immediately toggle back. Restore focus
+  // once the refreshed state lands, but only after an actual toggle: focusing on first
+  // render would steal focus from wherever the reader actually is.
+  useEffect(() => {
+    if (!toggledRef.current || pending) return;
+    toggledRef.current = false;
+    buttonRef.current?.focus();
+  }, [completed, pending]);
 
   async function run(action: () => Promise<unknown>) {
     setSaving(true);
     setError(null);
+    toggledRef.current = true;
     try {
       await action();
       // A state update after await is not automatically part of a transition.
@@ -37,6 +50,7 @@ export function MarkCompleteButton({
       {completed ? (
         <button
           type="button"
+          ref={buttonRef}
           onClick={() => void run(() => uncompleteLesson(lessonId))}
           disabled={pending}
           aria-label="Mark this lesson as not complete"
@@ -56,6 +70,7 @@ export function MarkCompleteButton({
       ) : (
         <button
           type="button"
+          ref={buttonRef}
           onClick={() => void run(() => completeLesson(lessonId))}
           disabled={pending}
           className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium transition-colors hover:border-zinc-500 disabled:opacity-60 dark:border-zinc-700 dark:hover:border-zinc-500"
