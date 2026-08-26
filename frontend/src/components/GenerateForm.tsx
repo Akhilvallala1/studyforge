@@ -4,8 +4,13 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ApiError, generateFromPdf, generateFromText, generateFromUrl } from "@/lib/api";
+import { formatUsd } from "@/lib/format";
+import type { GenerateResult } from "@/lib/types";
 
 type Mode = "text" | "url" | "pdf";
+
+/** How long to show the run's cost before moving on to the generated course. */
+const SUCCESS_REDIRECT_DELAY_MS = 1800;
 
 const TABS: { mode: Mode; label: string }[] = [
   { mode: "text", label: "Paste text" },
@@ -28,6 +33,7 @@ export function GenerateForm() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [success, setSuccess] = useState<GenerateResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -65,7 +71,9 @@ export function GenerateForm() {
           : mode === "url"
             ? await generateFromUrl(url.trim())
             : await generateFromPdf(file as File);
-      router.push(`/courses/${result.id}`);
+      setSubmitting(false);
+      setSuccess(result);
+      setTimeout(() => router.push(`/courses/${result.id}`), SUCCESS_REDIRECT_DELAY_MS);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not reach the server. Is the backend running?");
       setSubmitting(false);
@@ -81,7 +89,7 @@ export function GenerateForm() {
             type="button"
             role="tab"
             aria-selected={mode === tab.mode}
-            disabled={submitting}
+            disabled={submitting || success !== null}
             onClick={() => {
               setMode(tab.mode);
               setError(null);
@@ -101,7 +109,7 @@ export function GenerateForm() {
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          disabled={submitting}
+          disabled={submitting || success !== null}
           rows={12}
           placeholder="Paste lecture notes, an article, documentation - anything you want to learn."
           className="w-full rounded-lg border border-zinc-300 bg-transparent p-3 text-sm outline-none focus:border-zinc-500 disabled:opacity-60 dark:border-zinc-700"
@@ -113,7 +121,7 @@ export function GenerateForm() {
           type="url"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          disabled={submitting}
+          disabled={submitting || success !== null}
           placeholder="https://example.com/article"
           className="w-full rounded-lg border border-zinc-300 bg-transparent p-3 text-sm outline-none focus:border-zinc-500 disabled:opacity-60 dark:border-zinc-700"
         />
@@ -124,7 +132,7 @@ export function GenerateForm() {
           ref={fileInputRef}
           type="file"
           accept="application/pdf,.pdf"
-          disabled={submitting}
+          disabled={submitting || success !== null}
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           className="w-full rounded-lg border border-zinc-300 p-3 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-zinc-900 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white disabled:opacity-60 dark:border-zinc-700 dark:file:bg-zinc-100 dark:file:text-zinc-900"
         />
@@ -136,7 +144,20 @@ export function GenerateForm() {
         </p>
       )}
 
-      {submitting ? (
+      {success ? (
+        <div
+          role="status"
+          className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+        >
+          <p className="font-medium">Course generated: {success.title}</p>
+          <p className="mt-1">
+            This run cost an estimated {formatUsd(success.usage.run_cost_usd)}. Total API spend so
+            far: {formatUsd(success.usage.total_cost_usd)}
+            {success.usage.alert_active && ", which has crossed the cost alert threshold"}.
+          </p>
+          <p className="mt-1 text-emerald-700 dark:text-emerald-400">Opening your course...</p>
+        </div>
+      ) : submitting ? (
         <div className="flex items-center gap-3 rounded-lg border border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <span
             aria-hidden
@@ -144,7 +165,7 @@ export function GenerateForm() {
           />
           <div className="text-sm">
             <p className="font-medium">
-              Generating your course &mdash; this usually takes 1&ndash;3 minutes. Keep this tab open.
+              Generating your course, this usually takes 1 to 3 minutes. Keep this tab open.
             </p>
             <p className="mt-0.5 tabular-nums text-zinc-600 dark:text-zinc-400">
               Elapsed: {formatElapsed(elapsed)}

@@ -1,10 +1,13 @@
+import { formatUsd } from "./format";
 import type {
+  AlertState,
   AnswerResult,
   CompleteResult,
   CourseDetail,
   CourseSummary,
   GenerateResult,
   LessonDetail,
+  UsageSummary,
 } from "./types";
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -19,14 +22,38 @@ export class ApiError extends Error {
   }
 }
 
+/** Shape of a FastAPI HTTPException(detail={...}) object body, as opposed to a plain string detail. */
+interface ObjectDetail {
+  error?: string;
+  message?: string;
+  limit_usd?: number;
+  spent_usd?: number;
+  [key: string]: unknown;
+}
+
+function messageFromObjectDetail(detail: ObjectDetail): string {
+  if (detail.error === "cost_limit_exceeded") {
+    const limitText = typeof detail.limit_usd === "number" ? formatUsd(detail.limit_usd) : "the configured limit";
+    const spentText = typeof detail.spent_usd === "number" ? formatUsd(detail.spent_usd) : "the current spend";
+    return `LLM spend limit reached: ${spentText} spent of a ${limitText} cap. Generation was stopped, no course was saved for this run.`;
+  }
+  if (typeof detail.message === "string" && detail.message) {
+    return detail.message;
+  }
+  return "Request failed.";
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, init);
   if (!res.ok) {
     let message = res.statusText || `Request failed with status ${res.status}`;
     try {
       const body = await res.json();
-      if (typeof body?.detail === "string") {
-        message = body.detail;
+      const detail = body?.detail;
+      if (typeof detail === "string") {
+        message = detail;
+      } else if (detail && typeof detail === "object") {
+        message = messageFromObjectDetail(detail as ObjectDetail);
       }
     } catch {
       // Non-JSON error body - keep the statusText fallback.
@@ -80,4 +107,13 @@ export function answerQuiz(itemId: number, answer: string): Promise<AnswerResult
 
 export function completeLesson(id: number): Promise<CompleteResult> {
   return request(`/lessons/${id}/complete`, { method: "POST" });
+}
+
+export function getUsage(limit?: number): Promise<UsageSummary> {
+  const query = limit ? `?limit=${limit}` : "";
+  return get(`/usage${query}`);
+}
+
+export function acknowledgeCostAlert(): Promise<AlertState> {
+  return request("/usage/alert/ack", { method: "POST" });
 }
