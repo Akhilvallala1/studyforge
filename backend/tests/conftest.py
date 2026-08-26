@@ -7,7 +7,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # app.db creates its engine at import time, so the test database path (and a
 # deterministic CORS config) must be set before anything imports the app.
 os.environ["STUDYFORGE_DB"] = os.path.join(tempfile.mkdtemp(), "test.sqlite3")
-os.environ.pop("STUDYFORGE_CORS_ORIGINS", None)
+# Pin (not just pop) the CORS config: app/__init__ loads backend/.env, and env
+# vars set here take precedence over it, keeping tests independent of dev .env files.
+os.environ["STUDYFORGE_CORS_ORIGINS"] = "http://localhost:3000"
 
 import pytest
 
