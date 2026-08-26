@@ -2,8 +2,7 @@
 
 import json
 import re
-
-from app.llm.base import LLMProvider
+from typing import Protocol
 
 OUTLINE_SYSTEM = """You are a curriculum designer. Given source material, produce a course \
 outline as JSON. Respond with ONLY a JSON object, no prose, matching:
@@ -29,6 +28,10 @@ text. For "short" leave "options" empty. Every question must be answerable from 
 content alone."""
 
 
+class Meter(Protocol):
+    def generate(self, stage: str, system: str, prompt: str, max_tokens: int = 64000) -> str: ...
+
+
 def parse_json_response(text: str) -> dict:
     """Extract the first JSON object from a model response, tolerating code fences."""
     text = text.strip()
@@ -42,9 +45,9 @@ def parse_json_response(text: str) -> dict:
     return json.loads(text[start : end + 1])
 
 
-def generate_outline(provider: LLMProvider, chunks: list[str]) -> dict:
+def generate_outline(meter: Meter, chunks: list[str]) -> dict:
     material = "\n\n---\n\n".join(chunks)
-    response = provider.generate(OUTLINE_SYSTEM, f"Source material:\n\n{material}")
+    response = meter.generate("outline", OUTLINE_SYSTEM, f"Source material:\n\n{material}")
     outline = parse_json_response(response)
     if not outline.get("modules"):
         raise ValueError("Outline has no modules")
@@ -52,7 +55,7 @@ def generate_outline(provider: LLMProvider, chunks: list[str]) -> dict:
 
 
 def generate_lesson(
-    provider: LLMProvider, lesson_title: str, lesson_summary: str, chunks: list[str]
+    meter: Meter, lesson_title: str, lesson_summary: str, chunks: list[str]
 ) -> dict:
     material = "\n\n---\n\n".join(chunks)
     prompt = (
@@ -60,17 +63,17 @@ def generate_lesson(
         f"Lesson summary: {lesson_summary}\n\n"
         f"Source material:\n\n{material}"
     )
-    lesson = parse_json_response(provider.generate(LESSON_SYSTEM, prompt))
+    lesson = parse_json_response(meter.generate("lesson", LESSON_SYSTEM, prompt))
     lesson.setdefault("content", "")
     lesson.setdefault("concepts", [])
     lesson.setdefault("quiz", [])
     return lesson
 
 
-def generate_course(provider: LLMProvider, chunks: list[str]) -> dict:
+def generate_course(meter: Meter, chunks: list[str]) -> dict:
     """Full pipeline. Returns {title, description, modules: [{title, lessons: [...]}]}
     where each lesson has title, content, concepts, and quiz."""
-    outline = generate_outline(provider, chunks)
+    outline = generate_outline(meter, chunks)
     course = {
         "title": outline.get("title", "Untitled course"),
         "description": outline.get("description", ""),
@@ -80,7 +83,7 @@ def generate_course(provider: LLMProvider, chunks: list[str]) -> dict:
         built = {"title": module.get("title", "Module"), "lessons": []}
         for lesson_stub in module.get("lessons", []):
             title = lesson_stub.get("title", "Lesson")
-            authored = generate_lesson(provider, title, lesson_stub.get("summary", ""), chunks)
+            authored = generate_lesson(meter, title, lesson_stub.get("summary", ""), chunks)
             built["lessons"].append({"title": title, **authored})
         course["modules"].append(built)
     return course

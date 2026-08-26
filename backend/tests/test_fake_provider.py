@@ -12,11 +12,20 @@ def test_get_provider_selects_fake(monkeypatch):
 def test_fake_provider_is_deterministic_and_input_sensitive():
     provider = FakeProvider()
     outline_prompt = "Source material:\n\nPhotosynthesis converts light energy."
-    assert provider.generate("curriculum designer", outline_prompt) == provider.generate(
-        "curriculum designer", outline_prompt
-    )
+    first = provider.generate("curriculum designer", outline_prompt)
+    second = provider.generate("curriculum designer", outline_prompt)
+    assert first.text == second.text
     other = provider.generate("curriculum designer", "Source material:\n\nGraph theory basics.")
-    assert other != provider.generate("curriculum designer", outline_prompt)
+    assert other.text != first.text
+
+
+def test_fake_provider_reports_estimated_token_usage():
+    provider = FakeProvider()
+    result = provider.generate("curriculum designer", "Source material:\n\nSome text here.")
+    assert result.input_tokens == max(1, len(result.text) // 4)
+    assert result.output_tokens == max(1, len(result.text) // 4)
+    assert provider.is_paid is False
+    assert provider.name == "fake"
 
 
 def test_generate_endpoint_with_fake_provider(client, monkeypatch):
