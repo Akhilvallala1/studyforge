@@ -54,9 +54,13 @@ class _NonPaidStub:
         return LLMResult(text="ok", input_tokens=1000, output_tokens=1000)
 
 
-def test_metering_records_zero_cost_for_is_paid_false():
+def test_metering_records_zero_cost_for_is_paid_false(client):
     """Even though the model would normally price out non-zero, a non-paid provider
-    (e.g. ollama/fake) is always recorded at $0.00 cost - only tokens are tracked."""
+    (e.g. ollama/fake) is always recorded at $0.00 cost - only tokens are tracked.
+
+    Takes the client fixture so init_db() has run; without it this file fails when
+    run on its own because llm_calls does not exist yet.
+    """
     from app import models
 
     provider = _NonPaidStub()
@@ -88,9 +92,11 @@ def test_estimate_cost_pricing_table_matches_current_rates():
 
 
 def test_env_fallback_defaults_when_unset(monkeypatch):
+    """With no env overrides, an unknown model prices at the built-in 5.00/25.00
+    defaults. Uses non-zero token counts so the rates are actually exercised."""
     monkeypatch.delenv("STUDYFORGE_PRICE_DEFAULT_IN_USD", raising=False)
     monkeypatch.delenv("STUDYFORGE_PRICE_DEFAULT_OUT_USD", raising=False)
     assert os.environ.get("STUDYFORGE_PRICE_DEFAULT_IN_USD") is None
-    cost, approximate = estimate_cost("unknown-x", 0, 0)
+    cost, approximate = estimate_cost("unknown-x", 200_000, 40_000)
     assert approximate is True
-    assert cost == 0.0
+    assert cost == (200_000 / 1_000_000 * 5.00) + (40_000 / 1_000_000 * 25.00)
