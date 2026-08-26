@@ -9,6 +9,10 @@ def get_provider() -> LLMProvider:
         from app.llm.ollama_provider import OllamaProvider
 
         return OllamaProvider()
+    if name == "fake":
+        from app.llm.fake_provider import FakeProvider
+
+        return FakeProvider()
     from app.llm.anthropic_provider import AnthropicProvider
 
     return AnthropicProvider()
