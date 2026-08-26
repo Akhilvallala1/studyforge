@@ -10,7 +10,6 @@ import type { GenerateResult } from "@/lib/types";
 type Mode = "text" | "url" | "pdf";
 
 /** How long to show the run's cost before moving on to the generated course. */
-const SUCCESS_REDIRECT_DELAY_MS = 1800;
 
 const TABS: { mode: Mode; label: string }[] = [
   { mode: "text", label: "Paste text" },
@@ -73,7 +72,6 @@ export function GenerateForm() {
             : await generateFromPdf(file as File);
       setSubmitting(false);
       setSuccess(result);
-      setTimeout(() => router.push(`/courses/${result.id}`), SUCCESS_REDIRECT_DELAY_MS);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not reach the server. Is the backend running?");
       setSubmitting(false);
@@ -155,7 +153,13 @@ export function GenerateForm() {
             far: {formatUsd(success.usage.total_cost_usd)}
             {success.usage.alert_active && ", which has crossed the cost alert threshold"}.
           </p>
-          <p className="mt-1 text-emerald-700 dark:text-emerald-400">Opening your course...</p>
+          <button
+            type="button"
+            onClick={() => router.push(`/courses/${success.id}`)}
+            className="mt-3 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+          >
+            Open course
+          </button>
         </div>
       ) : submitting ? (
         <div className="flex items-center gap-3 rounded-lg border border-zinc-200 px-4 py-3 dark:border-zinc-800">

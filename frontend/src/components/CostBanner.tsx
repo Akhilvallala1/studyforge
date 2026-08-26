@@ -56,7 +56,7 @@ export function CostBanner() {
     <div className="flex flex-col">
       {alert.active && (
         <div
-          role="alert"
+          role="status"
           className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-300 bg-amber-100 px-6 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
         >
           <p className="font-medium">

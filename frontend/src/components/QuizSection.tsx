@@ -117,7 +117,7 @@ export function QuizSection({ quiz }: { quiz: QuizItem[] }) {
                 <>
                   {wrong && state.result && (
                     <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950 dark:text-red-300">
-                      Incorrect &mdash; expected: <span className="font-medium">{state.result.expected}</span>
+                      Incorrect, expected: <span className="font-medium">{state.result.expected}</span>
                     </p>
                   )}
                   <button

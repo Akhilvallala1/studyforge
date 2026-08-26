@@ -31,16 +31,27 @@ interface ObjectDetail {
   [key: string]: unknown;
 }
 
-function messageFromObjectDetail(detail: ObjectDetail): string {
+/** Returns null when the detail carries nothing useful, so the caller keeps its statusText fallback. */
+function messageFromObjectDetail(detail: ObjectDetail): string | null {
   if (detail.error === "cost_limit_exceeded") {
-    const limitText = typeof detail.limit_usd === "number" ? formatUsd(detail.limit_usd) : "the configured limit";
-    const spentText = typeof detail.spent_usd === "number" ? formatUsd(detail.spent_usd) : "the current spend";
-    return `LLM spend limit reached: ${spentText} spent of a ${limitText} cap. Generation was stopped, no course was saved for this run.`;
+    if (typeof detail.limit_usd === "number" && typeof detail.spent_usd === "number") {
+      return `LLM spend limit reached: ${formatUsd(detail.spent_usd)} spent of a ${formatUsd(detail.limit_usd)} cap. Generation was stopped, no course was saved for this run.`;
+    }
+    return "LLM spend limit reached. Generation was stopped, no course was saved for this run.";
   }
   if (typeof detail.message === "string" && detail.message) {
     return detail.message;
   }
-  return "Request failed.";
+  return null;
+}
+
+/** FastAPI sends 422 validation errors as an array of {loc, msg, type}; surface the first msg. */
+function messageFromValidationDetail(detail: unknown[]): string | null {
+  const first = detail[0];
+  if (first && typeof first === "object" && typeof (first as { msg?: unknown }).msg === "string") {
+    return (first as { msg: string }).msg;
+  }
+  return null;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -52,8 +63,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const detail = body?.detail;
       if (typeof detail === "string") {
         message = detail;
+      } else if (Array.isArray(detail)) {
+        message = messageFromValidationDetail(detail) ?? message;
       } else if (detail && typeof detail === "object") {
-        message = messageFromObjectDetail(detail as ObjectDetail);
+        message = messageFromObjectDetail(detail as ObjectDetail) ?? message;
       }
     } catch {
       // Non-JSON error body - keep the statusText fallback.

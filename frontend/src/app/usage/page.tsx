@@ -104,7 +104,7 @@ export default async function UsagePage() {
                 <span className="font-medium tabular-nums">{formatUsd(usage.limit.limit_usd)}</span>
                 {usage.limit.reached ? (
                   <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-950 dark:text-red-300">
-                    Reached, further generations are blocked
+                    Reached, further paid generations are blocked
                   </span>
                 ) : (
                   <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
