@@ -19,7 +19,7 @@ def extract_url(url: str) -> str:
     response = httpx.get(url, follow_redirects=True, timeout=30)
     response.raise_for_status()
     html = response.text
-    # Crude tag strip — good enough for the MVP; a real HTML-to-text pass is a TODO.
+    # Crude tag strip - good enough for the MVP; a real HTML-to-text pass is a TODO.
     text = re.sub(r"<script.*?</script>|<style.*?</style>", " ", html, flags=re.DOTALL | re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", text)
     return clean_text(text)

@@ -4,7 +4,7 @@ Next.js (App Router + TypeScript + Tailwind) web UI for the StudyForge backend. 
 
 ## Running locally
 
-The backend must be running first (default: http://localhost:8000 — see [`../backend`](../backend)).
+The backend must be running first (default: http://localhost:8000 - see [`../backend`](../backend)).
 
 ```bash
 npm install
@@ -18,9 +18,9 @@ Then open http://localhost:3000.
 
 ## Structure
 
-- `src/lib/api.ts` — the single typed API client; all backend calls go through it
-- `src/lib/types.ts` — response types matching the backend contracts
-- `src/app/` — routes: `/` (course list), `/courses/new` (create course), `/courses/[courseId]` (course detail), `/courses/[courseId]/lessons/[lessonId]` (lesson + quiz)
-- `src/components/` — client components (generate form, quiz, markdown renderer)
+- `src/lib/api.ts` - the single typed API client; all backend calls go through it
+- `src/lib/types.ts` - response types matching the backend contracts
+- `src/app/` - routes: `/` (course list), `/courses/new` (create course), `/courses/[courseId]` (course detail), `/courses/[courseId]/lessons/[lessonId]` (lesson + quiz)
+- `src/components/` - client components (generate form, quiz, markdown renderer)
 
 `npm run build` type-checks and builds; `npm run lint` runs ESLint.

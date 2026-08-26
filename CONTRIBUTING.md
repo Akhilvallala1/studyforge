@@ -1,6 +1,6 @@
 # Contributing to StudyForge
 
-Thanks for your interest! StudyForge is early-stage, so contributions of all kinds help — code, prompts, course templates, docs, and design.
+Thanks for your interest! StudyForge is early-stage, so contributions of all kinds help - code, prompts, course templates, docs, and design.
 
 ## How to contribute
 
@@ -10,14 +10,14 @@ Thanks for your interest! StudyForge is early-stage, so contributions of all kin
 
 ## Good first areas
 
-- **Document ingestion** — PDF/slide parsing into clean text chunks
-- **Quiz generation** — prompt engineering for high-quality questions
-- **Spaced repetition** — FSRS scheduling implementation
-- **Course templates** — portable course format design
+- **Document ingestion** - PDF/slide parsing into clean text chunks
+- **Quiz generation** - prompt engineering for high-quality questions
+- **Spaced repetition** - FSRS scheduling implementation
+- **Course templates** - portable course format design
 
 ## Guidelines
 
-- Keep PRs focused — one feature or fix per PR.
+- Keep PRs focused - one feature or fix per PR.
 - Add tests for backend logic where practical.
 - For large changes, open an issue first to discuss the approach.
 

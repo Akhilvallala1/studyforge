@@ -10,7 +10,7 @@ class AnthropicProvider:
         self.model = model or os.environ.get("STUDYFORGE_MODEL", "claude-opus-5")
 
     def generate(self, system: str, prompt: str, max_tokens: int = 64000) -> str:
-        # Course generation produces long outputs — stream to avoid HTTP timeouts.
+        # Course generation produces long outputs - stream to avoid HTTP timeouts.
         # Thinking is adaptive by default on claude-opus-5; no thinking param needed.
         with self.client.messages.stream(
             model=self.model,

@@ -103,7 +103,7 @@ export function GenerateForm() {
           onChange={(e) => setText(e.target.value)}
           disabled={submitting}
           rows={12}
-          placeholder="Paste lecture notes, an article, documentation — anything you want to learn."
+          placeholder="Paste lecture notes, an article, documentation - anything you want to learn."
           className="w-full rounded-lg border border-zinc-300 bg-transparent p-3 text-sm outline-none focus:border-zinc-500 disabled:opacity-60 dark:border-zinc-700"
         />
       )}

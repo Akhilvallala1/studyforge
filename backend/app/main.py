@@ -62,7 +62,7 @@ def _save_course(session: Session, course: dict) -> models.Course:
 
 @app.post("/courses/generate")
 def generate_from_text(body: GenerateRequest, session: Session = Depends(get_session)):
-    """Generate a course from pasted text or a URL. Synchronous for the MVP —
+    """Generate a course from pasted text or a URL. Synchronous for the MVP - 
     expect it to take a minute or more for large material."""
     if body.text:
         chunks = ingest.chunk_text(body.text)
