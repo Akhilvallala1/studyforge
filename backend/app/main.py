@@ -267,7 +267,9 @@ def get_usage(limit: int = 50, session: Session = Depends(get_session)):
     recent_calls = [
         {
             "id": r.id,
-            "created_at": r.created_at.isoformat(),
+            # SQLite drops tzinfo on write, so re-attach UTC before serializing. Without
+            # the offset, clients parse the timestamp as local time and show it shifted.
+            "created_at": r.created_at.replace(tzinfo=UTC).isoformat(),
             "provider": r.provider,
             "model": r.model,
             "stage": r.stage,

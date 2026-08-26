@@ -3,6 +3,7 @@ cost alert, and the hard spend cap. Uses TestClient with env/provider monkeypatc
 no real LLM API is ever called."""
 
 import json
+from datetime import datetime, timedelta
 
 from app import models
 from app.db import SessionLocal
@@ -132,6 +133,13 @@ def test_usage_endpoint_contract(client, monkeypatch):
         }
     ids = [c["id"] for c in usage["recent_calls"]]
     assert ids == sorted(ids, reverse=True)  # newest first
+
+    # Timestamps must carry an explicit UTC offset. Without one, JavaScript parses
+    # them as local time and the UI shows every call shifted by the viewer's offset.
+    for call in usage["recent_calls"]:
+        parsed = datetime.fromisoformat(call["created_at"])
+        assert parsed.tzinfo is not None, "created_at must be timezone-aware"
+        assert parsed.utcoffset() == timedelta(0)
 
     assert set(usage["alert"].keys()) == {"active", "threshold_usd", "total_usd", "acknowledged"}
     assert set(usage["limit"].keys()) == {"configured", "limit_usd", "reached"}

@@ -9,8 +9,6 @@ import type { GenerateResult } from "@/lib/types";
 
 type Mode = "text" | "url" | "pdf";
 
-/** How long to show the run's cost before moving on to the generated course. */
-
 const TABS: { mode: Mode; label: string }[] = [
   { mode: "text", label: "Paste text" },
   { mode: "url", label: "From URL" },
@@ -43,6 +41,16 @@ export function GenerateForm() {
     }, 1000);
     return () => clearInterval(timer);
   }, [submitting]);
+
+  function resetForm() {
+    setSuccess(null);
+    setError(null);
+    setText("");
+    setUrl("");
+    setFile(null);
+    setElapsed(0);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -153,13 +161,22 @@ export function GenerateForm() {
             far: {formatUsd(success.usage.total_cost_usd)}
             {success.usage.alert_active && ", which has crossed the cost alert threshold"}.
           </p>
-          <button
-            type="button"
-            onClick={() => router.push(`/courses/${success.id}`)}
-            className="mt-3 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
-          >
-            Open course
-          </button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => router.push(`/courses/${success.id}`)}
+              className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
+            >
+              Open course
+            </button>
+            <button
+              type="button"
+              onClick={resetForm}
+              className="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-600 dark:text-emerald-200 dark:hover:bg-emerald-900"
+            >
+              Generate another
+            </button>
+          </div>
         </div>
       ) : submitting ? (
         <div className="flex items-center gap-3 rounded-lg border border-zinc-200 px-4 py-3 dark:border-zinc-800">

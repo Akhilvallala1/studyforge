@@ -136,8 +136,9 @@ class MeteredLLM:
             session.close()
 
         logger.info(
-            "LLM call: provider=%s model=%s stage=%s in=%s out=%s cost=$%.4f total=$%.2f "
-            "run=%s course=pending",
+            # No course id here: it is backfilled onto the run's rows only after the
+            # course is saved, so logging one at call time would always say "pending".
+            "LLM call: provider=%s model=%s stage=%s in=%s out=%s cost=$%.4f total=$%.2f run=%s",
             self.provider.name,
             self.provider.model,
             stage,
