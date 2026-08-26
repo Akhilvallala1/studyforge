@@ -32,7 +32,7 @@ content alone."""
 def parse_json_response(text: str) -> dict:
     """Extract the first JSON object from a model response, tolerating code fences."""
     text = text.strip()
-    fence = re.search(r"```(?:json)?\s*(.*?)```", text, flags=re.S)
+    fence = re.search(r"```(?:json)?\s*(.*?)```", text, flags=re.DOTALL)
     if fence:
         text = fence.group(1).strip()
     start = text.find("{")
