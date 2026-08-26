@@ -94,6 +94,11 @@ class Attempt(Base):
     change, and a history that silently re-points at the new answer would misreport
     what the learner was actually graded against.
 
+    attempt_no counts every attempt on the item regardless of source, so once review
+    sessions exist it means "nth touch of this item overall", not "nth quiz attempt".
+    Per-source ordinals stay derivable from (source, attempt_no, created_at); the
+    scheduler will need to compute them rather than reading attempt_no directly.
+
     source discriminates lesson quizzes from later review sessions, and grader
     versions the grading policy, so a future change from exact-match to something
     smarter does not make old rows unreadable. There is deliberately no rating
@@ -103,8 +108,10 @@ class Attempt(Base):
 
     __tablename__ = "attempts"
     __table_args__ = (
-        # A concurrent double-submit collides here instead of writing two rows
-        # that both claim the same position in the item's history.
+        # Guarantees sequence integrity: no two rows can claim the same position in
+        # an item's history. It does NOT deduplicate answers. The double-click guard
+        # in main.py is an unlocked read-then-write, so genuinely simultaneous
+        # submits all see no prior row and all insert; only the ordinal is protected.
         UniqueConstraint("quiz_item_id", "attempt_no", name="uq_attempts_item_seq"),
         Index("ix_attempts_item_created", "quiz_item_id", "created_at"),
         Index("ix_attempts_lesson_created", "lesson_id", "created_at"),

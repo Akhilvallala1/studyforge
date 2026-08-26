@@ -3,9 +3,11 @@ summary both quiz endpoints return, lesson completion round-tripping, and the
 friendly copy that replaced raw exception text on generation failures."""
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 import httpx
 import pytest
+from sqlalchemy.orm import Session
 
 from app import models
 from app.concepts import normalize_concept
@@ -138,8 +140,8 @@ class TestRecording:
         # The mastery signal: right on the second try is not the same as right away.
         assert state["first_attempt_correct"] is False
         assert state["ever_correct"] is True
-        assert state["latest"]["answer"] == "downhill"
-        assert state["latest"]["correct"] is True
+        assert state["latest_quiz_attempt"]["answer"] == "downhill"
+        assert state["latest_quiz_attempt"]["correct"] is True
 
         rows = _rows_for_item(item_id)
         assert [r.attempt_no for r in rows] == [1, 2]
@@ -201,12 +203,56 @@ class TestDoubleSubmit:
         assert second["attempt_no"] == 2
 
 
+    def test_a_recoverable_collision_retries_and_succeeds(self, client, lesson):
+        """The production concurrency path: one collision, then the retry succeeds.
+
+        Simulates an interloper that claims the next ordinal between our count and
+        our insert, by taking attempt_no 1 mid-request. The first insert collides,
+        the retry recounts to 2, and the caller gets a normal 200.
+        """
+        _, (item_id, _) = lesson
+        lesson_id = SessionLocal().get(models.QuizItem, item_id).lesson_id
+        original_flush = Session.flush
+        state = {"stolen": False}
+
+        def steal_once(self, *args, **kwargs):
+            # Runs inside the request, after attempt_no was computed as 1.
+            if not state["stolen"]:
+                state["stolen"] = True
+                other = SessionLocal()
+                try:
+                    other.add(
+                        models.Attempt(
+                            quiz_item_id=item_id,
+                            lesson_id=lesson_id,
+                            submitted_answer="interloper",
+                            expected_answer="downhill",
+                            correct=False,
+                            attempt_no=1,
+                        )
+                    )
+                    other.commit()
+                finally:
+                    other.close()
+            return original_flush(self, *args, **kwargs)
+
+        with patch.object(Session, "flush", steal_once):
+            resp = client.post(f"/quiz/{item_id}/answer", json={"answer": "downhill"})
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["attempt_no"] == 2  # recounted after the collision
+        assert len(_rows_for_item(item_id)) == 2
+
     def test_an_unresolvable_collision_returns_409(self, client, lesson):
         """The unique constraint must fail loudly rather than silently overwrite.
 
         attempt_no is count(*) + 1, so a history with a gap (rows 1 and 3) makes
-        every retry compute 3 and collide. A concurrent double-submit hits the same
-        constraint; this reproduces it without threads.
+        every recount compute 3 and collide permanently. Nothing today can create
+        such a gap (there is no delete path), so this covers the give-up branch
+        rather than a reachable production state. Real concurrent submits take the
+        recoverable path above and only reach 409 with three or more simultaneous
+        writers.
         """
         _, (item_id, _) = lesson
         session = SessionLocal()
@@ -258,8 +304,8 @@ class TestLessonView:
 
         answered = by_id[answered_id]["attempt_state"]
         assert answered["attempts"] == 1
-        assert answered["latest"]["answer"] == "uphill"
-        assert answered["latest"]["correct"] is False
+        assert answered["latest_quiz_attempt"]["answer"] == "uphill"
+        assert answered["latest_quiz_attempt"]["correct"] is False
         assert answered["first_attempt_correct"] is False
         assert answered["ever_correct"] is False
 
@@ -268,7 +314,7 @@ class TestLessonView:
             "attempts": 0,
             "first_attempt_correct": None,
             "ever_correct": False,
-            "latest": None,
+            "latest_quiz_attempt": None,
         }
 
     def test_answer_key_is_hidden_until_the_learner_has_answered(self, client, lesson):
@@ -277,14 +323,14 @@ class TestLessonView:
         assert "downhill" not in str(before["quiz"])
         for question in before["quiz"]:
             assert "answer" not in question
-            assert question["attempt_state"]["latest"] is None
+            assert question["attempt_state"]["latest_quiz_attempt"] is None
 
         client.post(f"/quiz/{item_id}/answer", json={"answer": "uphill"})
         after = client.get(f"/lessons/{lesson_id}").json()
         by_id = {q["id"]: q for q in after["quiz"]}
         # Revealed only inside latest, and only for the item that was attempted.
-        assert by_id[item_id]["attempt_state"]["latest"]["expected"] == "downhill"
-        assert by_id[untouched_id]["attempt_state"]["latest"] is None
+        assert by_id[item_id]["attempt_state"]["latest_quiz_attempt"]["expected"] == "downhill"
+        assert by_id[untouched_id]["attempt_state"]["latest_quiz_attempt"] is None
         assert "answer" not in by_id[item_id]
 
     def test_quiz_progress_counts(self, client, lesson):
@@ -304,7 +350,7 @@ class TestLessonView:
         client.post(f"/quiz/{item_id}/answer", json={"answer": "downhill"})
         stamps = [
             client.get(f"/lessons/{lesson_id}")
-            .json()["quiz"][0]["attempt_state"]["latest"]["created_at"],
+            .json()["quiz"][0]["attempt_state"]["latest_quiz_attempt"]["created_at"],
             client.get(f"/lessons/{lesson_id}/attempts").json()["attempts"][0]["created_at"],
             client.post(f"/lessons/{lesson_id}/complete").json()["completed_at"],
         ]

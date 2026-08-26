@@ -254,9 +254,14 @@ def _grade(submitted: str, expected: str) -> bool:
 def _attempt_state(attempts: list[models.Attempt]) -> dict:
     """Summarize one quiz item's history, from its attempts ordered by attempt_no.
 
-    attempts/first_attempt_correct describe the lesson quiz only, so a later review
-    session cannot rewrite how the item went the first time. ever_correct counts
-    every source: recalling it in review is still evidence of knowing it.
+    attempts/first_attempt_correct/latest_quiz_attempt describe the lesson quiz only,
+    so a later review session cannot rewrite how the item went the first time.
+    ever_correct counts every source: recalling it in review is still evidence of
+    knowing it.
+
+    latest_quiz_attempt is named for its scope on purpose. Once review attempts exist
+    it is no longer "most recent activity" on the item, and a caller treating it as
+    "last practiced" would be wrong in a way nothing would flag.
     """
     quiz_attempts = [a for a in attempts if a.source == LESSON_QUIZ_SOURCE]
     latest = quiz_attempts[-1] if quiz_attempts else None
@@ -264,11 +269,11 @@ def _attempt_state(attempts: list[models.Attempt]) -> dict:
         "attempts": len(quiz_attempts),
         "first_attempt_correct": quiz_attempts[0].correct if quiz_attempts else None,
         "ever_correct": any(a.correct for a in attempts),
-        "latest": None
+        "latest_quiz_attempt": None
         if latest is None
         else {
-            # expected rides inside latest, which exists only once the learner has
-            # answered. That is what keeps unattempted questions from leaking the key.
+            # expected rides inside this object, which exists only once the learner
+            # has answered. That is what keeps unattempted questions from leaking the key.
             "answer": latest.submitted_answer,
             "correct": latest.correct,
             "expected": latest.expected_answer,
@@ -312,11 +317,18 @@ def _sanitize_elapsed_ms(value: int | None) -> int | None:
 
 
 def _recent_duplicate(
-    session: Session, quiz_item_id: int, submitted: str
+    session: Session, quiz_item_id: int, submitted: str, source: str = LESSON_QUIZ_SOURCE
 ) -> models.Attempt | None:
+    """Best-effort double-click guard: catches a resubmit that arrives after the first
+    one committed. Truly simultaneous submits both read no prior row and both insert.
+
+    Scoped to one source so a review attempt can never swallow a lesson-quiz submission
+    and hand the caller back a row of the wrong kind.
+    """
     newest = (
         session.query(models.Attempt)
         .filter(models.Attempt.quiz_item_id == quiz_item_id)
+        .filter(models.Attempt.source == source)
         .order_by(models.Attempt.attempt_no.desc())
         .first()
     )
@@ -345,6 +357,9 @@ def _record_attempt(
     if duplicate is not None:
         return duplicate
 
+    # count+1 is safe only while attempts are never removed. If pruning or archival
+    # is ever added, a gap makes every recount collide on the same taken ordinal and
+    # this wedges permanently at 409; switch to max(attempt_no)+1 at that point.
     for _ in range(2):
         prior = (
             session.query(func.count(models.Attempt.id))

@@ -13,12 +13,15 @@ import unicodedata
 
 # Punctuation that commonly trails or leads an LLM-written concept label
 # ("Gradient Descent." / "(recursion)") and carries no meaning for grouping.
-_EDGE_CHARS = " .,:;!?-_\"'()[]"
+# Brackets are handled separately: stripping them blindly turns "O(n)" into "o(n",
+# which technical material produces constantly.
+_EDGE_CHARS = " .,:;!?-_\"'"
+_BRACKET_PAIRS = (("(", ")"), ("[", "]"))
 
 _WHITESPACE = re.compile(r"\s+")
 
 
-def normalize_concept(raw: str) -> str:
+def normalize_concept(raw: str | None) -> str:
     """Fold a concept label into a stable grouping key.
 
     Returns "" for missing or empty input, which callers treat as "unclassified"
@@ -28,4 +31,14 @@ def normalize_concept(raw: str) -> str:
         return ""
     text = unicodedata.normalize("NFKC", raw).casefold()
     text = _WHITESPACE.sub(" ", text).strip()
-    return text.strip(_EDGE_CHARS)
+    text = text.strip(_EDGE_CHARS)
+    # Peel wrapping brackets only when both sides are present, so "(recursion)" folds
+    # to "recursion" while "O(n log n)" keeps its closing paren.
+    changed = True
+    while changed and text:
+        changed = False
+        for opener, closer in _BRACKET_PAIRS:
+            if text.startswith(opener) and text.endswith(closer) and len(text) > 1:
+                text = text[1:-1].strip(_EDGE_CHARS)
+                changed = True
+    return text
