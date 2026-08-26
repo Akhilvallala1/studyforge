@@ -45,7 +45,7 @@ Both are created by `create_all` at startup, so existing databases pick them up 
 1. **Ingest** - PDF/URL/text → cleaned text chunks with structure hints (headings, page numbers).
 2. **Outline** - LLM proposes modules and lessons from the chunks.
 3. **Author** - per lesson: LLM writes the lesson content grounded in source chunks, extracts key concepts, generates quiz items.
-4. **Review loop** - a second LLM pass validates quiz answerability and grounding (reduces hallucinated questions).
+4. **Review loop (planned, not built)** - a second LLM pass to validate quiz answerability and grounding, reducing hallucinated questions. The metering layer already reserves a `review` stage for it.
 
 Every LLM call in steps 2 and 3 goes through the metering layer under a single `run_id`. The course id isn't known until the course is saved, so the run's `llm_calls` rows are backfilled with it afterwards; a run that fails before that point keeps a null course id and shows up as "Unattributed" in the usage breakdown.
 
