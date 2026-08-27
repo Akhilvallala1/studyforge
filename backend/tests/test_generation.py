@@ -6,6 +6,7 @@ from app.generation import (
     REPAIR_INSTRUCTION,
     generate_course,
     generate_json,
+    generate_lesson,
     lesson_segments,
     parse_json_response,
 )
@@ -159,6 +160,42 @@ def test_generate_json_gives_up_after_one_retry():
     with pytest.raises(ValueError, match="No JSON object"):
         generate_json(meter, "lesson", "sys", "p")
     assert len(meter.prompts) == 2
+
+
+def test_a_quiz_item_that_is_not_an_object_is_dropped():
+    """From a real paid run: the model returned a bare string where the schema asks
+    for an object. It reached _save_course, which calls .get on every item, and became
+    a 500 after the course had already been generated and paid for."""
+    lesson = dict(LESSON)
+    lesson["quiz"] = ["Just a question with no answer", {"question": "Real?", "answer": "yes"}]
+    meter = ScriptedMeter([json.dumps(lesson)])
+
+    result = generate_lesson(meter, "T", "S", ["chunk"])
+
+    assert len(result["quiz"]) == 1
+    assert result["quiz"][0]["question"] == "Real?"
+    # Every surviving item carries the keys _save_course reads, so nothing downstream
+    # has to guess.
+    assert set(result["quiz"][0]) == {"question", "kind", "options", "answer", "concept"}
+
+
+def test_a_quiz_item_missing_its_answer_is_dropped_not_invented():
+    """A question with no answer cannot be graded, and filling one in would put words
+    in the model's mouth."""
+    lesson = dict(LESSON)
+    lesson["quiz"] = [
+        {"question": "What is it?", "answer": "   "},
+        {"question": "", "answer": "orphan"},
+    ]
+    meter = ScriptedMeter([json.dumps(lesson)])
+    assert generate_lesson(meter, "T", "S", ["chunk"])["quiz"] == []
+
+
+def test_malformed_concepts_do_not_reach_the_lesson():
+    lesson = dict(LESSON)
+    lesson["concepts"] = ["fine", 42, None, "  spaced  ", ""]
+    meter = ScriptedMeter([json.dumps(lesson)])
+    assert generate_lesson(meter, "T", "S", ["chunk"])["concepts"] == ["fine", "spaced"]
 
 
 def test_generate_course_keeps_the_lessons_that_parsed():

@@ -237,6 +237,11 @@ def iter_lessons(course: dict):
 def iter_quiz_items(course: dict):
     for m_index, l_index, module, lesson in iter_lessons(course):
         for q_index, item in enumerate(lesson.get("quiz", []) or []):
+            # generation.py normalizes these now, but the harness also rescoring saved
+            # result files from before that fix, and a metric that dies on odd input
+            # is a metric that cannot measure the runs worth measuring.
+            if not isinstance(item, dict):
+                continue
             yield QuizItemRef(
                 module_index=m_index,
                 lesson_index=l_index,
