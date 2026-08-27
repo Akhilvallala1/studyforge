@@ -1,0 +1,176 @@
+{
+  "totals": {
+    "calls": 12,
+    "input_tokens": 46269,
+    "output_tokens": 47361,
+    "estimated_cost_usd": 1.41537,
+    "approximate": false
+  },
+  "per_course": [
+    {
+      "course_id": null,
+      "title": null,
+      "calls": 12,
+      "input_tokens": 46269,
+      "output_tokens": 47361,
+      "estimated_cost_usd": 1.41537
+    }
+  ],
+  "recent_calls": [
+    {
+      "id": 12,
+      "created_at": "2026-08-27T17:41:27.601752+00:00",
+      "provider": "anthropic",
+      "model": "claude-opus-5",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 3883,
+      "output_tokens": 3487,
+      "estimated_cost_usd": 0.10659,
+      "approximate": false
+    },
+    {
+      "id": 11,
+      "created_at": "2026-08-27T17:40:32.660305+00:00",
+      "provider": "anthropic",
+      "model": "claude-opus-5",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 3887,
+      "output_tokens": 3273,
+      "estimated_cost_usd": 0.10125999999999999,
+      "approximate": false
+    },
+    {
+      "id": 10,
+      "created_at": "2026-08-27T17:39:49.688906+00:00",
+      "provider": "anthropic",
+      "model": "claude-opus-5",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 3879,
+      "output_tokens": 4479,
+      "estimated_cost_usd": 0.13137000000000001,
+      "approximate": false
+    },
+    {
+      "id": 9,
+      "created_at": "2026-08-27T17:38:46.987245+00:00",
+      "provider": "anthropic",
+      "model": "claude-opus-5",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 3879,
+      "output_tokens": 4361,
+      "estimated_cost_usd": 0.12842,
+      "approximate": false
+    },
+    {
+      "id": 8,
+      "created_at": "2026-08-27T17:37:48.203648+00:00",
+      "provider": "anthropic",
+      "model": "claude-opus-5",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 3903,
+      "output_tokens": 5793,
+      "estimated_cost_usd": 0.16434,
+      "approximate": false
+    },
+    {
+      "id": 7,
+      "created_at": "2026-08-27T17:36:20.160040+00:00",
+      "provider": "anthropic",
+      "model": "claude-opus-5",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 3872,
+      "output_tokens": 4010,
+      "estimated_cost_usd": 0.11961,
+      "approximate": false
+    },
+    {
+      "id": 6,
+      "created_at": "2026-08-27T17:35:22.207503+00:00",
+      "provider": "anthropic",
+      "model": "claude-opus-5",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 3874,
+      "output_tokens": 4552,
+      "estimated_cost_usd": 0.13316999999999998,
+      "approximate": false
+    },
+    {
+      "id": 5,
+      "created_at": "2026-08-27T17:34:21.158848+00:00",
+      "provider": "anthropic",
+      "model": "claude-opus-5",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 3884,
+      "output_tokens": 3292,
+      "estimated_cost_usd": 0.10172,
+      "approximate": false
+    },
+    {
+      "id": 4,
+      "created_at": "2026-08-27T17:33:33.926710+00:00",
+      "provider": "anthropic",
+      "model": "claude-opus-5",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 3980,
+      "output_tokens": 3439,
+      "estimated_cost_usd": 0.10587500000000001,
+      "approximate": false
+    },
+    {
+      "id": 3,
+      "created_at": "2026-08-27T17:32:45.640263+00:00",
+      "provider": "anthropic",
+      "model": "claude-opus-5",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 3891,
+      "output_tokens": 4151,
+      "estimated_cost_usd": 0.12323,
+      "approximate": false
+    },
+    {
+      "id": 2,
+      "created_at": "2026-08-27T17:31:48.179313+00:00",
+      "provider": "anthropic",
+      "model": "claude-opus-5",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 3901,
+      "output_tokens": 4941,
+      "estimated_cost_usd": 0.14303,
+      "approximate": false
+    },
+    {
+      "id": 1,
+      "created_at": "2026-08-27T17:30:41.849425+00:00",
+      "provider": "anthropic",
+      "model": "claude-opus-5",
+      "stage": "outline",
+      "course_id": null,
+      "input_tokens": 3436,
+      "output_tokens": 1583,
+      "estimated_cost_usd": 0.056755,
+      "approximate": false
+    }
+  ],
+  "alert": {
+    "active": false,
+    "threshold_usd": 1.5,
+    "total_usd": 1.41537,
+    "acknowledged": null
+  },
+  "limit": {
+    "configured": true,
+    "limit_usd": 2.0,
+    "reached": false
+  }
+}
