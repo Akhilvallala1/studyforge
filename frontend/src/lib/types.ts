@@ -163,3 +163,113 @@ export interface CompleteResult {
   completed: boolean;
   completed_at: string | null;
 }
+
+/** A concept the learner keeps losing: two or more misses in its last five ratings. */
+export interface NeedsAttentionEntry {
+  concept_key: string;
+  concept_label: string;
+  /** Misses inside the recent window, as in "missed 3 of 4 times". */
+  missed: number;
+  of: number;
+  /** Lifetime lapse count on the card, which spans more than the recent window. */
+  lapses: number;
+  /** Current recall probability, or null for a card that has never been scheduled. */
+  retrievability: number | null;
+  due: string | null;
+  is_due: boolean;
+}
+
+export interface ReviewToday {
+  /** The local YYYY-MM-DD study day, which starts at 04:00 rather than midnight. */
+  date: string;
+  /**
+   * What a review session would serve right now. Smaller than due_today whenever a
+   * card was rated Again and is sitting out its ten-minute step, so this is what
+   * gates the Start review button and the "N due now" copy.
+   */
+  due_now: number;
+  /** The whole day's workload, for the Due today tile. Includes cards not yet servable. */
+  due_today: number;
+  due_this_week: number;
+  /**
+   * Share of due reviews recalled over 30 days, or NULL below the minimum sample.
+   * Render a dash when it is null: a percentage from two reviews can only read 0,
+   * 50 or 100 and would swing alarmingly.
+   */
+  retention: number | null;
+  sample_size: number;
+  day_streak: number;
+  estimated_minutes: number;
+  /** How many of the needs-attention concepts are due right now. */
+  struggling_due: number;
+  needs_attention: NeedsAttentionEntry[];
+}
+
+export type RatingName = "again" | "hard" | "good" | "easy";
+
+/**
+ * What one rating button would do to the card. The server computes these from the
+ * real scheduler transition with fuzzing disabled, so `label` is exactly what
+ * pressing the button produces. Render it verbatim rather than reformatting the
+ * interval: two buttons showing the same label is normal, not a bug.
+ */
+export interface RatingPreview {
+  rating: number;
+  name: RatingName;
+  interval_minutes: number;
+  interval_days: number;
+  label: string;
+  state: string;
+}
+
+/** The question to ask for a due card. No answer key: the point is to retrieve it. */
+export interface ReviewItem {
+  id: number;
+  question: string;
+  kind: "mcq" | "short";
+  options: string[];
+}
+
+export interface ReviewCard {
+  card_id: number;
+  concept_key: string;
+  concept_label: string;
+  state: string;
+  due: string | null;
+  lapses: number;
+  retrievability: number | null;
+  preview: RatingPreview[];
+  /** Null when no quiz item tests this concept any more; such a card cannot be reviewed. */
+  item: ReviewItem | null;
+}
+
+export interface ReviewQueue {
+  /** The real backlog, which may exceed `cards.length` when the limit trims it. */
+  due_total: number;
+  estimated_minutes: number;
+  cards: ReviewCard[];
+}
+
+export interface ReviewAnswerResult {
+  correct: boolean;
+  /** The reference answer, shown beside the learner's own for them to judge. */
+  expected: string;
+  submitted: string;
+  attempt_id: number;
+  suggested_rating: number | null;
+  rating_v: string;
+  preview: RatingPreview[];
+}
+
+export interface ReviewRatingResult {
+  card_id: number;
+  concept_key: string;
+  state: string;
+  stability: number | null;
+  difficulty: number | null;
+  due: string | null;
+  reps: number;
+  lapses: number;
+  scheduled_days: number;
+  interval_label: string;
+}

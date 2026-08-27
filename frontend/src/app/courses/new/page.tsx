@@ -6,7 +6,7 @@ export default function NewCoursePage() {
   return (
     <main className="mx-auto w-full max-w-2xl flex-1 px-6 py-12">
       <Link
-        href="/"
+        href="/courses"
         className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
       >
         &larr; All courses

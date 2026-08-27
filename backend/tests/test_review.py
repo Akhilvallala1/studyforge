@@ -287,7 +287,27 @@ class TestDashboard:
         for index in range(3):
             _seed_card(f"concept {index}", ratings=(fsrs.GOOD, fsrs.GOOD), start=past)
         body = client.get("/review/today").json()
-        assert body["due_this_week"] >= body["due_today"] >= 1
+        assert body["due_this_week"] >= body["due_today"] >= body["due_now"] >= 1
+
+    def test_a_card_in_its_ten_minute_step_counts_today_but_not_now(self, client):
+        """due_now and due_today must be allowed to disagree, and the Today screen
+        depends on it. A card just rated Again is due in ten minutes: it belongs to
+        the day's workload, but a session started this second cannot serve it. Gating
+        the Start review button on the day figure offered a session with nothing in
+        it, which is the bug this separation fixes."""
+        # _seed_card advances a day per rating, so start two days back to land the
+        # Again on now: the ten-minute step has to still be running for this to test
+        # anything.
+        start = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=2)
+        _seed_card("lapsed", ratings=(fsrs.GOOD, fsrs.GOOD, fsrs.AGAIN), start=start)
+
+        body = client.get("/review/today").json()
+        assert body["due_now"] == 0
+        assert body["due_today"] == 1
+        # The estimate follows what is servable, so it does not promise work that
+        # cannot be started.
+        assert body["estimated_minutes"] == 0
+        assert client.get("/review/queue").json()["due_total"] == 0
 
     def test_retention_is_withheld_below_the_sample_floor(self, client):
         _seed_card(ratings=(fsrs.GOOD, fsrs.GOOD))
