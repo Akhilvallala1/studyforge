@@ -2,22 +2,31 @@ import logging
 import os
 import uuid
 from collections import defaultdict
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import generation, ingest, models
+from app import days, fsrs, generation, ingest, models, review
+from app.attempts import (
+    _attempt_state,
+    _attempts_by_item,
+    _attempts_for_item,
+    _grade,
+    _record_attempt,
+    _sanitize_elapsed_ms,
+    iso_utc,
+)
 from app.concepts import normalize_concept
 from app.db import get_session, init_db
 from app.llm import get_provider
 from app.llm.base import LLMCallError
 from app.metering import CostLimitExceeded, MeteredLLM, acknowledge_alert, alert_state
+from app.rating import rating_v1
 
 logger = logging.getLogger("studyforge.api")
 
@@ -41,15 +50,6 @@ def startup() -> None:
         handler.setLevel(logging.INFO)
         usage_logger.addHandler(handler)
         usage_logger.setLevel(logging.INFO)
-
-
-def iso_utc(value: datetime | None) -> str | None:
-    """Serialize a stored timestamp with an explicit UTC offset.
-
-    SQLite drops tzinfo on write, so every datetime read back is naive. Without the
-    offset, clients parse the timestamp as local time and show it shifted.
-    """
-    return None if value is None else value.replace(tzinfo=UTC).isoformat()
 
 
 class GenerateRequest(BaseModel):
@@ -234,166 +234,6 @@ def get_course(course_id: int, session: Session = Depends(get_session)):
     }
 
 
-LESSON_QUIZ_SOURCE = "lesson_quiz"
-# Grading policy identifier, stored on every attempt. Bump it if the comparison
-# below changes, so old rows stay interpretable under the rules they were graded by.
-GRADER = "exact_ci"
-MAX_ELAPSED_MS = 86_400_000
-# A second click on the submit button is one answer, not two.
-DOUBLE_SUBMIT_WINDOW = timedelta(seconds=2)
-
-
-def _normalized_answer(text: str) -> str:
-    return text.strip().lower()
-
-
-def _grade(submitted: str, expected: str) -> bool:
-    return _normalized_answer(submitted) == _normalized_answer(expected)
-
-
-def _attempt_state(attempts: list[models.Attempt]) -> dict:
-    """Summarize one quiz item's history, from its attempts ordered by attempt_no.
-
-    attempts/first_attempt_correct/latest_quiz_attempt describe the lesson quiz only,
-    so a later review session cannot rewrite how the item went the first time.
-    ever_correct counts every source: recalling it in review is still evidence of
-    knowing it.
-
-    latest_quiz_attempt is named for its scope on purpose. Once review attempts exist
-    it is no longer "most recent activity" on the item, and a caller treating it as
-    "last practiced" would be wrong in a way nothing would flag.
-    """
-    quiz_attempts = [a for a in attempts if a.source == LESSON_QUIZ_SOURCE]
-    latest = quiz_attempts[-1] if quiz_attempts else None
-    return {
-        "attempts": len(quiz_attempts),
-        "first_attempt_correct": quiz_attempts[0].correct if quiz_attempts else None,
-        "ever_correct": any(a.correct for a in attempts),
-        "latest_quiz_attempt": None
-        if latest is None
-        else {
-            # expected rides inside this object, which exists only once the learner
-            # has answered. That is what keeps unattempted questions from leaking the key.
-            "answer": latest.submitted_answer,
-            "correct": latest.correct,
-            "expected": latest.expected_answer,
-            "created_at": iso_utc(latest.created_at),
-        },
-    }
-
-
-def _attempts_for_item(session: Session, quiz_item_id: int) -> list[models.Attempt]:
-    return (
-        session.query(models.Attempt)
-        .filter(models.Attempt.quiz_item_id == quiz_item_id)
-        .order_by(models.Attempt.attempt_no)
-        .all()
-    )
-
-
-def _attempts_by_item(session: Session, lesson_id: int) -> dict[int, list[models.Attempt]]:
-    """Every attempt in the lesson in one query, grouped in Python (no per-item N+1)."""
-    rows = (
-        session.query(models.Attempt)
-        .filter(models.Attempt.lesson_id == lesson_id)
-        .order_by(models.Attempt.quiz_item_id, models.Attempt.attempt_no)
-        .all()
-    )
-    grouped: dict[int, list[models.Attempt]] = defaultdict(list)
-    for row in rows:
-        grouped[row.quiz_item_id].append(row)
-    return grouped
-
-
-def _sanitize_elapsed_ms(value: int | None) -> int | None:
-    """Drop an implausible client-reported duration instead of rejecting the answer.
-
-    elapsed_ms is a soft signal for future scheduling; a bad clock or a tab left
-    open overnight must never cost the learner a real answer.
-    """
-    if value is None or not 0 <= value <= MAX_ELAPSED_MS:
-        return None
-    return value
-
-
-def _recent_duplicate(
-    session: Session, quiz_item_id: int, submitted: str, source: str = LESSON_QUIZ_SOURCE
-) -> models.Attempt | None:
-    """Best-effort double-click guard: catches a resubmit that arrives after the first
-    one committed. Truly simultaneous submits both read no prior row and both insert.
-
-    Scoped to one source so a review attempt can never swallow a lesson-quiz submission
-    and hand the caller back a row of the wrong kind.
-    """
-    newest = (
-        session.query(models.Attempt)
-        .filter(models.Attempt.quiz_item_id == quiz_item_id)
-        .filter(models.Attempt.source == source)
-        .order_by(models.Attempt.attempt_no.desc())
-        .first()
-    )
-    if newest is None:
-        return None
-    if _normalized_answer(newest.submitted_answer) != _normalized_answer(submitted):
-        return None
-    age = datetime.now(UTC) - newest.created_at.replace(tzinfo=UTC)
-    return newest if abs(age) <= DOUBLE_SUBMIT_WINDOW else None
-
-
-def _record_attempt(
-    session: Session,
-    item: models.QuizItem,
-    submitted: str,
-    correct: bool,
-    elapsed_ms: int | None,
-    source: str = LESSON_QUIZ_SOURCE,
-) -> models.Attempt:
-    """Append one attempt row. Attempts are never updated: the history is the data.
-
-    Everything but the submitted answer and the elapsed time comes off the quiz item
-    server-side, so a client cannot claim a different lesson, concept, or answer key.
-    """
-    duplicate = _recent_duplicate(session, item.id, submitted)
-    if duplicate is not None:
-        return duplicate
-
-    # count+1 is safe only while attempts are never removed. If pruning or archival
-    # is ever added, a gap makes every recount collide on the same taken ordinal and
-    # this wedges permanently at 409; switch to max(attempt_no)+1 at that point.
-    for _ in range(2):
-        prior = (
-            session.query(func.count(models.Attempt.id))
-            .filter(models.Attempt.quiz_item_id == item.id)
-            .scalar()
-            or 0
-        )
-        row = models.Attempt(
-            quiz_item_id=item.id,
-            lesson_id=item.lesson_id,
-            concept_key=normalize_concept(item.concept),
-            concept_label=item.concept or "",
-            submitted_answer=submitted,
-            expected_answer=item.answer,
-            correct=correct,
-            attempt_no=prior + 1,
-            source=source,
-            grader=GRADER,
-            elapsed_ms=elapsed_ms,
-        )
-        session.add(row)
-        try:
-            session.commit()
-        except IntegrityError:
-            # Another request took this attempt_no between the count and the insert.
-            # Re-count and try once more before giving up.
-            session.rollback()
-            continue
-        session.refresh(row)
-        return row
-
-    raise HTTPException(409, "That answer collided with another submission. Try again.")
-
-
 @app.get("/lessons/{lesson_id}")
 def get_lesson(lesson_id: int, session: Session = Depends(get_session)):
     lesson = session.get(models.Lesson, lesson_id)
@@ -514,14 +354,21 @@ def _completion_state(lesson: models.Lesson) -> dict:
 @app.post("/lessons/{lesson_id}/complete")
 def complete_lesson(lesson_id: int, session: Session = Depends(get_session)):
     """Idempotent: completed_at records when the lesson was first finished, so a
-    repeat POST must not push that timestamp forward."""
+    repeat POST must not push that timestamp forward.
+
+    Completion is also where a lesson's concepts enter the review schedule. Grading
+    here rather than on each answer means the learner chose the boundary, and it is
+    idempotent for the same reason the timestamp is: review.grade_lesson only reads
+    attempts newer than the card's last review, so a repeat POST rates nothing.
+    """
     lesson = session.get(models.Lesson, lesson_id)
     if not lesson:
         raise HTTPException(404, "Lesson not found")
+    scheduled = review.grade_lesson(session, lesson)
     if lesson.completed_at is None:
         lesson.completed_at = datetime.now(UTC)
-        session.commit()
-    return _completion_state(lesson)
+    session.commit()
+    return _completion_state(lesson) | {"scheduled_concepts": len(scheduled)}
 
 
 @app.delete("/lessons/{lesson_id}/complete")
@@ -535,6 +382,195 @@ def uncomplete_lesson(lesson_id: int, session: Session = Depends(get_session)):
         lesson.completed_at = None
         session.commit()
     return _completion_state(lesson)
+
+
+def _card_payload(
+    row: models.ReviewCard, item: models.QuizItem | None, now: datetime
+) -> dict:
+    """One queue entry: the card, the question to ask, and the four button intervals."""
+    return {
+        "card_id": row.id,
+        "concept_key": row.concept_key,
+        "concept_label": row.concept_label,
+        "state": row.state,
+        "due": iso_utc(row.due),
+        "lapses": row.lapses,
+        "retrievability": review.card_retrievability(row, now),
+        "preview": review.preview(row, now),
+        # No answer key: the learner has not answered yet, and the whole point of a
+        # review is that they retrieve it rather than recognize it.
+        "item": None
+        if item is None
+        else {
+            "id": item.id,
+            "question": item.question,
+            "kind": item.kind,
+            "options": item.options,
+        },
+    }
+
+
+@app.get("/review/today")
+def get_review_today(session: Session = Depends(get_session)):
+    """The Today screen: what is due, how the learner is doing, and what is slipping."""
+    now = review.now_utc()
+    counts = review.due_counts(session, now)
+    struggling = review.needs_attention(session, now)
+    due_now = counts["due_today"]
+    return {
+        "date": days.today_key(now),
+        **counts,
+        **review.retention(session, now),
+        "day_streak": review.day_streak(session, now),
+        "estimated_minutes": review.estimated_minutes(session, due_now),
+        # "4 of these you have struggled with before", on the review session card.
+        "struggling_due": sum(1 for entry in struggling if entry["is_due"]),
+        "needs_attention": [entry | {"due": iso_utc(entry["due"])} for entry in struggling],
+    }
+
+
+@app.get("/review/queue")
+def get_review_queue(
+    limit: int = review.DEFAULT_QUEUE_LIMIT, session: Session = Depends(get_session)
+):
+    """Cards due right now, hardest-to-recall first.
+
+    `limit` caps how many are handed to the client, but nothing is rescheduled to fit
+    it: `due_total` reports the real backlog. Trimming the schedule to fit a session
+    would be the scheduler lying to make a number look better.
+    """
+    limit = max(1, min(limit, 200))
+    now = review.now_utc()
+    rows = review.due_cards(session, now)
+    served = rows[:limit]
+    items = review.pick_items(session, [row.concept_key for row in served])
+    return {
+        "due_total": len(rows),
+        "estimated_minutes": review.estimated_minutes(session, len(rows)),
+        "cards": [_card_payload(row, items.get(row.concept_key), now) for row in served],
+    }
+
+
+class ReviewAnswer(BaseModel):
+    item_id: int
+    answer: str
+    elapsed_ms: int | None = None
+
+
+@app.post("/review/cards/{card_id}/answer")
+def answer_review(card_id: int, body: ReviewAnswer, session: Session = Depends(get_session)):
+    """Record an answer given during a review session and suggest a rating for it.
+
+    Nothing is scheduled here. The learner sees their own answer against the expected
+    one and then rates their recall, which is what the review screen shows and what
+    the separate rate endpoint applies. The suggestion exists so the UI can preselect
+    a button, and whether the learner overrides it is recorded when they rate.
+    """
+    card = session.get(models.ReviewCard, card_id)
+    if not card:
+        raise HTTPException(404, "Review card not found")
+    item = session.get(models.QuizItem, body.item_id)
+    if not item:
+        raise HTTPException(404, "Quiz item not found")
+    if normalize_concept(item.concept) != card.concept_key:
+        raise HTTPException(400, "That quiz item does not test this concept")
+    if not body.answer.strip():
+        raise HTTPException(400, "Answer cannot be empty")
+
+    # One try per item per exposure, enforced here because this response hands back
+    # the answer key. Without the guard a learner can answer wrong, read `expected`,
+    # resubmit it, and be graded as a clean recall, which defeats the retrieval test
+    # the card exists to run. The exposure starts at the card's last review, so the
+    # next time this concept comes due the item is answerable again.
+    if review.already_answered_this_exposure(session, card, item):
+        raise HTTPException(409, "You have already answered this question in this review")
+
+    attempt = _record_attempt(
+        session,
+        item,
+        body.answer,
+        _grade(body.answer, item.answer),
+        _sanitize_elapsed_ms(body.elapsed_ms),
+        source=review.REVIEW_SESSION_SOURCE,
+    )
+    suggested = rating_v1([attempt], {item.id: item})
+    return {
+        "correct": attempt.correct,
+        "expected": item.answer,
+        "submitted": attempt.submitted_answer,
+        "attempt_id": attempt.id,
+        "suggested_rating": suggested.rating,
+        "rating_v": suggested.rating_v,
+        "preview": review.preview(card, review.now_utc()),
+    }
+
+
+class ReviewRating(BaseModel):
+    rating: int
+    suggested_rating: int | None = None
+    attempt_ids: list[int] | None = None
+
+
+@app.post("/review/cards/{card_id}/rate")
+def rate_review(card_id: int, body: ReviewRating, session: Session = Depends(get_session)):
+    """Apply the learner's rating to a card and reschedule it."""
+    card = session.get(models.ReviewCard, card_id)
+    if not card:
+        raise HTTPException(404, "Review card not found")
+    if body.rating not in fsrs.RATINGS:
+        raise HTTPException(400, f"rating must be one of {list(fsrs.RATINGS)}")
+
+    suggested = body.suggested_rating
+    log = review.record_review(
+        session,
+        card.concept_key,
+        card.concept_label,
+        body.rating,
+        suggested_rating=suggested,
+        # "learner" only when they actually disagreed with the suggestion. Recording
+        # every rating as an override would drown the signal that the derivation is
+        # miscalibrated, which is the reason the column exists.
+        rating_source=review.LEARNER
+        if suggested is not None and suggested != body.rating
+        else review.DERIVED,
+        attempt_ids=body.attempt_ids,
+    )
+    session.commit()
+    return {
+        "card_id": card.id,
+        "concept_key": card.concept_key,
+        "state": card.state,
+        "stability": card.stability,
+        "difficulty": card.difficulty,
+        "due": iso_utc(card.due),
+        "reps": card.reps,
+        "lapses": card.lapses,
+        "scheduled_days": log.scheduled_days,
+        "interval_label": review.format_interval(card.due - log.reviewed_at),
+    }
+
+
+@app.get("/courses/{course_id}/concepts")
+def get_course_concepts(course_id: int, session: Session = Depends(get_session)):
+    """The concept map's data: every concept in the course with its mastery bucket.
+
+    `locked` is deliberately absent from the buckets. Concept prerequisites are not in
+    the data model yet, so nothing here can honestly say a concept is gated.
+    """
+    course = session.get(models.Course, course_id)
+    if not course:
+        raise HTTPException(404, "Course not found")
+    now = review.now_utc()
+    concepts = review.course_concepts(session, course, now)
+    counts: dict[str, int] = defaultdict(int)
+    for concept in concepts:
+        counts[concept["bucket"]] += 1
+    return {
+        "course_id": course.id,
+        "title": course.title,
+        "counts": dict(counts),
+        "concepts": [entry | {"due": iso_utc(entry["due"])} for entry in concepts],
+    }
 
 
 @app.get("/usage")
