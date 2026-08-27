@@ -56,6 +56,15 @@ def available_sources() -> dict:
             "darwin-origin-excerpt",
             (DATA_DIR / "prose-darwin.txt").read_text(encoding="utf-8"),
         ),
+        # A 2,500-char excerpt of the same text, for prompt trials. One course costs
+        # roughly a third of the full source, which is what makes running the same
+        # variant several times affordable, and repeated runs are the only way to tell
+        # a real difference from the spread between two runs of one prompt.
+        "prose-short": lambda: sources.from_text(
+            "prose-short",
+            "darwin-origin-short",
+            (DATA_DIR / "prose-darwin-short.txt").read_text(encoding="utf-8"),
+        ),
     }
 
 
@@ -192,6 +201,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT_DIR)
     parser.add_argument(
+        "--variant",
+        help="named prompt variant from evals/variants.py; omit to use what app code ships",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="ingest and project cost without calling the model",
@@ -262,6 +275,12 @@ def main(argv: list[str] | None = None) -> int:
     from app.db import init_db
 
     init_db()
+
+    if args.variant:
+        from evals import variants
+
+        chosen = variants.apply(args.variant)
+        print(f"Prompt variant: {chosen.key} ({chosen.note})")
 
     results = []
     for source in loaded:

@@ -69,13 +69,20 @@ stop emitting JSON.
 Quiz rules:
 - Write 3-6 items. For "mcq" give exactly 4 options and set "answer" to the correct option's \
 text. For "short" leave "options" empty.
-- Every question must be answerable from the lesson content alone. Before asking about \
-something, teach it in "content" first, in enough detail that a reader who has only this lesson \
-can answer.
+- Every answer must be traceable to the source material: a reader should be able to point at \
+the passage it comes from. Do not ask about anything the source does not actually say, and do \
+not require knowledge the source assumes but never states.
+- Teach a thing in "content" before asking about it, so the lesson alone is enough to answer.
 - Write all four MCQ options in the same voice, at similar length and specificity. Never lift \
 the correct option word for word from a sentence in the content while inventing the other three: \
 that makes the item solvable by spotting the familiar phrase. Each wrong option should be a \
 claim a reader who half-understood the lesson could genuinely believe."""
+# Chosen by measurement, not taste. See evals/output/trials-report.md: over four runs each on a
+# short source, this wording scored 59.7% answerable and 50.4% grounded against 21.2% and 16.8%
+# for the previous wording, with non-overlapping ranges, and held at 48.5% and 46.9% over two
+# runs of the full source. The sentence doing the work is the first one: anchoring answers to a
+# passage in the SOURCE, rather than merely to the lesson, also dropped hallucination candidates
+# from 30 per course to 6.5. Change it only against a fresh run of the same trial.
 
 # Sent back with the original prompt when a reply cannot be parsed. Names the one
 # failure mode worth naming: the model narrating around the object, or fencing it.
