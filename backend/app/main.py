@@ -416,7 +416,7 @@ def get_review_today(session: Session = Depends(get_session)):
     now = review.now_utc()
     counts = review.due_counts(session, now)
     struggling = review.needs_attention(session, now)
-    due_now = counts["due_today"]
+    due_now = counts["due_now"]
     return {
         "date": days.today_key(now),
         **counts,

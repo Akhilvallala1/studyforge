@@ -182,6 +182,13 @@ export interface NeedsAttentionEntry {
 export interface ReviewToday {
   /** The local YYYY-MM-DD study day, which starts at 04:00 rather than midnight. */
   date: string;
+  /**
+   * What a review session would serve right now. Smaller than due_today whenever a
+   * card was rated Again and is sitting out its ten-minute step, so this is what
+   * gates the Start review button and the "N due now" copy.
+   */
+  due_now: number;
+  /** The whole day's workload, for the Due today tile. Includes cards not yet servable. */
   due_today: number;
   due_this_week: number;
   /**

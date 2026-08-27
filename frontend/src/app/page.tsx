@@ -35,12 +35,23 @@ function dueSentence(dueToday: number): string {
   return `${dueToday} concepts are due for review`;
 }
 
-/** "18 due now, about 9 minutes." plus the struggling clause only when there is one. */
+/** "18 due now, about 9 minutes." plus the struggling clause only when there is one.
+ *
+ * Reads due_now, not due_today. A card rated Again is due in ten minutes, so it counts
+ * toward the day's workload while a session cannot serve it yet. Saying "2 due now" off
+ * the day figure and then showing an empty session is the bug this distinction fixes,
+ * and when the two disagree the gap is explained rather than hidden. */
 function sessionSentence(today: ReviewToday): string {
-  if (today.due_today === 0) {
+  if (today.due_now === 0) {
+    const later = today.due_today;
+    if (later > 0) {
+      return `Nothing is due right now. ${later} ${
+        later === 1 ? "concept comes" : "concepts come"
+      } back later today.`;
+    }
     return "Nothing is due right now. Concepts come back as their recall probability drops.";
   }
-  const head = `${today.due_today} due now, about ${today.estimated_minutes} ${
+  const head = `${today.due_now} due now, about ${today.estimated_minutes} ${
     today.estimated_minutes === 1 ? "minute" : "minutes"
   }.`;
   if (today.struggling_due === 0) return head;
@@ -214,7 +225,7 @@ export default async function TodayPage() {
               {sessionSentence(today)}
             </p>
           </div>
-          {today.due_today > 0 && (
+          {today.due_now > 0 && (
             <Link
               href="/review"
               className="shrink-0 whitespace-nowrap rounded-lg bg-zinc-900 px-[18px] py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"

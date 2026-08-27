@@ -504,7 +504,16 @@ def due_counts(session: Session, now: datetime | None = None) -> dict:
             or 0
         )
 
-    return {"due_today": count_before(today_end), "due_this_week": count_before(week_end)}
+    # due_now and due_today answer different questions and both are needed. due_today
+    # is the day's workload, for planning. due_now is what a session would actually
+    # serve, which is smaller whenever a card was rated Again and is sitting out its
+    # ten-minute step. Reporting only the day figure made the Today screen offer a
+    # review session that then had nothing to show.
+    return {
+        "due_now": count_before(moment),
+        "due_today": count_before(today_end),
+        "due_this_week": count_before(week_end),
+    }
 
 
 def retention(session: Session, now: datetime | None = None) -> dict:

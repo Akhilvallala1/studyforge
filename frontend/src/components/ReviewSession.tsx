@@ -247,7 +247,7 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
             <div className="mt-3.5 rounded-lg border border-zinc-200 bg-white p-8 dark:border-zinc-800 dark:bg-zinc-900">
               <p className="text-xl font-medium leading-[1.45]">{item.question}</p>
 
-              {phase.kind === "answering" ? (
+              {phase.kind === "answering" && (
                 <div className="mt-6">
                   {item.kind === "mcq" ? (
                     <fieldset className="flex flex-col gap-2">
@@ -299,10 +299,17 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
                     {busy ? "Checking…" : "Show answer"}
                   </button>
                 </div>
-              ) : (
-                // Announced, because focus moves to the rating buttons while the
-                // reference answer renders above them.
-                <div aria-live="polite">
+              )}
+
+              {/* Mounted unconditionally and left empty while answering. A live region
+                  has to be in the accessible tree BEFORE its content arrives: if the
+                  attribute and the text appear in the same render, screen readers
+                  routinely miss the announcement. That matters here because focus moves
+                  to the rating buttons while the reference answer renders above them,
+                  and the buttons do not name it. */}
+              <div aria-live="polite">
+                {phase.kind !== "answering" && (
+                  <>
                   {phase.alreadyAnswered ? (
                     <div className="mt-6 border-t border-zinc-100 pt-5 dark:border-zinc-800">
                       <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-300">
@@ -331,8 +338,9 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
                       </div>
                     </>
                   )}
-                </div>
-              )}
+                  </>
+                )}
+              </div>
             </div>
 
             {error && (
