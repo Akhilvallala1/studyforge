@@ -316,14 +316,31 @@ class TestDashboard:
                         elapsed_days=3.0,
                     )
                 )
-            # Same-day and learning-state rows must not dilute the figure.
+            # Two decoys, each failing exactly ONE of the filters, so neither filter
+            # can be deleted without a test noticing. A single row failing both would
+            # leave each filter covered only by the other.
+            #
+            # Fails only the state filter: a genuine day-later gap, but taken during
+            # learning rather than review.
             session.add(
                 models.ReviewLog(
                     card_id=card.id,
                     reviewed_at=now,
-                    rating=fsrs.GOOD,
-                    suggested_rating=fsrs.GOOD,
+                    rating=fsrs.AGAIN,
+                    suggested_rating=fsrs.AGAIN,
                     state_before=fsrs.LEARNING,
+                    state_after=fsrs.REVIEW,
+                    elapsed_days=3.0,
+                )
+            )
+            # Fails only the elapsed filter: a review-state card, drilled the same day.
+            session.add(
+                models.ReviewLog(
+                    card_id=card.id,
+                    reviewed_at=now,
+                    rating=fsrs.AGAIN,
+                    suggested_rating=fsrs.AGAIN,
+                    state_before=fsrs.REVIEW,
                     state_after=fsrs.REVIEW,
                     elapsed_days=0.0,
                 )
@@ -383,18 +400,17 @@ class TestNeedsAttention:
         assert client.get("/review/today").json()["needs_attention"] == []
 
     def test_lapses_older_than_the_window_stop_counting(self, client):
+        """Also pins the absence of hysteresis, which is deliberate: needs_attention
+        recomputes from the recent ratings on every request with no persisted flag, so
+        a concept leaves the list the moment its lapses age out of the window. Adding
+        hysteresis later needs a stored flag to attach to, which is a schema change
+        and a product decision, not a quiet code change."""
         _seed_card(
             "recovered",
             ratings=(fsrs.AGAIN, fsrs.AGAIN, fsrs.GOOD, fsrs.GOOD, fsrs.GOOD, fsrs.GOOD, fsrs.GOOD),
         )
         assert client.get("/review/today").json()["needs_attention"] == []
 
-    def test_exit_requires_two_clean_ratings_in_a_row(self):
-        # Trigger still true: stays flagged.
-        assert review.cleared_attention([fsrs.GOOD, fsrs.GOOD, fsrs.AGAIN, fsrs.AGAIN]) is False
-        # Trigger false but the most recent rating was a lapse: hysteresis holds it.
-        assert review.cleared_attention([fsrs.AGAIN, fsrs.GOOD, fsrs.GOOD]) is False
-        assert review.cleared_attention([fsrs.GOOD, fsrs.GOOD, fsrs.AGAIN]) is True
 
 
 class TestMastery:
@@ -502,6 +518,46 @@ class TestReviewEndpoints:
         finally:
             session.close()
         assert sources == ["lesson_quiz", "review_session"]
+
+    def test_a_second_answer_to_the_same_item_is_refused(self, client):
+        """The answer response hands back the expected answer so the learner can judge
+        their own recall. If a resubmit were accepted, answering wrong, reading the
+        key and sending it back would be recorded as a clean recall, which defeats the
+        retrieval test the card exists to run."""
+        card_id, item_id, answer = self._due_card(client)
+
+        first = client.post(
+            f"/review/cards/{card_id}/answer",
+            json={"item_id": item_id, "answer": "definitely wrong"},
+        ).json()
+        assert first["correct"] is False
+        revealed = first["expected"]
+
+        retry = client.post(
+            f"/review/cards/{card_id}/answer",
+            json={"item_id": item_id, "answer": revealed},
+        )
+        assert retry.status_code == 409
+
+        session = SessionLocal()
+        try:
+            written = (
+                session.query(models.Attempt)
+                .filter(models.Attempt.quiz_item_id == item_id)
+                .filter(models.Attempt.source == review.REVIEW_SESSION_SOURCE)
+                .count()
+            )
+        finally:
+            session.close()
+        assert written == 1
+
+        # The block is scoped to this exposure: once the card is rated and comes due
+        # again, the same item is answerable, which is the point of spaced repetition.
+        client.post(f"/review/cards/{card_id}/rate", json={"rating": fsrs.GOOD})
+        again = client.post(
+            f"/review/cards/{card_id}/answer", json={"item_id": item_id, "answer": answer}
+        )
+        assert again.status_code == 200
 
     def test_an_item_from_another_concept_is_rejected(self, client):
         card_id, _, _ = self._due_card(client)

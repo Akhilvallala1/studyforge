@@ -477,6 +477,14 @@ def answer_review(card_id: int, body: ReviewAnswer, session: Session = Depends(g
     if not body.answer.strip():
         raise HTTPException(400, "Answer cannot be empty")
 
+    # One try per item per exposure, enforced here because this response hands back
+    # the answer key. Without the guard a learner can answer wrong, read `expected`,
+    # resubmit it, and be graded as a clean recall, which defeats the retrieval test
+    # the card exists to run. The exposure starts at the card's last review, so the
+    # next time this concept comes due the item is answerable again.
+    if review.already_answered_this_exposure(session, card, item):
+        raise HTTPException(409, "You have already answered this question in this review")
+
     attempt = _record_attempt(
         session,
         item,

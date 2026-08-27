@@ -18,7 +18,7 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app import days, fsrs, models
 from app.attempts import LESSON_QUIZ_SOURCE
@@ -261,11 +261,26 @@ def grade_lesson(
         if key:
             by_concept.setdefault(key, item.concept or key)
 
+    # One query for every card and one for every attempt, then group in Python. Doing
+    # it per concept cost three queries each, which grows with the size of the lesson.
+    cards = {
+        row.concept_key: row
+        for row in session.query(models.ReviewCard)
+        .filter(models.ReviewCard.concept_key.in_(list(by_concept)))
+        .all()
+    }
+    all_attempts = _exposure_attempts(session, lesson.id, None)
+    by_key: dict[str, list[models.Attempt]] = defaultdict(list)
+    for attempt in all_attempts:
+        by_key[attempt.concept_key].append(attempt)
+
     logs: list[models.ReviewLog] = []
     for concept_key, concept_label in by_concept.items():
-        card_row = get_card(session, concept_key)
-        attempts = _exposure_attempts(session, lesson.id, card_row.last_review if card_row else None)
-        scoped = [a for a in attempts if a.concept_key == concept_key]
+        card_row = cards.get(concept_key)
+        # The exposure window is per card: a concept already reviewed is graded only
+        # on attempts made since, so recompleting a lesson cannot re-grade old answers.
+        since = card_row.last_review if card_row is not None else None
+        scoped = [a for a in by_key[concept_key] if since is None or a.created_at > since]
         if not scoped:
             continue
 
@@ -296,6 +311,30 @@ def grade_lesson(
 # --------------------------------------------------------------------------
 # Queue and previews
 # --------------------------------------------------------------------------
+
+
+def already_answered_this_exposure(
+    session: Session, card: models.ReviewCard, item: models.QuizItem
+) -> bool:
+    """Has this item already been answered since the card was last reviewed?
+
+    A review is a retrieval test, and the answer endpoint returns the expected answer
+    so the learner can judge their own recall. Those two facts together mean a second
+    submission must be refused: otherwise the learner reads the key and resubmits it,
+    and a failed recall is recorded as a clean one.
+
+    Scoped to the current exposure rather than to all time, so the same question is
+    answerable again the next time the concept comes due, which is the entire point of
+    spaced repetition.
+    """
+    query = (
+        session.query(models.Attempt.id)
+        .filter(models.Attempt.quiz_item_id == item.id)
+        .filter(models.Attempt.source == REVIEW_SESSION_SOURCE)
+    )
+    if card.last_review is not None:
+        query = query.filter(models.Attempt.created_at > card.last_review)
+    return session.query(query.exists()).scalar() or False
 
 
 def card_retrievability(row: models.ReviewCard, now: datetime) -> float | None:
@@ -437,11 +476,6 @@ def pick_items(
         else:
             chosen[key] = min(items, key=lambda item: (last_seen[item.id], item.id))
     return chosen
-
-
-def pick_item(session: Session, concept_key: str) -> models.QuizItem | None:
-    """Single-concept convenience wrapper over pick_items."""
-    return pick_items(session, [concept_key]).get(concept_key)
 
 
 # --------------------------------------------------------------------------
@@ -647,39 +681,34 @@ def needs_attention(session: Session, now: datetime | None = None) -> list[dict]
     return flagged
 
 
-def cleared_attention(recent: list[int]) -> bool:
-    """Whether a flagged concept has earned its way off the attention list.
-
-    Requires the trigger to be false AND the two most recent ratings to be clean. The
-    second clause is hysteresis: without it a card sitting exactly on the threshold
-    flips on and off as old ratings age out of the window, and the learner watches
-    concepts they have not touched appear and disappear.
-    """
-    if sum(1 for rating in recent if rating == fsrs.AGAIN) >= ATTENTION_LAPSES:
-        return False
-    return len(recent) >= 2 and all(rating != fsrs.AGAIN for rating in recent[:2])
-
-
 def course_concepts(session: Session, course: models.Course, now: datetime | None = None) -> list[dict]:
     """Every concept in a course with its mastery bucket, for the concept map.
 
-    Two queries and a Python join, not a SQL join: the concepts live in Lesson.concepts,
-    a JSON column SQLite cannot index into, and review_cards has no course id because
-    concepts are global. Chunked against SQLite's parameter limit, which a large course
-    could otherwise walk into.
+    A Python join, not a SQL one: the concepts live in Lesson.concepts, a JSON column
+    SQLite cannot index into, and review_cards has no course id because concepts are
+    global. The lessons and their quiz items are pulled in one eager query rather than
+    lazy-loading per lesson, which otherwise costs a query per lesson and grows with
+    the size of the course. Card lookups are chunked against SQLite's parameter limit.
     """
     moment = now_utc() if now is None else _naive_utc(now)
+    lessons = (
+        session.query(models.Lesson)
+        .join(models.Module)
+        .filter(models.Module.course_id == course.id)
+        .options(selectinload(models.Lesson.quiz_items))
+        .all()
+    )
+
     labels: dict[str, str] = {}
-    for module in course.modules:
-        for lesson in module.lessons:
-            for raw in lesson.concepts or []:
-                key = normalize_concept(raw if isinstance(raw, str) else "")
-                if key:
-                    labels.setdefault(key, raw)
-            for item in lesson.quiz_items:
-                key = normalize_concept(item.concept)
-                if key:
-                    labels.setdefault(key, item.concept)
+    for lesson in lessons:
+        for raw in lesson.concepts or []:
+            key = normalize_concept(raw if isinstance(raw, str) else "")
+            if key:
+                labels.setdefault(key, raw)
+        for item in lesson.quiz_items:
+            key = normalize_concept(item.concept)
+            if key:
+                labels.setdefault(key, item.concept)
 
     cards: dict[str, models.ReviewCard] = {}
     keys = list(labels)
