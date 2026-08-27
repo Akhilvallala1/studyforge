@@ -1,14 +1,14 @@
-# Darwin's Natural Selection: Reading Chapter IV of the Origin of Species
+# Darwin's Natural Selection: Reading Chapter IV of On the Origin of Species
 
-> A close reading of the opening pages of Chapter IV of On the Origin of Species (1859), in which Darwin defines natural selection, contrasts it with the selection practised by breeders, and shows how even seemingly trivial characters can be shaped by it. Each lesson stays anchored to Darwin's own argument and examples in the excerpt.
+> A close reading of the opening pages of Chapter IV of Charles Darwin's On the Origin of Species (1859), in which he defines natural selection, contrasts it with selection practised by human breeders, and shows how it can act even on characters that appear trivial. The course follows Darwin's own argument and examples, from the preservation of favourable variations to the camouflage of grouse and the skins of plums.
 
 ## How this was generated
 
-- Eval run: `prose-text` (run id `8d4f8a5d27a34bbc8e788a054a69c8b1`)
+- Eval run: `prose-text` (run id `40c96bbf869d4472851762fbb619a6b7`)
 - Source: text `darwin-origin-excerpt`, 10,637 characters in 2 chunks
 - Provider/model: anthropic / `claude-opus-5`
-- 12 LLM calls, 46,269 input tokens, 47,361 output tokens, $1.4154, 666s wall clock
-- Prompt fingerprint: outline `51268cb63391`, lesson `f575bed1be67`
+- 12 LLM calls, 46,991 input tokens, 45,759 output tokens, $1.3789, 598s wall clock
+- Prompt fingerprint: outline `51268cb63391`, lesson `1e6fc5164c70`
 
 Quiz answers are shown inline on purpose: this file exists so a human can check whether the answers are actually supported by the source.
 
@@ -18,7 +18,7 @@ Quiz answers are shown inline on purpose: this file exists so a human can check 
 
 ### Lesson 1.1: From the Struggle for Existence to Selection in Nature
 
-**Concepts:** Darwin's chain of premises: variation, heredity, overproduction, and complex mutual relations, Natural selection defined as the preservation of favourable and rejection of injurious variations, Neutral variation and polymorphism as the limit of selection's reach, Why slight differences matter: nicely balanced forces and close-fitting relations, Nature's selection contrasted with man's in scope, rigour, and time
+**Concepts:** Darwin's three premises: variability, strong heredity, and close-fitting mutual relations, Natural selection defined as the preservation of favourable and rejection of injurious variations, Neutral variations are unaffected by selection and remain a fluctuating element, Why natural selection surpasses human selection in scope, thoroughness, and time, Naturalisation as evidence that no country's natives are perfectly adapted
 
 **Written from source segments:** [0, 1]
 
@@ -26,125 +26,105 @@ Quiz answers are shown inline on purpose: this file exists so a human can check 
 
 # From the Struggle for Existence to Selection in Nature
 
-## The question Darwin asks
+## The question that opens the chapter
 
-Chapter IV of *On the Origin of Species* opens not with an answer but with a question. Darwin has just spent a chapter on the struggle for existence, and three chapters before that on how breeders reshape pigeons, dogs, and cabbages by picking which individuals get to breed. Now he puts the two together:
+Darwin begins Chapter IV not with an assertion but with two questions:
 
 > "How will the struggle for existence, discussed too briefly in the last chapter, act in regard to variation? Can the principle of selection, which we have seen is so potent in the hands of man, apply in nature?"
 
-Notice the rhetorical shape. Darwin is not introducing a mysterious new force. He is asking whether a process his readers already accept as real and powerful — the breeder's selection — has a counterpart operating without a breeder. His answer, offered immediately and then defended for the rest of the chapter, is: "I think we shall see that it can act most effectually."
+His answer — "I think we shall see that it can act most effectually" — is announced immediately, but the interest lies in *how* he gets there. What follows is not a demonstration from new evidence so much as an invitation to hold three things in mind at once. Darwin literally repeats the phrase "Let it be borne in mind" as he stacks up his premises. Read the opening paragraph as a chain of linked propositions and the whole argument becomes visible in a single page.
 
-## The chain of premises
+## Premise 1: Organisms vary, endlessly and strangely
 
-Darwin's argument is a short chain, and each link is something he claims the reader already grants. It is worth separating the links, because the conclusion is only as good as the premises, and Darwin knows it.
+Darwin asks us to remember "in what an endless number of strange peculiarities our domestic productions, and, in a lesser degree, those under nature, vary."
 
-**1. Organisms vary — endlessly and strangely.** "Let it be borne in mind in what an endless number of strange peculiarities our domestic productions, and, in a lesser degree, those under nature, vary." Two things to catch here. First, the variation is *undirected* in character: "strange peculiarities," not tidy improvements. Second, Darwin concedes openly that wild organisms vary *less* conspicuously than domestic ones. He does not overstate his case. Under domestication, he says, "the whole organisation becomes in some degree plastic" — and he elsewhere attributes this to changed conditions of life acting on the reproductive system and increasing variability.
+Notice the careful qualification: **in a lesser degree**. Darwin does not claim that wild organisms are as variable as pigeons and cabbages. Domestication, he says, makes "the whole organisation ... in some degree plastic" — a change in the conditions of life acts on the reproductive system and causes or increases variability. Wild species vary too, just less floridly. This asymmetry matters, because it means Darwin must argue that natural selection does not need extravagant variation to work with. He grants the point later in the chapter: "Not that, as I believe, any extreme amount of variability is necessary; as man can certainly produce great results by adding up in any given direction mere individual differences, so could Nature, but far more easily, from having incomparably longer time at her disposal."
 
-**2. Heredity is strong.** "...and how strong the hereditary tendency is." Variation alone would be useless froth if offspring did not resemble parents. Selection of any kind — a breeder's or nature's — can only accumulate what is passed on.
+## Premise 2: The hereditary tendency is strong
 
-**3. Many more individuals are born than can survive.** This is the load-bearing premise carried over from the struggle for existence: "remembering that many more individuals are born than can possibly survive." It guarantees that most individuals must fail. Death is not an occasional accident to be explained; it is the ordinary condition, and something must decide *who*.
+Variation alone would be useless if offspring did not resemble their parents. Darwin's second reminder is simply "how strong the hereditary tendency is." A peculiarity that appears and then vanishes cannot be accumulated. A peculiarity that is passed on can be. This is stated in a clause and never elaborated here — Darwin is drawing on the earlier chapters on domestication rather than making the case afresh.
 
-**4. The mutual relations of organisms are infinitely complex and close-fitting.** "Let it be borne in mind how infinitely complex and close-fitting are the mutual relations of all organic beings to each other and to their physical conditions of life." This premise does the subtle work. Because every organism is wedged tightly against others and against its physical conditions, there are countless ways in which a tiny difference could matter. A slightly longer root, a slightly different tint, a slightly altered habit — in a close-fitting system, these are not negligible.
+## Premise 3: The mutual relations of organisms are infinitely complex and close-fitting
 
-**5. Therefore useful variations must sometimes arise.** Darwin argues by analogy: "seeing that variations useful to man have undoubtedly occurred," is it improbable "that other variations useful in some way to each being in the great and complex battle of life, should sometimes occur in the course of thousands of generations?" Variations useful to a pigeon fancier are not aimed at pigeon fanciers; they simply happen. If variation throws up things useful to us by accident, it will throw up things useful to the organism by accident too — especially given thousands of generations.
+The third reminder is the richest: "how infinitely complex and close-fitting are the mutual relations of all organic beings to each other and to their physical conditions of life."
 
-**6. Therefore the advantaged survive and reproduce.** "Can we doubt... that individuals having any advantage, however slight, over others, would have the best chance of surviving and of procreating their kind? On the other hand, we may feel sure that any variation in the least degree injurious would be rigidly destroyed."
+Two kinds of relation are named — organism to *organism*, and organism to *physical conditions*. Because the fit is close, small alterations matter. Because the web is complex, disturbing one thread pulls on many. Darwin illustrates this with the thought experiment of a country undergoing a change of climate: proportional numbers of the inhabitants shift at once, some species may go extinct, and "any change in the numerical proportions of some of the inhabitants, *independently of the change of climate itself*, would most seriously affect many of the others." The knock-on effects are as important as the original cause.
+
+## From premises to conclusion
+
+With these in place, Darwin advances by a pair of rhetorical questions:
+
+1. Since variations useful *to man* have undoubtedly occurred, is it improbable that variations useful *to the being itself*, in "the great and complex battle of life," should sometimes occur in the course of thousands of generations?
+2. If such variations do occur — and *remembering that many more individuals are born than can possibly survive* — can we doubt that individuals having any advantage, "however slight," would have the best chance of surviving and of procreating their kind?
+
+That parenthesis is where the previous chapter's struggle for existence enters and does its work. Superabundant birth guarantees that most individuals die; the close-fitting web guarantees that slight differences bear on which ones do. Conversely, "any variation in the least degree injurious would be rigidly destroyed."
 
 ## The definition
 
-Only after the chain is complete does Darwin name the thing:
-
 > "This preservation of favourable variations and the rejection of injurious variations, I call Natural Selection."
 
-Read this carefully. Natural selection, in Darwin's own definition, is *not* a cause of variation. It is a **two-sided filter** — preservation on one side, rejection on the other — acting on variation that has already arisen from other causes. This is why he adds, a sentence later, that "unless profitable variations do occur, natural selection can do nothing." Variation is the raw material; selection is the sorting.
+The definition has two halves — preservation *and* rejection — and it is a name for a process, not a force added to nature from outside.
 
-## The third category: neither useful nor injurious
+Darwin then adds a limit that is easy to skip past: "Variations neither useful nor injurious would not be affected by natural selection, and would be left a fluctuating element, as perhaps we see in the species called polymorphic." Natural selection is not a universal explanation of every character. Where a difference makes no difference, the principle simply has no grip, and variability may persist unresolved.
 
-A detail readers often skip, and one that shows the definition has teeth: "Variations neither useful nor injurious would not be affected by natural selection, and would be left a fluctuating element, as perhaps we see in the species called polymorphic."
+## Two closing cautions
 
-If natural selection were merely the claim that "whatever exists must be adaptive," it would be unfalsifiable. Darwin explicitly denies that. Neutral variation is invisible to selection and drifts as a "fluctuating element." Polymorphic species — those persisting in several forms at once — are his suggested example.
+**No great physical change is required.** The climate thought experiment is a teaching device, not a condition. "For as all the inhabitants of each country are struggling together with nicely balanced forces, extremely slight modifications in the structure or habits of one inhabitant would often give it an advantage over others."
 
-## "However slight": why small differences count
+**No country is perfectly adapted.** Darwin's evidence is naturalisation: in all countries the natives "have been so far conquered by naturalised productions, that they have allowed foreigners to take firm possession of the land." Since foreigners have everywhere beaten some natives, the natives "might have been modified with advantage" — so there is always room for improvement, and always work for selection to do.
 
-The hinge of the whole argument is the phrase *however slight*. Darwin needs slight differences to matter, because slight differences are the only kind that reliably exist in nature.
+## Why nature outdoes the breeder
 
-His justification is premise 4, the close-fitting web. "For as all the inhabitants of each country are struggling together with nicely balanced forces, extremely slight modifications in the structure or habits of one inhabitant would often give it an advantage over others." When forces are nicely balanced, a feather's weight tips the scale. And once tipped, "still further modifications of the same kind would often still further increase the advantage."
+Having established that selection can act in nature, Darwin turns the comparison around. Man "can act only on external and visible characters"; nature "cares nothing for appearances, except in so far as they may be useful to any being," and can act "on every internal organ, on every shade of constitutional difference, on the whole machinery of life." Man selects for his own good, nature only for the good of the being she tends. Man feeds a long-beaked and a short-beaked pigeon on the same food, exposes long- and short-woolled sheep to the same climate, does not let the most vigorous males struggle for the females, and protects rather than destroys his inferior animals. He usually starts from "some half-monstrous form" prominent enough to catch the eye. Under nature, "the slightest difference of structure or constitution may well turn the nicely-balanced scale in the struggle for life." Add to this the disparity of time — a breeder's fleeting wishes against "whole geological periods" — and it is no wonder nature's productions bear "the stamp of far higher workmanship."
 
-He reinforces this with an argument from naturalised species: no country can be named where the natives are so perfectly adapted that none could be improved, because everywhere foreign species have been able to invade and "take firm possession of the land." If a stranger can beat a native, the native was improvable. There is always room to do better.
-
-## Nature as selector: better than man in five ways
-
-Having established that selection *can* occur in nature, Darwin turns the analogy around and argues nature is the superior breeder:
-
-- **Scope.** "Man can act only on external and visible characters: nature cares nothing for appearances, except in so far as they may be useful to any being. She can act on every internal organ, on every shade of constitutional difference, on the whole machinery of life."
-- **Interest.** "Man selects only for his own good; Nature only for that of the being which she tends."
-- **Fitting of conditions.** Man feeds a long-beaked and a short-beaked pigeon the same food and exposes long- and short-woolled sheep to the same climate; under nature every selected character "is fully exercised" in its own suited conditions.
-- **Rigour.** Man "does not rigidly destroy all inferior animals, but protects... all his productions," and he does not let the most vigorous males struggle for the females.
-- **Time.** "How fleeting are the wishes and efforts of man! how short his time!" — compared with what nature accumulates "during whole geological periods."
-
-Hence the famous summary: natural selection is "daily and hourly scrutinising, throughout the world, every variation, even the slightest; rejecting that which is bad, preserving and adding up all that is good; silently and insensibly working." And because it is silent and insensible, "we see nothing of these slow changes in progress, until the hand of time has marked the long lapse of ages."
-
-## Trifling characters are not trifling
-
-Darwin anticipates an objection: surely most differences between organisms are too petty to matter. He answers with cases.
-
-Leaf-eating insects are green; bark-feeders mottled-grey; the alpine ptarmigan turns white in winter; the red-grouse matches heather and the black-grouse peaty earth. Grouse suffer heavily from birds of prey, "and hawks are guided by eyesight to their prey — so much so, that on parts of the Continent persons are warned not to keep white pigeons, as being the most liable to destruction." Colour, apparently a trifle, is life or death.
-
-His analogy for the cumulative power of rare deaths is sharp: "we should remember how essential it is in a flock of white sheep to destroy every lamb with the faintest trace of black." Occasional, selective destruction of a minority is exactly how a breeder keeps a character pure — so occasional predation of the conspicuous keeps wild colour "true and constant."
-
-He closes with plants, citing the horticulturist Downing: in the United States smooth-skinned fruits suffer far more from the curculio beetle than downy ones; purple plums suffer more from one disease than yellow plums; and yellow-fleshed peaches are attacked more by another disease. Botanists count down on fruit and flesh colour as characters "of the most trifling importance." Yet if these differences already decide outcomes *with all the aids of art*, then in the wild, where trees struggle "with other trees and with a host of enemies," such differences "would effectually settle which variety... should succeed."
-
-## Summary of the reasoning
-
-Variation is endless and strange → it is inherited → far more are born than can live → all beings are wedged into a close-fitting web where the slightest difference tips a nicely balanced scale → so favourable variations are preserved and injurious ones rigidly destroyed → and that filtering, accumulated over geological time, is natural selection.
 
 #### Quiz
 
-1. **In Darwin's own definition, what exactly is natural selection?**  
+1. **In Darwin's own definition, natural selection consists of which two operations?**  
    kind: `mcq` | concept: `Natural selection defined as the preservation of favourable and rejection of injurious variations`  
-   - [x] The preservation of favourable variations together with the rejection of injurious ones
-   - [ ] The tendency of changed conditions of life to act on the reproductive system and generate new variations
-   - [ ] The process by which organisms strive to adapt themselves to their physical conditions over many generations
-   - [ ] The struggle between native inhabitants and naturalised foreign species for possession of a country
-   **Expected answer:** The preservation of favourable variations together with the rejection of injurious ones
+   - [x] The preservation of favourable variations and the rejection of injurious variations
+   - [ ] The production of new variations and the transmission of them to offspring
+   - [ ] The multiplication of individuals beyond the food supply and the resulting competition
+   - [ ] The isolation of populations and the accumulation of differences between them
+   **Expected answer:** The preservation of favourable variations and the rejection of injurious variations
 
-2. **According to the lesson, what happens to a variation that is neither useful nor injurious to its possessor?**  
-   kind: `mcq` | concept: `Neutral variation and polymorphism as the limit of selection's reach`  
-   - [ ] It is slowly eliminated, since selection removes anything that confers no advantage
-   - [x] It is unaffected by selection and remains a fluctuating element, as perhaps in polymorphic species
-   - [ ] It is preserved automatically, because natural selection preserves all that is not injurious
-   - [ ] It becomes useful in time, since the close-fitting web of relations gives every character a role
-   **Expected answer:** It is unaffected by selection and remains a fluctuating element, as perhaps in polymorphic species
+2. **According to Darwin, what happens to variations that are neither useful nor injurious to their possessor?**  
+   kind: `mcq` | concept: `Neutral variations are unaffected by selection and remain a fluctuating element`  
+   - [x] They are left a fluctuating element, unaffected by natural selection, as perhaps in polymorphic species
+   - [ ] They are slowly eliminated, since anything not positively useful is wasteful to maintain
+   - [ ] They are preserved indefinitely, because natural selection never destroys what it has not first tested
+   - [ ] They become useful sooner or later, since no character in nature remains indifferent for long
+   **Expected answer:** They are left a fluctuating element, unaffected by natural selection, as perhaps in polymorphic species
 
-3. **Darwin argues that even very slight differences can decide survival. What premise about the natural world does he rely on to make that plausible?**  
-   kind: `mcq` | concept: `Why slight differences matter: nicely balanced forces and close-fitting relations`  
-   - [ ] That physical conditions such as climate are constantly and drastically changing
-   - [ ] That wild organisms vary just as extravagantly as domestic ones do
-   - [x] That inhabitants of a country struggle together with nicely balanced forces, in close-fitting mutual relations
-   - [ ] That every species produces offspring at very nearly the same rate as its competitors
-   **Expected answer:** That inhabitants of a country struggle together with nicely balanced forces, in close-fitting mutual relations
+3. **Darwin says domestic productions vary in an endless number of strange peculiarities, and those under nature vary too. How does he qualify the comparison?**  
+   kind: `short` | concept: `Darwin's three premises: variability, strong heredity, and close-fitting mutual relations`  
+   **Expected answer:** He says organisms under nature vary 'in a lesser degree' than domestic productions — wild species do vary, but less than domesticated ones, whose whole organisation becomes in some degree plastic.
 
-4. **State the four premises Darwin asks the reader to bear in mind before he concludes that useful variations will be preserved.**  
-   kind: `short` | concept: `Darwin's chain of premises: variation, heredity, overproduction, and complex mutual relations`  
-   **Expected answer:** That organisms vary in an endless number of strange peculiarities (more under domestication, less in nature); that the hereditary tendency is strong; that many more individuals are born than can possibly survive; and that the mutual relations of all organic beings to each other and to their physical conditions are infinitely complex and close-fitting.
+4. **What evidence does Darwin give that no country's native inhabitants are so perfectly adapted that none could be improved?**  
+   kind: `mcq` | concept: `Naturalisation as evidence that no country's natives are perfectly adapted`  
+   - [x] In all countries some natives have been conquered by naturalised foreigners, who have taken firm possession of the land
+   - [ ] Fossil remains show that the species of every country have repeatedly been replaced by wholly different forms
+   - [ ] Every country contains places in the economy of nature that stand visibly empty and unoccupied
+   - [ ] Domestic breeds can everywhere be shown to outdo their wild ancestors in size, vigour and fertility
+   **Expected answer:** In all countries some natives have been conquered by naturalised foreigners, who have taken firm possession of the land
 
-5. **Which statement correctly reports one of Darwin's contrasts between nature's selection and man's?**  
-   kind: `mcq` | concept: `Nature's selection contrasted with man's in scope, rigour, and time`  
-   - [ ] Man works on internal constitution while nature can only sort visible outward appearances
-   - [ ] Man rigidly destroys every inferior animal, whereas nature protects its productions through each varying season
-   - [x] Man selects for his own good and can act only on external, visible characters, while nature acts for the being's good on every internal organ and shade of constitution
-   - [ ] Man exercises each selected character in peculiar and fitting conditions, whereas nature keeps all its productions under one uniform climate
-   **Expected answer:** Man selects for his own good and can act only on external, visible characters, while nature acts for the being's good on every internal organ and shade of constitution
+5. **Darwin argues that individuals with any advantage, however slight, have the best chance of surviving. Which fact, recalled in parentheses, makes this follow?**  
+   kind: `mcq` | concept: `Darwin's three premises: variability, strong heredity, and close-fitting mutual relations`  
+   - [x] That many more individuals are born than can possibly survive
+   - [ ] That the hereditary tendency in organisms is strong
+   - [ ] That a change in conditions of life acts on the reproductive system
+   - [ ] That the relations of organisms to one another are infinitely complex
+   **Expected answer:** That many more individuals are born than can possibly survive
 
-6. **Why does Darwin bring up the horticulturist Downing's reports on downy versus smooth-skinned fruits and purple versus yellow plums?**  
-   kind: `short` | concept: `Why slight differences matter: nicely balanced forces and close-fitting relations`  
-   **Expected answer:** To show that characters botanists call trifling — down on fruit, colour of the flesh — actually determine which varieties suffer from beetles and diseases. If such small differences already decide outcomes under cultivation, with all the aids of art, then in nature, where trees struggle with other trees and a host of enemies, they would effectually settle which variety succeeds. It supports his claim that natural selection can act on seemingly unimportant characters.
+6. **Name two ways, according to Darwin, in which nature's selection is more thorough than man's.**  
+   kind: `short` | concept: `Why natural selection surpasses human selection in scope, thoroughness, and time`  
+   **Expected answer:** Any two of: nature can act on every internal organ, every shade of constitutional difference and the whole machinery of life, whereas man acts only on external and visible characters; nature selects for the good of the being itself, man only for his own good; nature fully exercises every selected character and places the being under well-suited conditions, whereas man feeds long- and short-beaked pigeons alike and exposes long- and short-woolled sheep to the same climate; nature rigidly destroys the inferior and lets the most vigorous males struggle for females, while man protects his productions; nature has whole geological periods, man only fleeting time.
 
 ---
 
 ### Lesson 1.2: The Definition: Preservation of the Favourable, Rejection of the Injurious
 
-**Concepts:** Darwin's definition of natural selection as the preservation of favourable and rejection of injurious variations, The three-way classification of variations, including the neutral class left as a fluctuating element, Polymorphic species as Darwin's tentative example of unselected, fluctuating variation, Selection depends on variation as raw material and acts on slight advantages in surviving and procreating, The unreliability of human judgement about which characters are trifling
+**Concepts:** Natural selection defined as the preservation of favourable variations together with the rejection of injurious ones, The superabundance of births as the premise that makes a slight advantage decisive for survival and procreation, Variations neither useful nor injurious escape selection and remain a fluctuating element, as perhaps in polymorphic species, Characters of apparently trifling importance may still be favourable or injurious in the struggle for life, Selection sorts but does not create: without profitable variations, natural selection can do nothing
 
 **Written from source segments:** [0, 1]
 
@@ -152,111 +132,138 @@ Variation is endless and strange → it is inherited → far more are born than 
 
 # The Definition: Preservation of the Favourable, Rejection of the Injurious
 
-## Darwin's own words
+## Where the argument stands
 
-After a page of preparation — reminding the reader that organisms vary, that variation is inherited, that the relations between living things are "infinitely complex and close-fitting," and that many more individuals are born than can survive — Darwin arrives at his definition. It is a single sentence:
+By the opening of Chapter IV, Darwin has two results in hand and wants to bolt them together.
+
+1. **Selection under domestication works.** In the hands of man, picking out and breeding from the individuals he likes has produced pigeons, dogs and cabbages of astonishing diversity. Under domestication, he writes, "the whole organisation becomes in some degree plastic."
+2. **A struggle for existence goes on in nature.** Far more individuals are born than can possibly survive.
+
+The question of the chapter is put directly: "Can the principle of selection, which we have seen is so potent in the hands of man, apply in nature? I think we shall see that it can act most effectually."
+
+## The argument, step by step
+
+Darwin builds the case out of things he takes himself to have already established:
+
+- **Organisms vary**, in "an endless number of strange peculiarities" — greatly under domestication, and to a lesser degree under nature.
+- **Heredity is strong**, so a peculiarity has a good chance of being passed on.
+- **Relations between living things are "infinitely complex and close-fitting"** — each being is bound to other beings and to its physical conditions. This matters, because it means there are countless ways in which a small change might make a practical difference to a creature's life.
+
+From these he draws a modest-sounding inference: since variations useful *to man* have undoubtedly occurred, is it improbable that variations useful *to the being itself* — "in the great and complex battle of life" — should sometimes occur "in the course of thousands of generations"?
+
+Grant that, and the population premise does the rest:
+
+> "If such do occur, can we doubt (remembering that many more individuals are born than can possibly survive) that individuals having any advantage, however slight, over others, would have the best chance of surviving and of procreating their kind?"
+
+Note the two halves of that. The advantage need only be **slight**, and the consequence is not a guarantee of survival but the **best chance** of surviving *and of procreating*. Reproduction is included from the start: merely living is not enough, since a variation that is never transmitted cannot accumulate.
+
+The other side of the ledger is stated with more force than the first:
+
+> "On the other hand, we may feel sure that any variation in the least degree injurious would be rigidly destroyed."
+
+## The definition itself
+
+Then comes the naming sentence, one of the most consequential in the book:
 
 > "This preservation of favourable variations and the rejection of injurious variations, I call Natural Selection."
 
-Notice what the sentence does *not* say. It does not name a force, an agent, or a striving. It names a **result**: some variations are kept, others are destroyed. "Natural Selection" is Darwin's label for that sorting, not for some extra power that does the sorting.
+A few things are worth noticing about what kind of sentence this is.
 
-## The argument that leads up to it
+- It is a **definition, not a force**. "Natural Selection" is Darwin's label for a process he has just derived — the two-sided sorting of variations — not an extra agent added on top of it. Later in the chapter he writes that natural selection is "daily and hourly scrutinising, throughout the world, every variation, even the slightest; rejecting that which is bad, preserving and adding up all that is good." The vivid language is shorthand for the same preservation-and-rejection.
+- It is **two-sided**. Preservation of the good and rejection of the bad are equally part of the definition. A reader who remembers only "survival of the useful" has half of it.
+- The standard is **relative and local**. "Favourable" means favourable to that being, in its conditions of life. Nothing in the definition appeals to an abstract scale of perfection.
+- It is **cumulative in principle**: what is preserved is "added up" over ages, which is why an advantage "however slight" is enough. Man, Darwin notes, can produce great results by adding up mere individual differences; so can Nature, "but far more easily, from having incomparably longer time at her disposal."
 
-Darwin builds to the definition as a chain of conditionals, and it is worth separating the links:
+## The caveat: variations that are neither useful nor injurious
 
-1. **Variation occurs.** Under domestication "the whole organisation becomes in some degree plastic"; in nature the variation is smaller but real.
-2. **Variation is inherited.** "How strong the hereditary tendency is."
-3. **Some variations will happen to be useful.** Since variations useful *to man* have undoubtedly occurred, it can hardly be improbable that variations useful *to the being itself* should sometimes occur "in the course of thousands of generations." This is an argument from analogy with domestication, not a demonstration.
-4. **More are born than can survive.** Therefore individuals "having any advantage, however slight, over others, would have the best chance of surviving and of procreating their kind."
-5. **The converse holds too.** "Any variation in the least degree injurious would be rigidly destroyed."
-
-Only then comes the naming sentence. Two features of the argument deserve emphasis. First, the standard is comparative and modest: *any advantage, however slight*, is enough, because the many-more-are-born premise means that even a tiny edge in the chance of surviving and reproducing tells over generations. Second, the definition is **two-sided**. Popular summaries often keep only the preserving half, but Darwin gives equal weight to rejection — and his verb for it, "rigidly destroyed," is much harsher than his verb for preservation.
-
-Darwin also insists that selection has nothing to work with unless variation supplies it: "unless profitable variations do occur, natural selection can do nothing." Selection is a sieve, not a source. It cannot call the favourable variation into being; it can only keep it once chance has produced it.
-
-## The third category: neither useful nor injurious
-
-The sentence immediately after the definition is the one most often dropped from quotation, and it is the careful part:
+Darwin immediately guards the definition against being over-applied:
 
 > "Variations neither useful nor injurious would not be affected by natural selection, and would be left a fluctuating element, as perhaps we see in the species called polymorphic."
 
-So variations fall into three classes, not two:
+This is a real limit, and it follows from the definition rather than being tacked on. If natural selection just *is* preservation of the favourable and rejection of the injurious, then a variation which is neither has nothing for the process to grip. Such characters are not fixed and not eliminated; they are left free to fluctuate — to persist in several forms within one species, which is what Darwin suggests we may be seeing in **polymorphic species** (species that show two or more distinct forms at once).
 
-| Class | Fate |
+The word "perhaps" is doing honest work. Darwin does not claim to know that polymorphic characters are indifferent; he offers them as a likely instance of the class his definition predicts should exist.
+
+## A necessary warning against reading "trifling" as "indifferent"
+
+The caveat is easy to abuse. It does not license us to look at some small character and declare it beyond selection's reach. Darwin is emphatic that "characters and structures, which we are apt to consider as of very trifling importance, may thus be acted on."
+
+His examples: leaf-eating insects are green and bark-feeders mottled-grey; the alpine ptarmigan is white in winter, the red-grouse the colour of heather, the black-grouse that of peaty earth. Grouse suffer largely from birds of prey, and hawks hunt by eyesight — so much so that in parts of the Continent people are warned not to keep white pigeons, as the most liable to destruction. Colour, which looks like mere appearance, is a matter of life and death.
+
+He reinforces the point with the smallest of margins: remember, he says, "how essential it is in a flock of white sheep to destroy every lamb with the faintest trace of black." And in plants, botanists rank the down on a fruit and the colour of its flesh among the most trifling characters — yet the horticulturist Downing reports that in the United States smooth-skinned fruits suffer far more from a beetle, the curculio, than downy ones; purple plums suffer far more from a certain disease than yellow plums; and another disease attacks yellow-fleshed peaches more than other-coloured flesh.
+
+So the honest position is: whether a variation is favourable, injurious, or indifferent is a **question about its consequences in the struggle for life**, not a question about how important it looks to us.
+
+## Why nature outdoes the breeder
+
+Darwin then contrasts the two selections, and the contrast sharpens what his definition means.
+
+| Man's selection | Natural selection |
 | --- | --- |
-| Favourable | Preserved |
-| Injurious | Rejected ("rigidly destroyed") |
-| Neither useful nor injurious | **Untouched** by natural selection; left fluctuating |
+| Acts only on external and visible characters | Acts on every internal organ, every shade of constitutional difference, "the whole machinery of life" |
+| Selects for his own good | Selects only for the good of the being she tends |
+| Seldom exercises a selected character fittingly — feeds long- and short-beaked pigeons on the same food, exposes long- and short-woolled sheep to the same climate | Every selected character is fully exercised, and the being is placed under well-suited conditions |
+| Does not let the most vigorous males struggle for the females; protects even inferior animals through each varying season | Rigidly destroys the injurious |
+| Often begins from some half-monstrous form, or a modification prominent enough to catch his eye | The slightest difference of structure may turn the nicely-balanced scale and so be preserved |
+| His wishes are fleeting, his time short | Accumulates through whole geological periods |
 
-This is a genuine limitation Darwin places on his own principle, and it matters for three reasons.
+Hence, Darwin concludes, we should not wonder that nature's productions are "truer" in character than man's, better adapted to complex conditions, and bear "the stamp of far higher workmanship."
 
-**It makes the theory falsifiable in shape.** Natural selection is not offered as an explanation of every character an organism possesses. Characters of no consequence to survival simply are not its business.
+## One thing the definition does not supply
 
-**It predicts something observable.** If indifferent variations are unaffected, they should not be trimmed down to a single form; they should wobble about, with several variants persisting side by side in the same species. Darwin points to exactly such cases: the **polymorphic** species, those which appear in several distinct forms at once without any of them being eliminated. His "as perhaps we see" is a hedge — he offers polymorphism as a possible instance rather than proof.
+Selection sorts; it does not create. Darwin says so plainly: "unless profitable variations do occur, natural selection can do nothing." The process is entirely dependent on a supply of variation it does not itself manufacture. This is also why he notes that a change in the conditions of life, by acting on the reproductive system, causes or increases variability — such a change is favourable to natural selection because it gives a better chance of profitable variations turning up.
 
-**It sits in tension with the rest of the chapter.** Just a few pages later Darwin argues that characters we are "apt to consider as of very trifling importance" often turn out to matter after all: the white winter plumage of the alpine ptarmigan, the heather-colour of the red grouse, the peaty colour of the black grouse, all shielding birds from hawks that hunt by eyesight. He notes that in the United States, according to the horticulturist Downing, smooth-skinned fruits suffer far more from the curculio beetle than downy ones, and purple plums more from a certain disease than yellow ones — differences botanists rank as utterly trifling. The lesson is that *our* judgement of what is indifferent is unreliable. "Neither useful nor injurious" is a real category, but a character's membership in it is very hard to establish from appearance alone.
+## Summary
 
-## Nature scrutinises; she does not care about appearances
-
-Darwin's comparison with the breeder sharpens the definition. "Man can act only on external and visible characters: nature cares nothing for appearances, except in so far as they may be useful to any being. She can act on every internal organ, on every shade of constitutional difference, on the whole machinery of life." Man also "does not rigidly destroy all inferior animals," but protects his stock; nature does not. Hence his famous image of selection "daily and hourly scrutinising, throughout the world, every variation, even the slightest; rejecting that which is bad, preserving and adding up all that is good."
-
-Read against the definition, that image is just the definition set in motion over time. The verbs are the same pair — reject, preserve — with one addition: **adding up**. A single preserved variation is a trifle; the accumulation of them over geological time is what produces adaptation.
-
-## What to carry away
-
-- Natural selection is a *name for an outcome*: favourable variations preserved, injurious ones rejected.
-- The criterion is advantage to the being itself, however slight, measured by chances of surviving and procreating.
-- Selection requires variation as raw material; it cannot manufacture it.
-- Variations that are neither useful nor injurious escape selection entirely and remain a fluctuating element — possibly the polymorphic species.
-- But Darwin's own examples warn that characters look indifferent far more often than they are.
+Many more are born than can survive; therefore any individual with an advantage, however slight, has the best chance of surviving and procreating, while any variation in the least degree injurious is rigidly destroyed. That preservation and that rejection, taken together, are what Darwin calls Natural Selection. Variations that are neither useful nor injurious escape the process altogether and are left a fluctuating element — as perhaps in polymorphic species — though we should be slow to assume that a character which looks trifling to us is really of no consequence to its possessor.
 
 #### Quiz
 
-1. **In Darwin's definition, what is the fate of variations that are neither useful nor injurious?**  
-   kind: `mcq` | concept: `The three-way classification of variations, including the neutral class left as a fluctuating element`  
-   - [x] They are unaffected by natural selection and left as a fluctuating element
-   - [ ] They are slowly eliminated because they waste the organism's resources
-   - [ ] They are preserved by selection as a reserve for future changes of climate
-   - [ ] They are converted into favourable variations once conditions of life alter
-   **Expected answer:** They are unaffected by natural selection and left as a fluctuating element
+1. **Which statement most accurately reproduces Darwin's definition of Natural Selection?**  
+   kind: `mcq` | concept: `Natural selection defined as the preservation of favourable variations together with the rejection of injurious ones`  
+   - [x] The preservation of favourable variations together with the rejection of injurious variations
+   - [ ] The gradual improvement of a species towards a more perfect and complete organisation
+   - [ ] The tendency of altered conditions of life to call forth new and profitable variations
+   - [ ] The survival of those individuals that are strongest and most vigorous in bodily frame
+   **Expected answer:** The preservation of favourable variations together with the rejection of injurious variations
 
-2. **State Darwin's definition of natural selection in his own terms, in one sentence.**  
-   kind: `short` | concept: `Darwin's definition of natural selection as the preservation of favourable and rejection of injurious variations`  
-   **Expected answer:** Natural selection is Darwin's name for the preservation of favourable variations together with the rejection of injurious variations.
+2. **According to Darwin, what happens to variations that are neither useful nor injurious to their possessor?**  
+   kind: `short` | concept: `Variations neither useful nor injurious escape selection and remain a fluctuating element, as perhaps in polymorphic species`  
+   **Expected answer:** They are not affected by natural selection at all, and are left as a fluctuating element — as perhaps we see in the species called polymorphic.
 
-3. **What does Darwin offer polymorphic species as an example of?**  
-   kind: `mcq` | concept: `Polymorphic species as Darwin's tentative example of unselected, fluctuating variation`  
-   - [x] Variation that natural selection has not acted on, and so continues to fluctuate
-   - [ ] Species in which selection has fixed several favourable forms at once
-   - [ ] Species that vary so much that selection acts on them faster than on others
-   - [ ] Forms produced by a recent change of climate acting on the reproductive system
-   **Expected answer:** Variation that natural selection has not acted on, and so continues to fluctuate
+3. **Darwin puts the parenthesis "remembering that many more individuals are born than can possibly survive" into his key sentence. What work does this premise do in the argument?**  
+   kind: `mcq` | concept: `The superabundance of births as the premise that makes a slight advantage decisive for survival and procreation`  
+   - [x] It supplies the pressure that makes even a slight advantage translate into the best chance of surviving and procreating
+   - [ ] It shows that variability must be extreme before natural selection can produce any result
+   - [ ] It explains why offspring resemble their parents closely enough for advantages to be inherited
+   - [ ] It demonstrates that new places in the economy of nature are constantly opening up for immigrants
+   **Expected answer:** It supplies the pressure that makes even a slight advantage translate into the best chance of surviving and procreating
 
-4. **Darwin writes that 'unless profitable variations do occur, natural selection can do nothing.' What point is he making?**  
-   kind: `mcq` | concept: `Selection depends on variation as raw material and acts on slight advantages in surviving and procreating`  
-   - [x] Selection can only sift variation that already exists; it cannot generate it
-   - [ ] Selection works only in countries that have recently undergone a physical change
-   - [ ] Profitable variations must be large before selection can take hold of them
-   - [ ] Selection acts on populations rather than on the individuals composing them
-   **Expected answer:** Selection can only sift variation that already exists; it cannot generate it
+4. **A reader concludes: "Since botanists call the down on a fruit a character of the most trifling importance, it must be one of Darwin's indifferent variations, untouched by selection." How does the lesson answer this?**  
+   kind: `mcq` | concept: `Characters of apparently trifling importance may still be favourable or injurious in the struggle for life`  
+   - [x] Whether a character is favourable, injurious or indifferent depends on its consequences in the struggle for life, not on how important it seems to us — Downing found smooth-skinned fruits suffer far more from the curculio than downy ones
+   - [ ] Darwin holds that no character is ever truly indifferent, since every part of an organism is bound up with every other by close-fitting relations
+   - [ ] Characters of trifling importance are indeed beyond selection, but only in cultivated plants, where the aids of art shield them from their enemies
+   - [ ] The distinction cannot be settled, because Darwin says we see nothing of these slow changes until the hand of time has marked the lapse of ages
+   **Expected answer:** Whether a character is favourable, injurious or indifferent depends on its consequences in the struggle for life, not on how important it seems to us — Downing found smooth-skinned fruits suffer far more from the curculio than downy ones
 
-5. **Why do Darwin's examples of grouse colouring and of downy versus smooth-skinned fruit complicate his category of variations that are 'neither useful nor injurious'?**  
-   kind: `short` | concept: `The unreliability of human judgement about which characters are trifling`  
-   **Expected answer:** Because they show that characters we judge to be of trifling importance — plumage tint, down on a fruit, flesh colour — often turn out to affect survival, through predation by hawks or attack by beetles and disease. The neutral category is real, but our ability to decide what belongs in it is unreliable.
+5. **Darwin writes that a change in the conditions of life is favourable to natural selection. Why — and what limit on selection's power does his reason reveal?**  
+   kind: `short` | concept: `Selection sorts but does not create: without profitable variations, natural selection can do nothing`  
+   **Expected answer:** Such a change acts on the reproductive system and so causes or increases variability, giving a better chance of profitable variations occurring. This reveals that selection cannot create variation: unless profitable variations do occur, natural selection can do nothing.
 
-6. **How large must an advantage be, on Darwin's account, for selection to work on it?**  
-   kind: `mcq` | concept: `Selection depends on variation as raw material and acts on slight advantages in surviving and procreating`  
-   - [x] Any advantage, however slight, suffices, because far more are born than can survive
-   - [ ] It must be visible externally, since that is what selection can scrutinise
-   - [ ] It must be large enough to survive being blended away by crossing
-   - [ ] It must at least double the individual's chance of leaving offspring
-   **Expected answer:** Any advantage, however slight, suffices, because far more are born than can survive
+6. **Darwin contrasts man's selection with nature's. Which contrast does he actually draw?**  
+   kind: `mcq` | concept: `Natural selection defined as the preservation of favourable variations together with the rejection of injurious ones`  
+   - [x] Man can act only on external and visible characters, whereas nature can act on every internal organ and every shade of constitutional difference
+   - [ ] Man works on individual differences, whereas nature must wait for large and half-monstrous forms to arise
+   - [ ] Man breeds only from the most vigorous males, whereas nature protects the weak through each varying season
+   - [ ] Man selects for the good of the being he tends, whereas nature selects without regard to any creature's welfare
+   **Expected answer:** Man can act only on external and visible characters, whereas nature can act on every internal organ and every shade of constitutional difference
 
 ---
 
 ### Lesson 1.3: The Chapter's Roadmap
 
-**Concepts:** The chapter-summary heading as a map of Darwin's argument in Chapter IV, Darwin's definition of natural selection as preservation of favourable and rejection of injurious variations, Intercrossing, isolation, and number of individuals as the circumstances affecting natural selection, Divergence of character plus extinction as the route to explaining the grouping of all organic beings, Locating the excerpt within the chapter: mechanism and trifling characters only
+**Concepts:** Darwin's summary heading as an outline of Chapter IV's argument, The definition of natural selection: preservation of favourable and rejection of injurious variations, Circumstances favourable and unfavourable to selection: intercrossing, isolation, number of individuals, Divergence of character and extinction as the joint explanation of the grouping of organic beings, Selection's indifference to variations that are neither useful nor injurious
 
 **Written from source segments:** [0, 1]
 
@@ -264,97 +271,95 @@ Read against the definition, that image is just the definition set in motion ove
 
 # The Chapter's Roadmap
 
-Before Darwin writes a single sentence of argument in Chapter IV, he prints a dense block of phrases under the chapter title. It looks like a table of contents that escaped from the front of the book:
+Victorian scientific books often opened each chapter with a dense summary heading — a table of contents in miniature, printed in small type before the first paragraph. Chapter IV of *On the Origin of Species* has one, and it is worth reading slowly, because it is Darwin's own outline of the argument he is about to build. Here it is in full:
 
 > Natural Selection: its power compared with man's selection, its power on characters of trifling importance, its power at all ages and on both sexes. Sexual Selection. On the generality of intercrosses between individuals of the same species. Circumstances favourable and unfavourable to Natural Selection, namely, intercrossing, isolation, number of individuals. Slow action. Extinction caused by Natural Selection. Divergence of Character, related to the diversity of inhabitants of any small area, and to naturalisation. Action of Natural Selection, through Divergence of Character and Extinction, on the descendants from a common parent. Explains the Grouping of all organic beings.
 
-This is a Victorian publishing convention — a *chapter-summary heading* — and it is worth reading slowly rather than skipping. It tells you the order of the argument, and, more importantly, it tells you where the argument is going. Read it once as a list of topics; read it again as a single chain of reasoning.
+Our excerpt covers only the opening stretch of this programme. The heading tells us where the whole chapter is headed, so that we can read the beginning knowing what it is the beginning *of*.
 
-## The chain, step by step
+## Unpacking the heading, item by item
 
-**1. Natural selection compared with man's selection.** Darwin has spent Chapter I on domestic breeding. He opens Chapter IV by asking whether "the principle of selection, which we have seen is so potent in the hands of man," can apply in nature — and answers that nature is the *more* powerful selector, because she works on internal organs and constitutional differences, not just visible appearances, and has geological time at her disposal.
+**1. Natural selection: its power compared with man's selection.** The chapter opens by asking whether the principle of selection, "so potent in the hands of man," can apply in nature. Darwin's answer runs through a comparison: man acts only on external and visible characters, nature on "every internal organ, on every shade of constitutional difference, on the whole machinery of life"; man selects for his own good, nature only for the good of the being she tends; man's time is short, nature has whole geological periods. This comparison occupies much of our excerpt.
 
-**2. Its power on characters of trifling importance.** An anticipated objection: surely selection can only shape obviously vital organs? Darwin answers with the colour of grouse, the down on a peach, the flesh-colour of a plum. Nothing is too trifling if it settles who survives.
+**2. Its power on characters of trifling importance.** Also in our excerpt. Green leaf-eating insects, the white winter ptarmigan, the heather-coloured red-grouse, the down on a peach and the colour of a plum's flesh — botanists call such things trifles, but Darwin argues they settle which variety survives.
 
-**3. Its power at all ages and on both sexes**, and then **Sexual Selection.** Selection is not confined to the adult, and it is not only about surviving. Some traits are preserved because they win mates or defeat rivals — a distinct mechanism Darwin names here and develops later at book length.
+**3. Its power at all ages and on both sexes.** Announced here, developed later in the chapter.
 
-**4. The generality of intercrosses.** A factual claim Darwin needs: individuals of the same species, as a rule, cross with one another rather than self-fertilising indefinitely.
+**4. Sexual selection.** Listed as its own topic, distinct from natural selection proper. Note the hint already dropped in the excerpt: among the things man fails to do, Darwin says, "He does not allow the most vigorous males to struggle for the females."
 
-**5. Circumstances favourable and unfavourable** — and he names three: **intercrossing, isolation, number of individuals.** Notice that intercrossing appears twice, once as a fact of nature and once as a *condition*. It cuts both ways: crossing keeps a species uniform and blends away novelty, while isolation shields a small population from that blending. Large numbers, meanwhile, give selection more variations to work on.
+**5. The generality of intercrosses between individuals of the same species.** How commonly do individuals of a species cross with one another rather than breed in isolation? A question of fact that the chapter takes up in its own right.
 
-**6. Slow action.** Selection works, in Darwin's famous phrase from the excerpt, "silently and insensibly." We see nothing of the change in progress; only the fossil record shows that forms of life were once different.
+**6. Circumstances favourable and unfavourable to natural selection, namely, intercrossing, isolation, number of individuals.** Three conditions, grouped under one heading. Notice that intercrossing appears twice in the roadmap: first as a fact about how organisms reproduce, then as a circumstance that helps or hinders selection. Isolation is foreshadowed in the excerpt's island example — a country "partly surrounded by barriers, into which new and better adapted forms could not freely enter."
 
-**7. Extinction caused by Natural Selection.** Improvement of some forms is, by the logic of the struggle for existence, the destruction of others. Extinction is not an accident that happens alongside selection; it is selection's other face.
+**7. Slow action.** Selection is "daily and hourly scrutinising" every variation, but "silently and insensibly"; we see nothing of these changes "until the hand of time has marked the long lapse of ages."
 
-**8. Divergence of Character**, tied to two pieces of evidence: the **diversity of inhabitants of any small area** (a patch of ground supports more life when it is occupied by varied forms) and **naturalisation** (introduced species often belong to genera not native to the region). Descendants that differ most from one another compete least, so the extremes of a varying stock are favoured.
+**8. Extinction caused by natural selection.** Not merely something that happens alongside selection — something selection *causes*.
 
-**9. The destination.** The last two clauses are the payoff: divergence and extinction acting together on "the descendants from a common parent" *"Explains the Grouping of all organic beings."* Darwin is not merely proposing a mechanism for adaptation. He is claiming that this mechanism accounts for why living things fall into nested groups at all — species within genera, genera within families — the tree-like pattern that naturalists had catalogued for a century without explaining. Divergence spreads the branches; extinction kills the intermediate twigs and so makes the branches look distinct.
+**9. Divergence of character**, which the heading says is "related to the diversity of inhabitants of any small area, and to naturalisation."
 
-## Where this excerpt sits
+**10. The pay-off.** Natural selection, acting through divergence of character and extinction on the descendants of a common parent, "Explains the Grouping of all organic beings." This is the destination: an explanation of why living things fall into nested groups — species within genera, genera within families — at all.
 
-The pages you are reading cover only the first stretch of that roadmap. They contain:
+## The definition at the centre
 
-- the framing question — can man's principle of selection apply in nature?
-- Darwin's **definition**: "This preservation of favourable variations and the rejection of injurious variations, I call Natural Selection" — with the corollary that variations *neither* useful nor injurious are left as "a fluctuating element," as in polymorphic species;
-- the thought-experiment of a country undergoing a change of climate, and the role of barriers and immigration in leaving "places in the economy of nature" to be filled;
-- the sustained comparison of nature's selection with man's;
-- the passage on **characters of trifling importance** — grouse colour, white pigeons and hawks, downy versus smooth-skinned fruit.
+Before any of the later machinery is introduced, Darwin gives the definition everything else rests on. Many more individuals are born than can possibly survive; individuals with any advantage, however slight, have the best chance of surviving and leaving offspring; any variation in the least degree injurious "would be rigidly destroyed."
 
-So the excerpt takes you through roughly items 1 and 2 of the heading. Sexual selection, the three circumstances, extinction, and divergence of character all lie beyond its edge. Keeping the roadmap in view stops you from mistaking the part for the whole: a reader who stopped here might think Chapter IV is simply an argument that selection works. The heading tells you that establishing the mechanism is only the beginning, and that the chapter's real ambition is to explain the shape of the whole living world.
+> "This preservation of favourable variations and the rejection of injurious variations, I call Natural Selection."
 
-## Why the roadmap matters as a reading tool
+He immediately adds a limit: variations neither useful nor injurious are not affected by natural selection at all, and would be left "a fluctuating element, as perhaps we see in the species called polymorphic." The principle is not a universal shaper of everything; it bites only where a difference makes a difference to survival.
 
-Darwin builds cumulatively. Each item in the heading is a premise or a consequence, not an independent essay. If you can recite the chain — *mechanism → conditions that help or hinder it → slow accumulation → extinction and divergence → the grouping of all organic beings* — you have the architecture of the chapter, and every paragraph you read can be filed somewhere along it.
+## How to read with the roadmap in hand
+
+The heading is a promise of structure. Read the excerpt as the first two or three items being delivered — the power of selection compared with man's, and its reach into apparently trivial characters — while the rest (sexual selection, intercrossing, isolation, slow action, extinction, divergence, grouping) stand as debts the chapter will pay later. Knowing the destination changes how the opening reads: the island passage is not a stray illustration but an early appearance of isolation; the remark about vigorous males struggling for females is a seed of sexual selection.
 
 #### Quiz
 
-1. **According to the chapter-summary heading, what is the final thing Darwin claims natural selection explains?**  
-   kind: `mcq` | concept: ``  
-   - [x] The grouping of all organic beings into nested categories
-   - [ ] The origin of variability in the reproductive system
-   - [ ] The geographical distribution of island faunas
-   - [ ] The perfection of instinct in social insects
-   **Expected answer:** The grouping of all organic beings into nested categories
+1. **In the chapter heading, under what description does Darwin group intercrossing, isolation, and number of individuals?**  
+   kind: `mcq` | concept: `Circumstances favourable and unfavourable to selection: intercrossing, isolation, number of individuals`  
+   - [x] As circumstances favourable and unfavourable to natural selection
+   - [ ] As the three varieties of sexual selection he will distinguish
+   - [ ] As the causes of extinction produced by natural selection
+   - [ ] As the conditions that make divergence of character irreversible
+   **Expected answer:** As circumstances favourable and unfavourable to natural selection
 
-2. **The heading names three 'circumstances favourable and unfavourable to Natural Selection'. Which trio is it?**  
-   kind: `mcq` | concept: ``  
-   - [x] Intercrossing, isolation, and number of individuals
-   - [ ] Climate, immigration, and hereditary tendency
-   - [ ] Slow action, extinction, and divergence of character
-   - [ ] Domestication, polymorphism, and sexual selection
-   **Expected answer:** Intercrossing, isolation, and number of individuals
+2. **According to the heading, divergence of character is said to be related to which two things?**  
+   kind: `mcq` | concept: `Darwin's summary heading as an outline of Chapter IV's argument`  
+   - [x] The diversity of inhabitants of any small area, and naturalisation
+   - [ ] The length of geological periods, and the imperfection of the fossil record
+   - [ ] The plasticity of domestic productions, and the strength of the hereditary tendency
+   - [ ] The balance of climate change, and the freedom of immigration across borders
+   **Expected answer:** The diversity of inhabitants of any small area, and naturalisation
 
-3. **Which pair of processes does the heading say acts on 'the descendants from a common parent'?**  
-   kind: `mcq` | concept: ``  
-   - [x] Divergence of character and extinction
-   - [ ] Sexual selection and intercrossing
-   - [ ] Isolation and slow action
-   - [ ] Unconscious selection and methodical selection
-   **Expected answer:** Divergence of character and extinction
+3. **According to the heading, natural selection acts on the descendants from a common parent through which two agencies, and what does this explain?**  
+   kind: `short` | concept: `Divergence of character and extinction as the joint explanation of the grouping of organic beings`  
+   **Expected answer:** Through divergence of character and extinction; this explains the grouping of all organic beings.
 
-4. **In Darwin's own words in this excerpt, what is natural selection?**  
-   kind: `short` | concept: ``  
-   **Expected answer:** The preservation of favourable variations and the rejection of injurious variations. (Variations that are neither useful nor injurious are unaffected and remain a fluctuating element.)
+4. **The excerpt's discussion of grouse colouring and of the down on fruit and the colour of plum flesh delivers on which item in the chapter's roadmap?**  
+   kind: `mcq` | concept: `Darwin's summary heading as an outline of Chapter IV's argument`  
+   - [x] The power of natural selection on characters of trifling importance
+   - [ ] The generality of intercrosses between individuals of the same species
+   - [ ] The slow and insensible action of selection over geological ages
+   - [ ] The power of natural selection at all ages and on both sexes
+   **Expected answer:** The power of natural selection on characters of trifling importance
 
-5. **Which topics from the chapter-summary heading are actually developed in this excerpt?**  
-   kind: `mcq` | concept: ``  
-   - [x] The comparison with man's selection and the power of selection on trifling characters
-   - [ ] Sexual selection and the generality of intercrosses between individuals
-   - [ ] Extinction caused by natural selection and divergence of character
-   - [ ] Slow action, naturalisation, and the diversity of inhabitants of a small area
-   **Expected answer:** The comparison with man's selection and the power of selection on trifling characters
+5. **How does Darwin define natural selection, and what does he say happens to variations that are neither useful nor injurious?**  
+   kind: `short` | concept: `The definition of natural selection: preservation of favourable and rejection of injurious variations`  
+   **Expected answer:** Natural selection is the preservation of favourable variations and the rejection of injurious variations. Variations that are neither useful nor injurious are not affected by it and are left a fluctuating element, as perhaps in polymorphic species.
 
-6. **Why does the lesson say intercrossing appears twice in the heading, and what does isolation do about it?**  
-   kind: `short` | concept: ``  
-   **Expected answer:** Intercrossing appears once as a fact about species (individuals generally cross with one another) and once as a condition affecting selection. As a condition it works against novelty, keeping a species uniform by blending away new variations; isolation is favourable because it shields a population from that blending influx.
+6. **Which statement about sexual selection is supported by the excerpt and its heading?**  
+   kind: `mcq` | concept: `Darwin's summary heading as an outline of Chapter IV's argument`  
+   - [x] It is listed as a topic in its own right, and is hinted at when Darwin notes that man does not let the most vigorous males struggle for the females
+   - [ ] It is defined in the excerpt as the preservation of variations that make males attractive rather than useful
+   - [ ] It is presented in the heading as one of the circumstances that can be favourable or unfavourable to natural selection
+   - [ ] It is described as the process by which extinction removes the less vigorous descendants of a common parent
+   **Expected answer:** It is listed as a topic in its own right, and is hinted at when Darwin notes that man does not let the most vigorous males struggle for the females
 
 ---
 
-## Module 2: Conditions Under Which Selection Works
+## Module 2: The Conditions Under Which Selection Works
 
 ### Lesson 2.1: A Country Undergoing Physical Change
 
-**Concepts:** A physical change first alters the proportional numbers of a country's inhabitants, causing some extinctions, Changed numerical proportions affect many other species independently of the physical change itself, because inhabitants are intimately bound together, A single introduced tree or mammal illustrates the powerful disturbance one new species can cause, Barriers or isolation keep intruders from seizing new places in the economy of nature, giving natural selection free scope to modify natives, Great physical change and isolation are illustrative rather than necessary; nicely balanced forces always leave room for improvement
+**Concepts:** Darwin's thought experiment: a country undergoing a change of climate, Change in numerical proportions affects other inhabitants independently of the physical change itself, Immigration across open borders and the power of a single introduced tree or mammal, Barriers and isolation give natural selection free scope to fill places in the economy of nature, Naturalised foreigners beating natives as evidence that no country's inhabitants are perfectly adapted
 
 **Written from source segments:** [0, 1]
 
@@ -362,384 +367,307 @@ Darwin builds cumulatively. Each item in the heading is a premise or a consequen
 
 # A Country Undergoing Physical Change
 
-Darwin has just defined natural selection as "this preservation of favourable variations and the rejection of injurious variations." But a definition is not a demonstration. To show how the principle would actually work, he offers a thought experiment, and he tells us plainly why he chooses it:
+Having argued that useful variations must sometimes arise, and that the ones which help their possessors will be preserved while injurious ones are "rigidly destroyed," Darwin needs to show *when* and *where* natural selection gets its best opportunities. He does this not with a real place but with a thought experiment:
 
 > "We shall best understand the probable course of natural selection by taking the case of a country undergoing some physical change, for instance, of climate."
 
-The rest of this lesson follows that imagined country, step by step.
+Notice the modesty of the setup. He does not ask us to imagine a catastrophe, a new continent, or a miracle. Just a country, and a shift in its weather.
 
-## Step 1: the numbers move before the species do
+## Step one: the proportions shift
 
-The first consequence of a change in climate is not the appearance of anything new. It is a shift in **proportional numbers**. Darwin says the proportions of the country's inhabitants "would almost immediately undergo a change, and some species might become extinct."
+The first consequence Darwin draws is not extinction but **a change in proportional numbers**. Some species become commoner, some rarer; "the proportional numbers of its inhabitants would almost immediately undergo a change, and some species might become extinct." Extinction is offered as a possibility (*might*), while the change in proportions is treated as near-certain and near-immediate.
 
-Note the modesty of the claim. Nothing has been invented; no organism has been improved. Some species simply become commoner, others rarer, and the rarest may vanish. This is the ordinary bookkeeping of the struggle for existence, redone under new conditions.
+This ordering matters. Darwin's unit of analysis is not the individual species facing bad weather; it is the whole community and the ratios within it.
 
-## Step 2: the second wave, which has nothing to do with the weather
+## Step two: the knock-on effects
 
-Here is the crucial move, and the one students most often skip past. Darwin argues that the change in numbers produces its own effects, **independently of the climate change that caused it**:
+Here is the crucial move. Because the inhabitants of any country are bound together in an "intimate and complex manner," Darwin concludes:
 
-> "any change in the numerical proportions of some of the inhabitants, *independently of the change of climate itself*, would most seriously affect many of the others."
+> "...any change in the numerical proportions of some of the inhabitants, **independently of the change of climate itself**, would most seriously affect many of the others."
 
-The reason is the theme of the whole book so far: the inhabitants of a country are "bound together" in an "intimate and complex manner." A colder winter may not touch a particular beetle directly. But if the plant it feeds on becomes scarce, or the bird that eats it becomes abundant, the beetle is hit just as hard as if the frost had reached it. So a single physical alteration ramifies outward through the web of relations, striking species that the physical alteration never touched.
+That phrase "independently of the change of climate itself" is the heart of the passage. The climate is only the first push. A species may never feel the cold or the drought directly, and still be devastated—because the insect that pollinates it has become scarce, or the predator that kept its competitor in check has become abundant. The organic environment (other living things) is at least as potent an agent of change as the inorganic one, and it amplifies whatever the physical change begins.
 
-Think of it as two shocks: the direct shock of climate, and the much broader indirect shock transmitted through neighbours.
+## Step three: open borders
 
-## Step 3: open borders, and the power of one newcomer
+Darwin then adds a second source of disturbance:
 
-Now Darwin asks whether the country is open or closed.
+> "If the country were open on its borders, new forms would certainly immigrate, and this also would seriously disturb the relations of some of the former inhabitants. Let it be remembered how powerful the influence of a single introduced tree or mammal has been shown to be."
 
-If it is **open on its borders**, "new forms would certainly immigrate, and this also would seriously disturb the relations of some of the former inhabitants." And he reminds the reader of evidence already given:
+A *single* introduced tree or mammal. Not an invasion, not a wave—one species arriving can reorganise the relations of a whole country. (Darwin's Victorian readers knew the examples: rabbits, cattle, thistles, pines spreading across newly colonised lands.) The immigrant does not need to be numerous to be powerful; it needs only to be well adapted, because the residents are all balanced against each other with "nicely balanced forces."
 
-> "Let it be remembered how powerful the influence of a single introduced tree or mammal has been shown to be."
+## Step four: why barriers matter for natural selection
 
-This short sentence carries a lot of weight. It is an argument by scale: if *one* newly arrived species — one tree, one grazing mammal — can visibly reorganise the plants, insects, and birds of a district within a human lifetime, then the disturbance Darwin is imagining is not a speculative trickle. A tree changes the shade, the soil, the food supply, the nesting places; a mammal changes which seedlings survive, and therefore which trees grow, and therefore everything that depends on those trees. The intended conclusion is that the relations between species are so tightly balanced that a single new participant can tip them everywhere.
+So far, openness and change both disturb the community. But Darwin now distinguishes two fates for the vacancies created:
 
-## Step 4: the closed country, where natural selection gets free scope
+- **Open country.** New places in "the economy of nature" open up—and immigrants seize them. The vacancies are filled by ready-made foreigners.
+- **Island, or country partly surrounded by barriers.** Better-adapted forms cannot freely enter. The vacancies remain, and they "would assuredly be better filled up, if some of the original inhabitants were in some manner modified."
 
-But suppose instead an island, or a country "partly surrounded by barriers," into which "new and better adapted forms could not freely enter." Then something different happens. The altered conditions have opened up **places in the economy of nature** — roles, ways of making a living — that are not being well filled. In the open country, intruders would have seized those places at once. Behind barriers, no intruder can.
+In the second case, and only there, "every slight modification, which in the course of ages chanced to arise," and which better adapted an individual to the altered conditions, would tend to be preserved. Isolation does not cause variation; it removes the competition that would otherwise pre-empt the slow work of modification. As Darwin puts it, natural selection "would thus have free scope for the work of improvement."
 
-That leaves only one way for the vacancies to be filled: by modification of the natives already present.
+There is a further reason the changed conditions help: Darwin has argued (in his first chapter) that a change in the conditions of life acts on the reproductive system and so **causes or increases variability**. And "unless profitable variations do occur, natural selection can do nothing." A change of climate therefore does double duty—it opens places, and it makes raw material more likely to appear.
 
-> "every slight modification, which in the course of ages chanced to arise, and which in any way favoured the individuals of any of the species, by better adapting them to their altered conditions, would tend to be preserved; and natural selection would thus have free scope for the work of improvement."
+## The retraction: none of this is actually necessary
 
-Isolation, on this account, does not *create* variation. It removes the competition from ready-made outsiders, so that home-grown slight variations have time and room to be accumulated.
+Darwin then withdraws the scaffolding he has just built:
 
-## Step 5: a bonus from the change itself
+> "Nor do I believe that any great physical change, as of climate, or any unusual degree of isolation to check immigration, is actually necessary to produce new and unoccupied places..."
 
-Darwin adds a supporting point from his first chapter: a change in the conditions of life, by acting specially on the reproductive system, "causes or increases variability." So the very climate shift that created the vacancies also improves the chances that useful variations will turn up to fill them. And this matters, because, as he says flatly, "unless profitable variations do occur, natural selection can do nothing." Selection is a sieve, not a source.
+The climate change and the barrier were teaching devices—the clearest case, not the required case. Because all inhabitants of a country are "struggling together with nicely balanced forces," *extremely slight* modifications in structure or habits will often give an advantage even with no external upheaval at all, and further modifications in the same direction will increase that advantage further.
 
-He is careful not to demand much. No "extreme amount of variability" is needed. Man gets great results by adding up mere individual differences; Nature can do the same "far more easily, from having incomparably longer time at her disposal."
+## The empirical clincher: naturalised productions
 
-## The twist: none of this was strictly necessary
+How do we know no country is perfectly adapted already? Darwin gives an argument from observation rather than theory:
 
-Having built the scenario, Darwin dismantles the assumption that it is required:
+> "No country can be named in which all the native inhabitants are now so perfectly adapted... that none of them could anyhow be improved; for in all countries, the natives have been so far conquered by naturalised productions, that they have allowed foreigners to take firm possession of the land."
 
-> "Nor do I believe that any great physical change, as of climate, or any unusual degree of isolation to check immigration, is actually necessary to produce new and unoccupied places for natural selection to fill up."
+Since foreigners have everywhere beaten some natives, the natives "might have been modified with advantage, so as to have better resisted such intruders." Naturalisation is thus evidence, worldwide and repeated, that room for improvement always exists. The open border, introduced earlier as a disturbance, turns out to be a natural experiment proving imperfection.
 
-The climate change was a teaching device, a way of making visible a process that runs constantly. Because all the inhabitants of a country are "struggling together with nicely balanced forces," even "extremely slight modifications in the structure or habits of one inhabitant would often give it an advantage over others" — and further modifications in the same direction would increase that advantage further. The balance is delicate enough that it never needs an earthquake to be disturbed.
+## Summary of the chain
 
-## His proof that no country is perfectly adapted
-
-How does Darwin know that opportunities for improvement always exist? He gives an empirical argument, and it is worth stating carefully because it is easy to garble.
-
-In every country, naturalised foreign species have taken firm possession of the land, beating some of the natives. If the natives had been perfectly adapted, they could not have been beaten. Therefore the natives "might have been modified with advantage, so as to have better resisted such intruders." Naturalisation is thus offered as standing evidence that no fauna or flora is finished.
-
-## What to take away
-
-- A physical change acts twice: directly, and again through the altered numbers of every species that is bound to every other.
-- The influence of a single introduced tree or mammal is Darwin's yardstick for how large the indirect effects can be.
-- Barriers matter because they decide *who* fills the new vacancies: immigrants, or modified natives.
-- The scenario is illustrative, not obligatory. The nicely balanced forces of ordinary life provide opportunity enough.
+1. Climate changes.
+2. Proportional numbers shift immediately; some species may go extinct.
+3. Those shifts, *by themselves*, seriously affect many other inhabitants.
+4. If borders are open, immigrants arrive and disturb relations further—a single tree or mammal can suffice.
+5. If barriers exclude immigrants, vacant places must be filled by modification of the natives, and selection has free scope.
+6. But the whole apparatus is optional: balanced forces mean slight modifications pay off anyway, and naturalisation everywhere proves the natives were improvable.
 
 #### Quiz
 
-1. **According to Darwin, what is the first effect of a change of climate on a country's inhabitants?**  
-   kind: `mcq` | concept: `A physical change first alters the proportional numbers of a country's inhabitants, causing some extinctions`  
-   - [x] The proportional numbers of its inhabitants change almost immediately, and some species may become extinct
-   - [ ] The reproductive systems of all species are altered, producing monstrous new forms at once
-   - [ ] Better-adapted immigrants arrive from beyond the borders before the natives are affected
-   - [ ] The weakest individuals of each species are destroyed while species numbers stay roughly constant
-   **Expected answer:** The proportional numbers of its inhabitants change almost immediately, and some species may become extinct
+1. **In Darwin's thought experiment, what does he say happens 'almost immediately' when a country's climate changes?**  
+   kind: `mcq` | concept: `Darwin's thought experiment: a country undergoing a change of climate`  
+   - [x] The proportional numbers of its inhabitants undergo a change
+   - [ ] The reproductive systems of all inhabitants become plastic
+   - [ ] New and better adapted forms immigrate across the borders
+   - [ ] The least adapted species are rigidly destroyed and go extinct
+   **Expected answer:** The proportional numbers of its inhabitants undergo a change
 
-2. **Darwin insists that a shift in the numerical proportions of some inhabitants would seriously affect many others 'independently of the change of climate itself.' What reasoning supports this?**  
-   kind: `mcq` | concept: `Changed numerical proportions affect many other species independently of the physical change itself, because inhabitants are intimately bound together`  
-   - [x] The inhabitants of each country are bound together in intimate and complex relations, so a change in one species' numbers strikes species the climate never touched
-   - [ ] Climate change is too slow to reach most organisms, so all real effects must come from numbers alone
-   - [ ] Species that grow rarer transmit their weakened constitutions to their neighbours through interbreeding
-   - [ ] Changes in numbers alter the physical conditions of a district more than the original climate shift did
-   **Expected answer:** The inhabitants of each country are bound together in intimate and complex relations, so a change in one species' numbers strikes species the climate never touched
+2. **Darwin insists that a change in the numerical proportions of some inhabitants would seriously affect many others 'independently of the change of climate itself.' What point is he making with that phrase?**  
+   kind: `short` | concept: `Change in numerical proportions affects other inhabitants independently of the physical change itself`  
+   **Expected answer:** That species can be seriously affected without experiencing the physical change directly: because the inhabitants of a country are bound together in an intimate and complex way, a shift in the abundance of other organisms is itself a potent cause of change, over and above the climate.
 
-3. **Why does Darwin remind the reader of 'how powerful the influence of a single introduced tree or mammal has been shown to be'? Answer in a sentence or two.**  
-   kind: `short` | concept: `A single introduced tree or mammal illustrates the powerful disturbance one new species can cause`  
-   **Expected answer:** To show by scale how much disturbance immigration causes: if even one newly arrived tree or mammal can visibly reorganise the relations of many other species, then the arrival of new forms into an open country would seriously disturb the former inhabitants. It illustrates how tightly balanced and interconnected the relations between species are.
+3. **What does Darwin ask the reader to remember about a single introduced tree or mammal?**  
+   kind: `mcq` | concept: `Immigration across open borders and the power of a single introduced tree or mammal`  
+   - [x] That its influence has been shown to be powerful
+   - [ ] That it rarely survives without human protection
+   - [ ] That it usually goes extinct before altering the community
+   - [ ] That it can only spread where the climate has already changed
+   **Expected answer:** That its influence has been shown to be powerful
 
-4. **In Darwin's scenario, why does an island or a country partly surrounded by barriers give natural selection 'free scope for the work of improvement'?**  
-   kind: `mcq` | concept: `Barriers or isolation keep intruders from seizing new places in the economy of nature, giving natural selection free scope to modify natives`  
-   - [x] Because intruders cannot enter and seize the newly opened places, so those places can only be filled by natives that happen to be modified
-   - [ ] Because isolation directly increases the rate at which favourable variations arise in the reproductive system
-   - [ ] Because barriers prevent the climate itself from changing, giving the natives a stable environment to adapt to
-   - [ ] Because a smaller number of individuals allows every slight variation to spread through the whole population quickly
-   **Expected answer:** Because intruders cannot enter and seize the newly opened places, so those places can only be filled by natives that happen to be modified
+4. **Why, according to Darwin, does an island or a country partly surrounded by barriers give natural selection 'free scope for the work of improvement'?**  
+   kind: `mcq` | concept: `Barriers and isolation give natural selection free scope to fill places in the economy of nature`  
+   - [x] Because places in the economy of nature cannot be seized by intruders, so they are better filled by modification of the original inhabitants
+   - [ ] Because isolation directly increases the amount of variability available to be selected
+   - [ ] Because island species face fewer enemies and so survive long enough to accumulate modifications
+   - [ ] Because barriers prevent the change of climate from reaching the original inhabitants at all
+   **Expected answer:** Because places in the economy of nature cannot be seized by intruders, so they are better filled by modification of the original inhabitants
 
-5. **Does Darwin hold that a great physical change of climate, or unusual isolation, is actually required for natural selection to have new places to fill? Explain his position.**  
-   kind: `short` | concept: `Great physical change and isolation are illustrative rather than necessary; nicely balanced forces always leave room for improvement`  
-   **Expected answer:** No. He explicitly denies that either is necessary. The climate scenario is only an illustration. Since all the inhabitants of a country struggle together with nicely balanced forces, extremely slight modifications in the structure or habits of one inhabitant will often give it an advantage, and further modifications in the same direction increase that advantage.
+5. **What evidence does Darwin offer that no country's native inhabitants are so perfectly adapted that none of them could be improved?**  
+   kind: `short` | concept: `Naturalised foreigners beating natives as evidence that no country's inhabitants are perfectly adapted`  
+   **Expected answer:** That in all countries the natives have been so far conquered by naturalised productions that they have allowed foreigners to take firm possession of the land; since foreigners have everywhere beaten some natives, the natives might have been modified with advantage so as to resist them better.
 
-6. **What conclusion does Darwin draw from the fact that naturalised foreign species have taken firm possession of land in all countries?**  
-   kind: `mcq` | concept: `Great physical change and isolation are illustrative rather than necessary; nicely balanced forces always leave room for improvement`  
-   - [x] That the native inhabitants could have been modified with advantage, so no country's natives are perfectly adapted
-   - [ ] That immigration is generally more powerful than natural selection at producing well-adapted forms
-   - [ ] That foreign species carry greater inherent variability than natives and so always prevail
-   - [ ] That barriers to immigration are the only circumstance under which natives can survive at all
-   **Expected answer:** That the native inhabitants could have been modified with advantage, so no country's natives are perfectly adapted
+6. **Darwin says a change in the conditions of life is favourable to natural selection for a second reason besides opening up new places. What is it?**  
+   kind: `mcq` | concept: `Darwin's thought experiment: a country undergoing a change of climate`  
+   - [x] By acting on the reproductive system it causes or increases variability, giving a better chance of profitable variations occurring
+   - [ ] It shortens the time nature needs, so that results comparable to man's selection appear within a few generations
+   - [ ] It removes the nicely balanced forces among inhabitants, so that even injurious variations may be preserved
+   - [ ] It makes the whole organisation of each being plastic, as happens under domestication
+   **Expected answer:** By acting on the reproductive system it causes or increases variability, giving a better chance of profitable variations occurring
 
 ---
 
-### Lesson 2.2: Open Borders, Islands, and Places in the Economy of Nature
+### Lesson 2.2: Islands, Barriers, and Places in the Economy of Nature
 
-**Concepts:** Places in the economy of nature as unfilled roles that selection can fill, Why isolation reserves opportunity for native forms rather than creating it, Changed conditions of life increase variability and thus the material for selection, The argument from naturalised productions: invasion proves natives were improvable, Nature's advantages over the breeder in scope, rigour, and time
+**Concepts:** Places in the economy of nature, opened by changed conditions and filled either by immigrants or by modified natives, Barriers and islands as exclusions of ready-made competitors, giving natural selection free scope, Changed conditions of life acting on the reproductive system to increase variability, The dependence of natural selection on the prior occurrence of profitable variations, Naturalisation of foreign species as evidence that natives everywhere could be improved
 
 **Written from source segments:** [0, 1]
 
 #### Lesson content
 
-# Open Borders, Islands, and Places in the Economy of Nature
+# Islands, Barriers, and Places in the Economy of Nature
 
-## Darwin's thought experiment
+## Starting with a country that changes
 
-Having argued that natural selection *could* act — that variation occurs, that heredity is strong, and that far more individuals are born than can survive — Darwin needs to show *how* it would act in a real landscape. His method is to imagine a country and then disturb it.
+Darwin asks us to picture a country undergoing some physical change — say, a shift of climate. The first effect is not extinction but *rearrangement*: "The proportional numbers of its inhabitants would almost immediately undergo a change, and some species might become extinct." Because the inhabitants of any country are bound together in an "intimate and complex manner," a change in the numbers of a few species will, quite apart from the climate itself, "most seriously affect many of the others."
 
-> "We shall best understand the probable course of natural selection by taking the case of a country undergoing some physical change, for instance, of climate."
+Now everything depends on one question: **is the country open at its borders, or closed?**
 
-The first consequence is not extinction but **a change in proportional numbers**. Some species become rarer, some commoner, a few may die out. And because the inhabitants of a country are bound together in "infinitely complex and close-fitting" relations, this shuffling of numbers is itself a second shock, quite apart from the weather. A species that never feels the cold directly may still be ruined because the insect it eats has dwindled, or because a competitor's numbers have swelled.
+## The open country: intruders arrive
 
-So far the experiment is the same everywhere. Now Darwin splits it in two.
+"If the country were open on its borders, new forms would certainly immigrate, and this also would seriously disturb the relations of some of the former inhabitants." Darwin reminds the reader how powerful the influence of a *single* introduced tree or mammal has been shown to be. In an open country, whatever new opportunities the changed climate opens up are liable to be taken by ready-made outsiders — species that are already well adapted somewhere else and simply walk, fly, or drift in.
 
-## Case one: the country open on its borders
+## The closed country: the work falls to the natives
 
-If the region has no barriers, **new forms immigrate**. They too disturb the old relations — Darwin reminds us "how powerful the influence of a single introduced tree or mammal has been shown to be." A single naturalised species can restructure a whole community.
+The interesting case is "an island, or ... a country partly surrounded by barriers, into which new and better adapted forms could not freely enter." Here, Darwin says, "we should then have places in the economy of nature which would assuredly be better filled up, if some of the original inhabitants were in some manner modified; for, had the area been open to immigration, these same places would have been seized on by intruders."
 
-Crucially, the immigrants arrive *already adapted*. They are finished products of selection elsewhere, and they are available immediately. Whatever new opportunities the changed climate has opened up, the intruders take them at once.
+This is worth unpacking. A "place in the economy of nature" is a way of making a living — a role, a set of resources and relations. When conditions change, some of these places are filled badly or not at all. Barriers do not create the places; the change in conditions does. What barriers do is **decide who gets to fill them**. Shut out the ready-made competitor, and the only candidates left are the natives, in whatever slightly modified forms chance throws up.
 
-## Case two: the island, or the country behind barriers
+Hence: "every slight modification, which in the course of ages chanced to arise, and which in any way favoured the individuals of any of the species, by better adapting them to their altered conditions, would tend to be preserved; and natural selection would thus have free scope for the work of improvement."
 
-Now suppose the same climatic change strikes an island, or a country partly surrounded by barriers, "into which new and better adapted forms could not freely enter." The altered conditions have still created opportunities — Darwin's phrase is **places in the economy of nature**. A "place" here is not a patch of ground but a role, a way of making a living: a manner of feeding, a season of breeding, a way of escaping enemies, that some organism could exploit and no organism currently does.
+Isolation, in this argument, is not a creative force. It is the removal of a shortcut.
 
-These places "would assuredly be better filled up, if some of the original inhabitants were in some manner modified; for, had the area been open to immigration, these same places would have been seized on by intruders."
+## Changed conditions and the supply of variation
 
-Notice the logic. Isolation does not *create* the opportunity — the climate change did that. Isolation **reserves** the opportunity for the natives, by removing the ready-made competitors who would otherwise have grabbed it first. In that reserved space, "every slight modification, which in the course of ages chanced to arise, and which in any way favoured the individuals of any of the species, by better adapting them to their altered conditions, would tend to be preserved; and natural selection would thus have free scope for the work of improvement."
+The same scenario helps in a second, independent way. Darwin appeals to a claim made in his first chapter: "a change in the conditions of life, by specially acting on the reproductive system, causes or increases variability." In the case we are considering, the conditions *have* changed. So the changed conditions are favourable to natural selection twice over — they open up places to be filled, and they raise the chance of profitable variations arising.
 
-There is a second reason the changed conditions help. Darwin holds that a change in the conditions of life, by acting on the reproductive system, **causes or increases variability**. So the same disturbance that opens the places also raises the supply of raw material — and "unless profitable variations do occur, natural selection can do nothing."
+Why does the second matter so much? Because of a hard limit Darwin states flatly: "**unless profitable variations do occur, natural selection can do nothing.**" Selection is a sieve, not a source. It cannot summon the variant it needs.
 
-He adds that no *extreme* variability is needed. Man gets great results by adding up mere individual differences; nature can do the same "far more easily, from having incomparably longer time at her disposal."
+But he immediately guards against exaggeration: "Not that, as I believe, any extreme amount of variability is necessary." Man produces great results by adding up in a given direction "mere individual differences" — so can Nature, and "far more easily, from having incomparably longer time at her disposal."
 
-## The important qualification: none of this is required
+## The retraction: none of this is actually required
 
-Having built the scenario, Darwin immediately refuses to lean on it:
+Having built the island case, Darwin then knocks away the scaffolding: "Nor do I believe that any great physical change, as of climate, or any unusual degree of isolation to check immigration, is actually necessary to produce new and unoccupied places for natural selection to fill up."
 
-> "Nor do I believe that any great physical change, as of climate, or any unusual degree of isolation to check immigration, is actually necessary to produce new and unoccupied places for natural selection to fill up."
+His reason is the nice balance of ordinary life: "all the inhabitants of each country are struggling together with nicely balanced forces," so "extremely slight modifications in the structure or habits of one inhabitant would often give it an advantage over others; and still further modifications of the same kind would often still further increase the advantage." The island and the changed climate were a *teaching device* — a clean case to see the logic in — not a precondition.
 
-The climate change and the island were teaching devices, not conditions of the theory. The reason is the **nicely balanced forces** of an ordinary, undisturbed country. Because all inhabitants are struggling together with finely balanced advantages, "extremely slight modifications in the structure or habits of one inhabitant would often give it an advantage over others; and still further modifications of the same kind would often still further increase the advantage." Improvement can start from a hair's-breadth edge, in a country where nothing dramatic has happened at all.
+## The proof from naturalised species
+
+How do we know that no country is already perfectly adapted, with no room for improvement? Darwin's evidence is naturalisation: "in all countries, the natives have been so far conquered by naturalised productions, that they have allowed foreigners to take firm possession of the land." And from this he draws the inference: "as foreigners have thus everywhere beaten some of the natives, we may safely conclude that the natives might have been modified with advantage, so as to have better resisted such intruders."
+
+The argument runs backwards from a fact of observation to a claim about possibility. If an outsider can beat you on your own ground, then a better version of you was available. The vacancies exist everywhere; islands merely make them conspicuous.
+
+## Summary of the chain
+
+1. Conditions change → the balance among inhabitants is disturbed, and places in the economy of nature open up.
+2. If borders are open → intruders seize those places.
+3. If barriers exclude intruders → the places are better filled by modifying the original inhabitants; selection has free scope.
+4. Changed conditions also act on the reproductive system, increasing variability, and so improving the chance that profitable variations occur — without which selection can do nothing.
+5. Yet neither great physical change nor unusual isolation is strictly necessary, since forces are nicely balanced everywhere; the success of naturalised foreigners proves natives everywhere could have been improved.
+
+#### Quiz
+
+1. **According to Darwin, what happens to open borders when a country's climate changes?**  
+   kind: `mcq` | concept: `Places in the economy of nature, opened by changed conditions and filled either by immigrants or by modified natives`  
+   - [x] New forms immigrate, and this too seriously disturbs the relations of some of the former inhabitants
+   - [ ] The native inhabitants disperse outwards, so that the country's balance of forces is restored
+   - [ ] Immigration is checked by the disturbed conditions until the natives have adjusted to them
+   - [ ] New forms arrive but, being unadapted to the altered climate, leave the natives undisturbed
+   **Expected answer:** New forms immigrate, and this too seriously disturbs the relations of some of the former inhabitants
+
+2. **Why does Darwin say that in an island, or a country partly surrounded by barriers, places in the economy of nature 'would assuredly be better filled up' by modifying the original inhabitants?**  
+   kind: `mcq` | concept: `Barriers and islands as exclusions of ready-made competitors, giving natural selection free scope`  
+   - [x] Because had the area been open to immigration, those same places would have been seized on by intruders
+   - [ ] Because barriers themselves create new places that would not exist in an open country
+   - [ ] Because isolated inhabitants vary more freely than those in contact with foreign species
+   - [ ] Because the struggle for existence is relaxed on islands, allowing modifications to accumulate unopposed
+   **Expected answer:** Because had the area been open to immigration, those same places would have been seized on by intruders
+
+3. **By what route does Darwin say a change in the conditions of life causes or increases variability, and why does this help natural selection?**  
+   kind: `short` | concept: `Changed conditions of life acting on the reproductive system to increase variability`  
+   **Expected answer:** By specially acting on the reproductive system. This helps natural selection by giving a better chance of profitable variations occurring — and unless profitable variations occur, natural selection can do nothing.
+
+4. **Which statement best captures Darwin's view of how much change and isolation are required for natural selection to have new places to fill?**  
+   kind: `mcq` | concept: `Places in the economy of nature, opened by changed conditions and filled either by immigrants or by modified natives`  
+   - [x] Neither a great physical change nor unusual isolation is necessary, since inhabitants everywhere struggle with nicely balanced forces that slight modifications can tip
+   - [ ] A great physical change is necessary, though isolation may be dispensed with where competitors happen to be few
+   - [ ] Unusual isolation is necessary, since without it any opening is immediately closed by immigrants
+   - [ ] Both are necessary together, which is why new species arise chiefly on islands with changing climates
+   **Expected answer:** Neither a great physical change nor unusual isolation is necessary, since inhabitants everywhere struggle with nicely balanced forces that slight modifications can tip
+
+5. **What conclusion does Darwin draw from the fact that in all countries naturalised foreigners have taken firm possession of the land?**  
+   kind: `mcq` | concept: `Naturalisation of foreign species as evidence that natives everywhere could be improved`  
+   - [x] That the natives might have been modified with advantage, so as to have better resisted such intruders
+   - [ ] That naturalised species carry variations unavailable to the native stock of any country
+   - [ ] That no country's physical conditions are stable enough for its natives to become well adapted
+   - [ ] That barriers, wherever they exist, must eventually fail to keep out better adapted forms
+   **Expected answer:** That the natives might have been modified with advantage, so as to have better resisted such intruders
+
+6. **Complete Darwin's limiting statement about what natural selection cannot do, and explain in a sentence why it matters.**  
+   kind: `short` | concept: `The dependence of natural selection on the prior occurrence of profitable variations`  
+   **Expected answer:** 'Unless profitable variations do occur, natural selection can do nothing.' It matters because selection only preserves and rejects among variations that arise; it cannot itself produce the variation it needs, which is why anything that increases variability is favourable to it.
+
+---
+
+### Lesson 2.3: Why No Great Change Is Actually Necessary
+
+**Concepts:** Extreme variability is unnecessary: mere individual differences, accumulated over vast time, suffice, Great physical change and unusual isolation are favourable but not required for natural selection, Nicely balanced forces among co-struggling inhabitants make extremely slight modifications advantageous, with further modifications increasing the advantage, The naturalisation argument: foreigners everywhere beating natives proves natives could have been modified with advantage, Nature's advantages over the breeder: internal characters, constant exercise, and geological time
+
+**Written from source segments:** [0, 1]
+
+#### Lesson content
+
+# Why No Great Change Is Actually Necessary
+
+## The scaffolding Darwin puts up — and then takes down
+
+Earlier in the chapter, Darwin says: "We shall best understand the probable course of natural selection by taking the case of a country undergoing some physical change, for instance, of climate." He then walks through what happens. The proportional numbers of the inhabitants change almost immediately; some species may go extinct; and because the inhabitants of a country are bound together in an intimate and complex way, a change in the *numbers* of a few species — quite apart from the climate itself — seriously affects many others. If the country is open at its borders, new forms immigrate and disturb things further. If instead it is an island, or partly walled off by barriers, then the vacant "places in the economy of nature" cannot be seized by intruders, and they will be better filled if some of the *original* inhabitants become modified. Under those conditions, any slight favourable modification that happens to arise tends to be preserved, and "natural selection would thus have free scope for the work of improvement."
+
+This is a vivid, easy-to-picture scenario. But notice that it is offered as the case in which we shall *best understand* natural selection — as a teaching device, not as a list of preconditions. Darwin immediately turns around and dismantles the impression that these ingredients are required.
+
+## Three things Darwin says are *not* necessary
+
+**1. Extreme variability.** A change in conditions of life, acting on the reproductive system, causes or increases variability, and that is genuinely favourable to selection, since "unless profitable variations do occur, natural selection can do nothing." But favourable is not the same as necessary. "Not that, as I believe, any extreme amount of variability is necessary." His warrant is the analogy with breeders: man produces great results by adding up, in a given direction, mere *individual differences* — not monstrosities, just the ordinary small spread among individuals. If man can do that, so can Nature — and, Darwin adds, "far more easily, from having incomparably longer time at her disposal."
+
+**2. Any great physical change, such as of climate.**
+
+**3. Any unusual degree of isolation to check immigration.**
+
+Neither of the last two, he writes, is "actually necessary to produce new and unoccupied places for natural selection to fill up by modifying and improving some of the varying inhabitants."
+
+## The reason: nicely balanced forces
+
+Why can selection get to work without any external shove? Because the pressure is already internal to the community. "All the inhabitants of each country are struggling together with nicely balanced forces." When forces are finely balanced, it takes very little to tip them: "extremely slight modifications in the structure or habits of one inhabitant would often give it an advantage over others; and still further modifications of the same kind would often still further increase the advantage."
+
+Two features of this sentence deserve attention. First, the modifications may be of *habits* as well as of structure — behaviour counts. Second, the advantage is cumulative: the same kind of change, pushed further, keeps paying. That is what turns a momentary edge into a long directional trend.
+
+The same thought appears again a little later, in Darwin's comparison of nature with the breeder: "Under nature, the slightest difference of structure or constitution may well turn the nicely-balanced scale in the struggle for life, and so be preserved." A balance that is nearly level is exactly the instrument on which a feather-weight registers.
 
 ## The proof from naturalised productions
 
-How do we know that ordinary, undisturbed countries still contain room for improvement? Darwin offers an argument from observed fact:
+Darwin now needs to answer an objection: perhaps in an undisturbed country the natives are already perfectly adapted, so that there is simply nothing left to improve and nothing for selection to do. His reply is an appeal to observed fact.
 
-1. No country can be named where all the natives are so perfectly adapted that none could be improved.
-2. Proof: in all countries, natives "have been so far conquered by naturalised productions, that they have allowed foreigners to take firm possession of the land."
-3. Therefore, since foreigners have everywhere beaten some natives, "we may safely conclude that the natives might have been modified with advantage, so as to have better resisted such intruders."
+> "No country can be named in which all the native inhabitants are now so perfectly adapted to each other and to the physical conditions under which they live, that none of them could anyhow be improved; for in all countries, the natives have been so far conquered by naturalised productions, that they have allowed foreigners to take firm possession of the land."
 
-The success of introduced species is thus evidence of native imperfection. If the local inhabitants were unimprovable, no newcomer could get a foothold. That every land has been invaded successfully shows every land had slack in it.
+The argument runs as an inference from the outcome back to the natives' condition. Foreigners have everywhere beaten some of the natives; a native that could not be improved would not have been beaten; therefore "we may safely conclude that the natives might have been modified with advantage, so as to have better resisted such intruders."
 
-This is why the island case is illuminating rather than special. Everywhere, always, some places are imperfectly filled. On an island the natives get first refusal on them; elsewhere they must compete with arrivals for them. Either way, selection has something to work on.
+This is an elegant move. Naturalisation is a natural experiment already performed, all over the world, at no cost to Darwin. Every successful introduced weed, rat or tree is a standing demonstration that room for improvement existed in the native flora and fauna before the intruder arrived. And that room — the improvable margin — is precisely what natural selection needs. Since it exists everywhere, no special catastrophe or barrier is required to create it.
+
+Note also what the argument does *not* claim. It does not say the natives were badly adapted, or that they were doomed. It says only that they "might have been modified with advantage" — that some modification would have served them better than what they had. That modest claim is all the theory requires.
 
 ## Nature's advantages over the breeder
 
-The same passage sharpens the comparison with human selection. Man acts "only on external and visible characters"; nature "can act on every internal organ, on every shade of constitutional difference, on the whole machinery of life." Man selects for his own good, nature only for the good of the being she tends. Man keeps natives of many climates in one country, feeds long- and short-beaked pigeons the same food, exposes long- and short-woolled sheep to the same climate — he does not exercise each selected character in a fitting way, nor does he let the most vigorous males struggle for the females, nor rigidly destroy the inferior. And he often starts from "some half-monstrous form," something prominent enough to catch his eye. Under nature, by contrast, "the slightest difference of structure or constitution may well turn the nicely-balanced scale."
+The same section explains why Nature can exploit these slight edges when man cannot. Man acts only on external and visible characters; "nature cares nothing for appearances, except in so far as they may be useful to any being," and can act on every internal organ, every shade of constitutional difference, on the whole machinery of life. Man selects for his own good, Nature only for the good of the being she tends. Man keeps the natives of many climates in one country, feeds a long- and a short-beaked pigeon on the same food, exposes long- and short-woolled sheep to the same climate; he does not let the most vigorous males struggle for the females, and instead of rigidly destroying inferior animals he protects all his productions as far as he can. He often begins with a half-monstrous form, or at least something prominent enough to catch his eye. Nature does none of these things — and she has geological periods where man has a fleeting lifetime. Hence her productions are "far 'truer' in character" and bear "the stamp of far higher workmanship."
 
-Add to that the disparity of time — "how fleeting are the wishes and efforts of man! how short his time!" against changes accumulated "during whole geological periods" — and it is no wonder that nature's productions are "truer" in character and bear "the stamp of far higher workmanship."
+## Summary of the argument
 
-## Summary
-
-- A physical change alters proportional numbers, and the altered numbers disturb the community further, because relations among inhabitants are close-fitting.
-- Open borders: adapted immigrants arrive and **seize** the new places.
-- Island or barriered country: the places remain unfilled, so modification of the **original inhabitants** is the way they get filled, and selection has "free scope for the work of improvement."
-- Changed conditions also increase variability, improving the chance that profitable variations occur.
-- Neither climate change nor isolation is necessary: balanced forces mean slight modifications always pay.
-- The universal success of naturalised species proves natives everywhere could have been improved.
+1. Change of conditions increases variability and is helpful — but extreme variability is not required, since mere individual differences suffice when added up over immense time.
+2. Great physical change and unusual isolation are likewise not required.
+3. Reason: inhabitants already struggle together with nicely balanced forces, so extremely slight modifications of structure or habit often confer advantage, and further such modifications increase it.
+4. Evidence that improvable margins exist everywhere: in all countries natives have been so far conquered by naturalised productions that foreigners have taken firm possession of the land.
+5. Conclusion: the natives might have been modified with advantage, so as to have better resisted such intruders. Selection therefore always has work to do.
 
 #### Quiz
 
-1. **In Darwin's contrast, what difference does an island or barriered country make after a change of climate?**  
-   kind: `mcq` | concept: `Why isolation reserves opportunity for native forms rather than creating it`  
-   - [x] The unfilled places remain available, so modification of the original inhabitants is the way they get filled
-   - [ ] The climate change itself is milder, so fewer species become extinct and fewer places open up
-   - [ ] Variability increases more sharply than on the mainland, because isolation acts on the reproductive system
-   - [ ] Competition among the natives ceases, so any variation whatever is preserved regardless of its usefulness
-   **Expected answer:** The unfilled places remain available, so modification of the original inhabitants is the way they get filled
+1. **Why, according to Darwin, can extremely slight modifications confer a real advantage even in an unchanging country?**  
+   kind: `mcq` | concept: `Nicely balanced forces among co-struggling inhabitants make extremely slight modifications advantageous, with further modifications increasing the advantage`  
+   - [x] Because all the inhabitants are struggling together with nicely balanced forces, so a small edge can tip the scale
+   - [ ] Because slight modifications are the only kind that the reproductive system is capable of producing
+   - [ ] Because slight modifications are inherited more faithfully than large ones and so spread faster
+   - [ ] Because in a stable country the number of individuals born is closer to the number that can survive
+   **Expected answer:** Because all the inhabitants are struggling together with nicely balanced forces, so a small edge can tip the scale
 
-2. **What does Darwin mean by a "place in the economy of nature"?**  
-   kind: `short` | concept: `Places in the economy of nature as unfilled roles that selection can fill`  
-   **Expected answer:** A role or way of making a living within the community — a manner of feeding, breeding or escaping enemies — that some organism could exploit but that no organism currently occupies. It is an opportunity, not a patch of ground.
+2. **What fact about naturalised productions does Darwin use as evidence, and what does he conclude from it?**  
+   kind: `short` | concept: `The naturalisation argument: foreigners everywhere beating natives proves natives could have been modified with advantage`  
+   **Expected answer:** In all countries the natives have been so far conquered by naturalised productions that foreigners have taken firm possession of the land; since foreigners have everywhere beaten some natives, Darwin concludes that the natives might have been modified with advantage so as to have better resisted such intruders — i.e. no country's inhabitants are so perfectly adapted that none could be improved.
 
-3. **Darwin argues that no country contains natives so perfectly adapted that none could be improved. What evidence does he give?**  
-   kind: `mcq` | concept: `The argument from naturalised productions: invasion proves natives were improvable`  
-   - [x] In all countries, natives have been conquered far enough by naturalised productions that foreigners have taken firm possession of the land
-   - [ ] In all countries, fossil remains show that earlier forms of life were different from those now living
-   - [ ] In all countries, domestic breeds under man's care surpass their wild relatives in size and vigour
-   - [ ] In all countries, some species are known to have become extinct after a change of climate
-   **Expected answer:** In all countries, natives have been conquered far enough by naturalised productions that foreigners have taken firm possession of the land
+3. **Darwin denies that any extreme amount of variability is necessary. What reasoning supports this?**  
+   kind: `mcq` | concept: `Extreme variability is unnecessary: mere individual differences, accumulated over vast time, suffice`  
+   - [x] Man gets great results by adding up mere individual differences, and Nature can do the same more easily with far more time
+   - [ ] Variability beyond a moderate degree is usually injurious and would be rigidly destroyed by selection
+   - [ ] Extreme variability occurs only under domestication and never appears among wild organisms
+   - [ ] Since profitable variations arise from changed conditions, high variability would make selection's task redundant
+   **Expected answer:** Man gets great results by adding up mere individual differences, and Nature can do the same more easily with far more time
 
-4. **True or false, with a reason: according to Darwin, a great physical change such as a change of climate, or an unusual degree of isolation, is necessary before natural selection can produce new adaptations.**  
-   kind: `short` | concept: `Places in the economy of nature as unfilled roles that selection can fill`  
-   **Expected answer:** False. He explicitly denies it. Because all the inhabitants of a country struggle together with nicely balanced forces, extremely slight modifications in structure or habits often give an advantage, and further modifications of the same kind increase it — so new places for selection to fill can arise without any dramatic change or isolation.
+4. **What role does the scenario of a country undergoing a change of climate, or an island closed to immigration, play in Darwin's argument?**  
+   kind: `mcq` | concept: `Great physical change and unusual isolation are favourable but not required for natural selection`  
+   - [x] It is the case in which selection is most easily understood, though Darwin then denies such conditions are necessary
+   - [ ] It is the only situation in which unoccupied places in the economy of nature can arise at all
+   - [ ] It is a hypothetical Darwin rejects as unrealistic, since climates rarely change and true barriers are rare
+   - [ ] It shows that selection works only where immigration is checked, which is why islands hold most species
+   **Expected answer:** It is the case in which selection is most easily understood, though Darwin then denies such conditions are necessary
 
-5. **Why does Darwin say the change in conditions of life is doubly favourable to natural selection?**  
-   kind: `mcq` | concept: `Changed conditions of life increase variability and thus the material for selection`  
-   - [x] It opens up unfilled places and, by acting on the reproductive system, increases variability — and without profitable variations selection can do nothing
-   - [ ] It destroys competing species outright and simultaneously lengthens the time available for slow accumulation of differences
-   - [ ] It makes the hereditary tendency stronger and at the same time prevents injurious variations from arising in the first place
-   - [ ] It reduces the number of individuals born so that fewer must perish, and it makes existing characters more constant
-   **Expected answer:** It opens up unfilled places and, by acting on the reproductive system, increases variability — and without profitable variations selection can do nothing
-
-6. **Which statement correctly captures one of Darwin's contrasts between nature's selection and man's?**  
-   kind: `mcq` | concept: `Nature's advantages over the breeder in scope, rigour, and time`  
-   - [x] Man often begins from a form prominent enough to catch his eye, whereas under nature the slightest difference of structure may turn the balanced scale
-   - [ ] Man works on internal organs and constitution, whereas nature can judge only what is externally visible in the struggle for life
-   - [ ] Man rigidly destroys all inferior animals, whereas nature protects her weaker productions through each varying season
-   - [ ] Man exercises each selected character in a peculiar and fitting manner, whereas nature leaves characters unexercised
-   **Expected answer:** Man often begins from a form prominent enough to catch his eye, whereas under nature the slightest difference of structure may turn the balanced scale
-
----
-
-### Lesson 2.3: Variability, Nicely Balanced Forces, and Naturalised Intruders
-
-**Concepts:** Natural selection depends on a prior supply of profitable variations and cannot create them, Darwin's hypothesis that changed conditions increase variability by acting on the reproductive system, The 'nicely balanced forces' claim: slight modifications suffice because competition is knife-edged, The argument from naturalised productions against perfect adaptation, and its evidential weaknesses, Adaptation as relative and provisional rather than complete
-
-**Written from source segments:** [0, 1]
-
-#### Lesson content
-
-# Variability, Nicely Balanced Forces, and Naturalised Intruders
-
-## 1. Selection cannot work without something to select
-
-Darwin has just defined natural selection as "this preservation of favourable variations and the rejection of injurious variations." But notice what that definition presupposes. Selection is a *sorting* process, not a *creating* process. A sieve cannot produce gold; it can only separate gold from gravel that is already in the pan. So the whole theory rests on a supply question: **where do the favourable variations come from, and are there enough of them?**
-
-Darwin states the dependency with unusual bluntness:
-
-> "unless profitable variations do occur, natural selection can do nothing."
-
-This single clause is the hinge of the chapter. Everything Darwin says afterwards about the power of nature over the breeder is conditional on this supply being met. Chapter IV therefore contains two distinct arguments that are easy to run together but should be kept apart:
-
-- **The supply argument**: changed conditions of life increase variability, so a changing world keeps generating raw material.
-- **The opportunity argument**: even without any change in conditions, there is always room for improvement, because the balance of forces between living things is so delicate and because no country's natives are perfectly adapted.
-
-Darwin needs both, because the first argument alone would make evolution episodic — bursts of change following climatic upheavals — and he wants natural selection to be "daily and hourly scrutinising" everything, everywhere.
-
-## 2. The supply argument: conditions acting on the reproductive system
-
-Darwin's proposed source of variation is:
-
-> "a change in the conditions of life, by specially acting on the reproductive system, causes or increases variability"
-
-Read the causal chain carefully. It runs: *altered external conditions → disturbance of the parents' reproductive system → offspring that vary more than usual*. Two features deserve emphasis.
-
-First, the conditions do **not** dictate the *content* of the variation. They open a tap; they do not aim the hose. Darwin's changed climate does not produce thicker fur to order — it produces variability in general, from which selection then picks whatever happens to be profitable. This is why the theory stays a selection theory rather than becoming a theory of direct adaptation by use and environment.
-
-Second, this is a nineteenth-century guess made without any theory of heredity. Darwin has no genes, no mutations, no meiosis. He infers the mechanism from domestication, where transplanted, pampered, or oddly fed organisms seemed to him conspicuously more variable than wild ones. A modern reader should notice both what is wrong and what is oddly prescient here. Wrong: variability is not, in general, manufactured on demand by a shaken reproductive system, and the standing variation in most wild populations is far larger than Darwin could measure. Prescient: stress genuinely can raise mutation rates and can expose previously hidden variation in some organisms — but this is a fringe supplement to Darwinism, not its foundation, whereas Darwin was leaning on it as a foundation.
-
-### Darwin immediately weakens his own reliance on it
-
-Having offered the mechanism, Darwin hedges twice in the space of a few lines:
-
-> "Not that, as I believe, any extreme amount of variability is necessary; as man can certainly produce great results by adding up in any given direction mere individual differences, so could Nature, but far more easily, from having incomparably longer time at her disposal."
-
-So the ordinary, everyday **individual differences** among the members of a population — not monstrosities, not sports, not the products of some special upheaval — are enough. Time substitutes for intensity. And then:
-
-> "Nor do I believe that any great physical change, as of climate, or any unusual degree of isolation to check immigration, is actually necessary to produce new and unoccupied places for natural selection to fill up"
-
-This is a strategically sound retreat. Darwin has offered the reproductive-system story as a *helpful* circumstance ("giving a better chance of profitable variations occurring"), then made sure the theory does not collapse if that story turns out to be false. Since the story largely was false, the hedge saved him.
-
-## 3. Nicely balanced forces
-
-The opportunity argument turns on a phrase Darwin uses twice:
-
-> "all the inhabitants of each country are struggling together with nicely balanced forces, extremely slight modifications in the structure or habits of one inhabitant would often give it an advantage over others; and still further modifications of the same kind would often still further increase the advantage."
-
-"Nicely balanced" here means *finely* or *delicately* balanced, not *pleasantly*. The picture is of a scale so evenly loaded that a feather decides it. This does real work for Darwin:
-
-1. **It lowers the threshold of significance.** If competition is knife-edged, a difference too small for a naturalist to notice can be the difference between leaving descendants and not. This is why he can later argue that the down on a plum or the shade of a grouse's plumage matters.
-2. **It makes improvement open-ended.** Note the second clause: further modifications "in the same kind" would further increase the advantage. Advantage does not saturate after one step, so selection has a direction to keep pushing in.
-3. **It removes the need for external triggers.** If the balance is that fine, then any organism that happens to vary slightly in a useful direction creates its own opportunity. The environment of each species includes all the other species, and those are themselves always shifting.
-
-## 4. The argument from naturalised productions
-
-Now the boldest passage in the section. Darwin wants to establish a universal negative — that *nowhere* on earth are living things perfectly adapted — and he tries to do it with a single empirical fact.
-
-> "No country can be named in which all the native inhabitants are now so perfectly adapted to each other and to the physical conditions under which they live, that none of them could anyhow be improved; for in all countries, the natives have been so far conquered by naturalised productions, that they have allowed foreigners to take firm possession of the land. And as foreigners have thus everywhere beaten some of the natives, we may safely conclude that the natives might have been modified with advantage, so as to have better resisted such intruders."
-
-Laid out as an argument:
-
-- **P1.** In every country, introduced ("naturalised") species have established themselves and displaced or beaten some natives.
-- **P2.** If a native could be beaten by a newcomer, then some modification of that native would have enabled it to resist better.
-- **C.** Therefore no country's natives are so perfectly adapted that none could be improved — there is always scope for natural selection.
-
-### Why the argument matters
-
-The target is the natural-theological picture of creation, in which each creature is perfectly fitted to its station by design. If perfection were the rule, natural selection would be a mechanism with nothing to do: no unfilled places, no room for improvement, no sorting to perform. Darwin's counter is that adaptation is always *relative and provisional* — good enough to persist so far, against the enemies encountered so far. "Places in the economy of nature" are never all filled, and intruders prove it by walking in.
-
-Notice too the elegance of the evidence. Naturalisation was a large-scale, unplanned experiment already running across the British Empire, and its results were public. Darwin does not need geological time to make this point; the rabbit in Australia and the weed in a New World pasture make it inside a human lifetime.
-
-### Where the argument is vulnerable
-
-A critical reader should press on three points.
-
-**(a) The conclusion is narrower than it sounds.** What the naturalisation fact strictly shows is that natives were not perfectly adapted *to resist those particular intruders* — organisms they had never encountered. That is close to trivially true, and it does not by itself show that natives were imperfectly adapted to the conditions they actually faced. Darwin needs the wider claim, and he gets it partly by assertion.
-
-**(b) The comparison is not clean.** Successful colonists are a heavily filtered sample. We hear about the ones that took firm possession; the far greater number of introductions that failed leave no trace in the record. A species drawn from a large continental flora or fauna, arriving without its own parasites and predators, into ground disturbed by human agriculture, is not competing on equal terms with the natives. Human disturbance may be doing much of the work that Darwin credits to the intruder's superiority.
-
-**(c) "Might have been modified with advantage" is a counterfactual.** It says that *some* variant would have done better. But natural selection can only preserve variations that actually arise, and Darwin himself has just insisted that without profitable variations selection can do nothing. So the very availability of the improvement is an assumption, not an observation.
-
-None of this sinks the argument. Modern invasion biology broadly vindicates Darwin's conclusion — communities are demonstrably invasible, and "empty niches" are real — while confirming that his premises were coarser than his confidence suggested.
-
-## 5. Putting the two arguments together
-
-Hold the pieces in one view:
-
-| Question | Darwin's answer | Status today |
-| --- | --- | --- |
-| Where does variation come from? | Changed conditions act on the reproductive system and raise variability | Largely superseded; variation arises chiefly from mutation and recombination, mostly independently of need |
-| How much variation is needed? | Only ordinary individual differences, given enough time | Sound; a central and durable insight |
-| Is there always room for improvement? | Yes — forces are nicely balanced, and intruders beat natives everywhere | Broadly sound, though the naturalisation evidence is less clean than Darwin allows |
-
-The striking thing is that Darwin's weakest link — the reproductive-system mechanism — is the one he explicitly declares dispensable, while the claim he stakes most on is that selection has nothing to work with unless variation is supplied. He was right about the dependency and wrong about the source. It took genetics to fill the gap he had correctly identified.
-
-## 6. A test case to think with
-
-Suppose an island whose climate has been utterly stable for a hundred thousand years, with no immigration. On Darwin's supply argument alone, variability should be low and change slow. On his opportunity argument, selection should nevertheless keep working, because the species are locked in a finely balanced struggle with each other, and any slight edge one of them gains shifts the conditions for all the rest. Which prediction should we prefer? Darwin plainly wants the second, and that is why he takes the trouble to say that no great physical change is "actually necessary." His deeper commitment is that the environment of each organism is mostly *other organisms*, so the target is always moving and adaptation is never finished.
-
-#### Quiz
-
-1. **In Darwin's proposed mechanism, what is the relationship between changed conditions of life and the variations that appear?**  
-   kind: `mcq` | concept: `Darwin's hypothesis that changed conditions increase variability by acting on the reproductive system`  
-   - [x] Changed conditions raise the general level of variability by acting on the reproductive system, without determining which variations appear
-   - [ ] Changed conditions call forth the specific modifications the altered environment demands, which selection then stabilises
-   - [ ] Changed conditions have no effect on variability but expose variation that was already present in the population
-   - [ ] Changed conditions act directly on the bodies of adults, and those acquired changes are then transmitted to offspring
-   **Expected answer:** Changed conditions raise the general level of variability by acting on the reproductive system, without determining which variations appear
-
-2. **Darwin writes that 'unless profitable variations do occur, natural selection can do nothing.' Explain in a sentence or two why this admission is important to the logic of his theory.**  
-   kind: `short` | concept: `Natural selection depends on a prior supply of profitable variations and cannot create them`  
-   **Expected answer:** Because natural selection is a sorting process rather than a creative one: it can only preserve and accumulate variations that already exist, so the theory depends on an independent supply of variation. Darwin correctly identified this dependency even though his proposed source of variation (the reproductive system disturbed by changed conditions) was largely wrong.
-
-3. **What work does the phrase 'nicely balanced forces' do in Darwin's argument?**  
-   kind: `mcq` | concept: `The 'nicely balanced forces' claim: slight modifications suffice because competition is knife-edged`  
-   - [x] It supports the idea that extremely slight modifications can be decisive, so improvement is possible without any external upheaval
-   - [ ] It explains why populations remain stable for long periods until a climatic change disturbs the equilibrium
-   - [ ] It shows that species reach a point of mutual accommodation beyond which further advantage cannot be gained
-   - [ ] It establishes that the physical conditions of life, rather than other organisms, set the terms of competition
-   **Expected answer:** It supports the idea that extremely slight modifications can be decisive, so improvement is possible without any external upheaval
-
-4. **Reconstruct Darwin's argument from naturalised productions: what fact does he start from, and what conclusion does he draw about the adaptation of native species?**  
-   kind: `short` | concept: `The argument from naturalised productions against perfect adaptation, and its evidential weaknesses`  
-   **Expected answer:** He starts from the fact that in every country introduced species have established themselves and beaten some natives. He concludes that those natives could have been modified with advantage so as to resist the intruders better, and therefore that no country's inhabitants are so perfectly adapted that none of them could be improved — leaving scope for natural selection everywhere.
-
-5. **Which of the following is the strongest objection to Darwin's use of naturalisation as evidence?**  
-   kind: `mcq` | concept: `The argument from naturalised productions against perfect adaptation, and its evidential weaknesses`  
-   - [x] Successful colonists are a filtered sample arriving without their usual enemies onto human-disturbed ground, so the contest with natives is not conducted on equal terms
-   - [ ] Naturalised species are observed over decades rather than geological ages, and no adaptive process can be inferred from such short timescales
-   - [ ] Introduced species are almost always domesticated forms, whose characters were shaped by human rather than natural selection
-   - [ ] The displacement of natives by foreigners shows only that the physical conditions had changed, which Darwin elsewhere denies is necessary
-   **Expected answer:** Successful colonists are a filtered sample arriving without their usual enemies onto human-disturbed ground, so the contest with natives is not conducted on equal terms
-
-6. **Darwin denies that 'any extreme amount of variability is necessary.' What does he say is sufficient instead, and what compensates for the smallness of the material?**  
-   kind: `mcq` | concept: `Natural selection depends on a prior supply of profitable variations and cannot create them`  
-   - [x] Mere individual differences are enough, and nature's incomparably longer stretch of time compensates
-   - [ ] Occasional monstrous or sport forms are enough, and their large size of effect compensates
-   - [ ] Variability released by isolation is enough, and the absence of intercrossing compensates
-   - [ ] Hereditary tendency alone is enough, and the great numbers of individuals born compensate
-   **Expected answer:** Mere individual differences are enough, and nature's incomparably longer stretch of time compensates
+5. **Name two ways in which Darwin says Nature's selection surpasses man's.**  
+   kind: `short` | concept: `Nature's advantages over the breeder: internal characters, constant exercise, and geological time`  
+   **Expected answer:** Any two of: nature can act on internal organs, constitutional differences and the whole machinery of life, whereas man acts only on external and visible characters; nature selects for the good of the being itself, man only for his own good; nature fully exercises every selected character and places the being under well-suited conditions, whereas man feeds long- and short-beaked pigeons alike and exposes long- and short-woolled sheep to the same climate; nature lets vigorous males struggle for females and rigidly destroys the inferior, while man protects his productions; nature has whole geological periods while man's time is short.
 
 ---
 
@@ -747,7 +675,7 @@ Suppose an island whose climate has been utterly stable for a hundred thousand y
 
 ### Lesson 3.1: What Man Can and Cannot Do
 
-**Concepts:** Man's selection acts only on external, visible characters, while nature acts on internal organs and every shade of constitutional difference, Man selects for his own good; nature selects only for the good of the being it tends, The breeder fails to exercise selected characters under fitting conditions (same climate, same food, no peculiar exercise), Man protects inferior animals instead of rigidly destroying them, and needs conspicuous variations to begin with, The a fortiori structure of Darwin's argument: a crippled selector achieves much, so an exact and unlimited one must achieve far more
+**Concepts:** Man selects on external and visible characters, while nature can act on internal organs and constitutional differences, Man selects for his own good; nature selects for the good of the being itself, The breeder fails to place selected characters under fitting conditions (same food, same climate, no exercise), Man interferes with the struggle by pairing animals himself and protecting inferior stock, Man's selection requires a conspicuous starting variation, whereas nature can preserve the slightest difference
 
 **Written from source segments:** [0, 1]
 
@@ -755,220 +683,333 @@ Suppose an island whose climate has been utterly stable for a hundred thousand y
 
 # What Man Can and Cannot Do
 
-By the time Darwin reaches this passage in Chapter IV, he has already spent chapters showing how powerful selection is *in the hands of man*. Pigeon fanciers, sheep breeders and horticulturists have, in a few human lifetimes, produced forms so divergent that a naturalist meeting them in the wild might call them separate species. So Darwin's rhetorical question is not "can selection do much?" but rather: **"As man can produce and certainly has produced a great result by his methodical and unconscious means of selection, what may not nature effect?"**
+By the time Darwin reaches this point in Chapter IV, he has already argued that selection is "potent in the hands of man." Domestic pigeons, sheep, dogs and fruit trees have been reshaped by breeders within recorded history. But his purpose here is not to praise the breeder. It is to set the breeder up as a *measuring stick* — and then show how short that stick is.
 
-To answer it, he does something clever. Instead of praising nature in the abstract, he draws up an itemised list of the breeder's *handicaps*. Every item is a place where the domestic breeder falls short of what nature does automatically. The argument is a fortiori: if a clumsy, short-sighted, half-hearted selector can remake the pigeon, then a tireless and exact one must be able to do far more.
+His question is a rhetorical one: "As man can produce and certainly has produced a great result by his methodical and unconscious means of selection, what may not nature effect?"
 
-## The catalogue of limitations
+To answer it, he draws up an unusually specific list of the breeder's handicaps.
 
-### 1. Man acts only on external and visible characters
+## 1. Man works on the surface only
 
-"Man can act only on external and visible characters: nature cares nothing for appearances, except in so far as they may be useful to any being." The breeder can only pick what he can *see* — plumage, horn shape, fleece length, size. Nature, by contrast, "can act on every internal organ, on every shade of constitutional difference, on the whole machinery of life." A slightly more efficient liver, a marginally better lung, a subtle difference in resistance to cold: these are invisible to the fancier and decisive in the struggle for life.
+> "Man can act only on external and visible characters: nature cares nothing for appearances, except in so far as they may be useful to any being. She can act on every internal organ, on every shade of constitutional difference, on the whole machinery of life."
 
-Note the careful phrasing: nature does not *ignore* appearance. Appearance matters to nature exactly in so far as it is useful to the being — as with the grouse whose colour matches heather or peaty earth. What nature ignores is appearance for its own sake, the fancier's taste.
+A breeder chooses the pigeon whose beak looks longest, the sheep whose fleece looks finest. He cannot see a slightly better liver, a slightly more efficient digestion, a slightly hardier constitution. Nature, by contrast, has no interest in how a creature looks — except where looks happen to matter to survival — and so her selection reaches everything, inside and out.
 
-### 2. Man selects only for his own good
+Note the careful qualification. Darwin is not saying nature ignores appearance; he is saying nature is indifferent to appearance *as such*, and attends to it only when it is useful. (In the next part of the chapter he will show colour mattering enormously — the white ptarmigan, the heather-coloured red-grouse.)
 
-"Man selects only for his own good; Nature only for that of the being which she tends." A shorter-lived, weaker sheep with finer wool is a triumph for the farmer and a disaster for the sheep. Domestic selection can therefore push a lineage in directions that would be fatal in the wild. Natural selection cannot: any variation "in the least degree injurious would be rigidly destroyed." This is why Darwin says nature's productions are "truer" in character and bear "the stamp of far higher workmanship."
+## 2. Man selects for himself, not for the creature
 
-### 3. Man does not exercise each selected character fittingly
+> "Man selects only for his own good; Nature only for that of the being which she tends."
 
-Under nature, "every selected character is fully exercised by her; and the being is placed under well-suited conditions of life." Man does the opposite, and Darwin gives a small parade of concrete failures:
+This is the deepest of the differences. A breeder may fix a trait that positively burdens the animal, so long as it pleases him or pays him. Natural selection cannot do this: it preserves a variation only because that variation helps the individual that carries it. Everything else Darwin says about the improvement and adaptation of organisms follows from this constraint.
 
-- **He keeps the natives of many climates in the same country.** An animal from the tropics and one from the highlands share the same paddock and the same weather; neither is tested against the conditions its structure suits.
-- **He feeds a long-beaked and a short-beaked pigeon on the same food.** The beak is being selected as an ornament, not as a tool. In nature a beak's shape is inseparable from what it must extract and how well it does so.
-- **He does not exercise a long-backed or long-legged quadruped in any peculiar manner.** The limbs are bred, not used.
-- **He exposes sheep with long and short wool to the same climate.** The fleece is never put to the trial for which a fleece exists.
+## 3. Man fails to match conditions to the characters he selects
 
-The common thread: under domestication the selected character is detached from the conditions that would give it meaning. Nature never separates the two — the structure and the circumstance that tests it come together.
+With nature, "every selected character is fully exercised by her; and the being is placed under well-suited conditions of life." Man does nothing of the kind, and Darwin gives four concrete failures:
 
-### 4. Man does not let the most vigorous males struggle for the females
+- **He keeps the natives of many climates in the same country.** Animals drawn from all over the world are kept side by side in one place, under conditions suited to none of them in particular.
+- **He feeds a long-beaked and a short-beaked pigeon on the same food.** The very organ he has been selecting is never put to a distinctive use, so nothing tests whether the beak actually works.
+- **He does not exercise a long-backed or long-legged quadruped in any peculiar manner.** The long legs are bred for, then left idle.
+- **He exposes sheep with long and short wool to the same climate.** Long wool is fitted for cold, short wool for heat, but both flocks stand in the same weather.
 
-The breeder chooses which male covers which female. Nature leaves it to contest, and thereby adds a whole second engine of change, which Darwin will treat later in the chapter as sexual selection.
+The common thread: the breeder changes the animal but not the conditions the animal must meet. In nature the character and the conditions are inseparable — the structure exists *because* of the conditions that tested it.
 
-### 5. Man protects rather than destroys
+## 4. Man interferes with the struggle
 
-"He does not rigidly destroy all inferior animals, but protects during each varying season, as far as lies in his power, all his productions." Husbandry is by definition sheltering: winter feed, shelter from storms, treatment of the sick. The result is that inferior variants survive to breed. Selection under domestication is therefore *leaky*; natural selection is not. Darwin drives the point home elsewhere in the chapter with a breeder's own maxim: "how essential it is in a flock of white sheep to destroy every lamb with the faintest trace of black."
+Two further items on the list concern who gets to breed and who gets to live:
 
-### 6. Man begins with what catches his eye
+> "He does not allow the most vigorous males to struggle for the females. He does not rigidly destroy all inferior animals, but protects during each varying season, as far as lies in his power, all his productions."
 
-"He often begins his selection by some half-monstrous form; or at least by some modification prominent enough to catch his eye, or to be plainly useful to him." Man needs a conspicuous starting point. "Under nature, the slightest difference of structure or constitution may well turn the nicely-balanced scale in the struggle for life, and so be preserved." This is the sharpest contrast of all: the threshold of variation that nature can work with is indefinitely lower than man's.
+The breeder pairs animals by hand, so the contest that would otherwise sort the vigorous from the feeble never happens. And he is a protector: he shelters and feeds his stock through hard seasons, so the inferior survive alongside the superior. Kindness, in the breeder, is inefficiency as a selector.
 
-### 7. Man's time is short
+## 5. Man starts from something conspicuous
 
-"How fleeting are the wishes and efforts of man! how short his time!" A fashion in pigeons lasts a generation; the fancier dies and his line is dispersed. Nature accumulates "during whole geological periods," and — as Darwin notes earlier — needs no extreme variability, since she works "far more easily, from having incomparably longer time at her disposal."
+> "He often begins his selection by some half-monstrous form; or at least by some modification prominent enough to catch his eye, or to be plainly useful to him."
 
-## Why the trifling matters
+This is a point about the *threshold* of selection. A breeder needs a variation big enough to notice — a freak, an oddity, or something with obvious commercial value. Everything below that threshold is invisible to him and therefore unusable. Under nature there is no such threshold: "the slightest difference of structure or constitution may well turn the nicely-balanced scale in the struggle for life, and so be preserved."
 
-The first limitation — man's confinement to the visible and the obviously useful — leads directly to Darwin's discussion of characters "which we are apt to consider as of very trifling importance." Botanists treat the down on a fruit and the colour of its flesh as trivial. But Downing, the American horticulturist, reports that smooth-skinned fruits suffer far more from the curculio beetle than downy ones; that purple plums suffer more from one disease than yellow plums; and that another disease attacks yellow-fleshed peaches more than other-coloured flesh. If such differences already "make a great difference" under cultivation, with all the aids of art, then in the wild, among competing trees and a host of enemies, they would "effectually settle which variety... should succeed." What looks trifling to us is not trifling to selection.
+Darwin is careful elsewhere in the chapter to insist that great variability is not required. Man "can certainly produce great results by adding up in any given direction mere individual differences, so could Nature, but far more easily, from having incomparably longer time at her disposal."
 
-## The shape of the argument
+## 6. Man is in a hurry
 
-Darwin is not saying that man's selection is feeble. He is saying it is *crippled* — and yet it has still remade our domestic animals and plants. Remove the crutches and the blinkers, extend the timescale from decades to geological ages, and the process that produced the pouter and the fantail becomes something capable of producing the ptarmigan's winter white and the whole "stamp of far higher workmanship" we see in nature.
+> "How fleeting are the wishes and efforts of man! how short his time!"
 
-> "It may be said that natural selection is daily and hourly scrutinising, throughout the world, every variation, even the slightest; rejecting that which is bad, preserving and adding up all that is good."
+A breeder's fashion lasts a generation or two; nature accumulates through "whole geological periods." Even a breeder who avoided every other error would still be working within a span too small to matter.
+
+## The conclusion Darwin draws
+
+Given all this, he says, we should not be surprised that "nature's productions should be far 'truer' in character than man's productions; that they should be infinitely better adapted to the most complex conditions of life, and should plainly bear the stamp of far higher workmanship."
+
+The argument's shape is worth noticing. Darwin is not asking his reader to accept a mysterious new force. He is asking the reader to accept something already familiar — the breeder's power — and then remove, one by one, every limitation the breeder labours under. What is left is natural selection, and it is the same process, unhandicapped.
 
 #### Quiz
 
-1. **Darwin says man 'feeds a long and a short beaked pigeon on the same food.' What limitation of domestic selection does this example illustrate?**  
-   kind: `mcq` | concept: `The breeder fails to exercise selected characters under fitting conditions (same climate, same food, no peculiar exercise)`  
-   - [x] That the selected character is never exercised under conditions fitted to it, so its usefulness is never tested
-   - [ ] That breeders cannot obtain food varied enough to reveal differences between pigeon breeds
-   - [ ] That beak length is a character too trifling for any form of selection to fix reliably
-   - [ ] That domestic pigeons revert to a common ancestral diet whatever their breed
-   **Expected answer:** That the selected character is never exercised under conditions fitted to it, so its usefulness is never tested
+1. **According to Darwin, what can nature act upon that man's selection cannot reach?**  
+   kind: `mcq` | concept: `Man selects on external and visible characters, while nature can act on internal organs and constitutional differences`  
+   - [x] The inward workings of a creature — its organs, its constitution, the whole machinery of life
+   - [ ] Only those traits a breeder has deliberately set out to fix in his stock
+   - [ ] Traits that appear in the young but disappear before the animal is full-grown
+   - [ ] The purely ornamental features that give an animal no advantage whatever
+   **Expected answer:** The inward workings of a creature — its organs, its constitution, the whole machinery of life
 
-2. **According to the lesson, what is nature's relation to outward appearance?**  
-   kind: `mcq` | concept: `Man's selection acts only on external, visible characters, while nature acts on internal organs and every shade of constitutional difference`  
-   - [ ] Nature disregards appearance entirely, working only on internal organs and constitution
-   - [x] Nature attends to appearance only so far as it is useful to the being, as with a grouse's protective colouring
-   - [ ] Nature values appearance more highly than man does, since colour is the commonest kind of variation
-   - [ ] Nature treats appearance and internal structure as equally important in every case
-   **Expected answer:** Nature attends to appearance only so far as it is useful to the being, as with a grouse's protective colouring
+2. **Darwin points out that the breeder feeds a long-beaked and a short-beaked pigeon on the same food, and exposes long-woolled and short-woolled sheep to the same climate. What single failing do these two examples illustrate?**  
+   kind: `mcq` | concept: `The breeder fails to place selected characters under fitting conditions (same food, same climate, no exercise)`  
+   - [x] The breeder alters the animal without placing it under conditions that would actually test the altered character
+   - [ ] The breeder cannot obtain enough variation in beaks or fleeces to work with
+   - [ ] The breeder unknowingly selects for two opposite characters in the same flock
+   - [ ] The breeder allows his stock to interbreed instead of keeping the strains apart
+   **Expected answer:** The breeder alters the animal without placing it under conditions that would actually test the altered character
 
-3. **In one or two sentences, explain the difference Darwin draws between whom man's selection benefits and whom nature's selection benefits, and why this makes nature's products 'truer' in character.**  
-   kind: `short` | concept: `Man selects for his own good; nature selects only for the good of the being it tends`  
-   **Expected answer:** Man selects only for his own good, so he may fix characters (like a fine fleece on a weak sheep) that harm the organism; nature selects only for the good of the being she tends, rigidly destroying any variation in the least degree injurious. Because nothing harmful to the creature can be preserved, nature's productions are better adapted to their complex conditions and bear the stamp of higher workmanship.
+3. **Darwin says man 'does not rigidly destroy all inferior animals.' What does he say man does instead, and why does this matter for selection?**  
+   kind: `short` | concept: `Man interferes with the struggle by pairing animals himself and protecting inferior stock`  
+   **Expected answer:** Man protects all his productions as far as he can through each varying season, so inferior individuals survive alongside superior ones instead of being weeded out as they would be in nature.
 
-4. **Darwin notes that man 'does not rigidly destroy all inferior animals, but protects during each varying season, as far as lies in his power, all his productions.' What is the consequence?**  
-   kind: `mcq` | concept: `Man protects inferior animals instead of rigidly destroying them, and needs conspicuous variations to begin with`  
-   - [ ] Domestic breeds accumulate variability faster and therefore change more quickly than wild ones
-   - [x] Selection under domestication is leaky, since inferior variants survive to breed, whereas natural selection rejects them
-   - [ ] Domestic animals lose their hereditary tendency, so favourable variations are not transmitted
-   - [ ] Breeders must compensate by choosing only half-monstrous forms as parents
-   **Expected answer:** Selection under domestication is leaky, since inferior variants survive to breed, whereas natural selection rejects them
+4. **Where does man's selection typically begin, and how does this differ from nature's?**  
+   kind: `mcq` | concept: `Man's selection requires a conspicuous starting variation, whereas nature can preserve the slightest difference`  
+   - [x] With a half-monstrous form or some change striking enough to catch his eye, whereas nature can seize on the faintest difference
+   - [ ] With an animal already well adapted to its conditions, whereas nature works only on maladapted forms
+   - [ ] With slight individual differences he measures carefully, whereas nature waits for large sudden changes
+   - [ ] With a character useful to the animal itself, whereas nature attends only to what is useful to man
+   **Expected answer:** With a half-monstrous form or some change striking enough to catch his eye, whereas nature can seize on the faintest difference
 
-5. **What kind of variation does man typically need in order to begin selecting, compared with what nature can work upon?**  
-   kind: `mcq` | concept: `Man protects inferior animals instead of rigidly destroying them, and needs conspicuous variations to begin with`  
-   - [ ] Man needs a variation that breeds true in the first generation; nature can use variations that appear only intermittently
-   - [ ] Man needs a variation arising from changed conditions of life; nature can use variations arising spontaneously
-   - [x] Man needs a half-monstrous or conspicuous modification that catches his eye; nature can preserve the slightest difference of structure or constitution
-   - [ ] Man needs a variation in an internal organ he can measure; nature can preserve differences of mere colour and outward form
-   **Expected answer:** Man needs a half-monstrous or conspicuous modification that catches his eye; nature can preserve the slightest difference of structure or constitution
+5. **Complete Darwin's contrast: man selects only for ______, while nature selects only for ______.**  
+   kind: `short` | concept: `Man selects for his own good; nature selects for the good of the being itself`  
+   **Expected answer:** Man selects only for his own good; nature only for the good of the being which she tends.
 
-6. **How does the horticulturist Downing's evidence about downy fruits, purple plums and yellow-fleshed peaches support Darwin's argument about 'trifling' characters?**  
-   kind: `short` | concept: `Man's selection acts only on external, visible characters, while nature acts on internal organs and every shade of constitutional difference`  
-   **Expected answer:** Botanists count fruit down and flesh colour as trivial, yet Downing found smooth fruits suffer far more from the curculio beetle, purple plums more from one disease, and yellow-fleshed peaches more from another. If such differences already tell under cultivation with all the aids of art, then in the wild, among competing trees and many enemies, they would decide which variety survives — so characters that look trifling to us can be decisive for natural selection.
+6. **Besides its other advantages, what does Darwin say lets nature achieve great results 'far more easily' than man from mere individual differences?**  
+   kind: `mcq` | concept: `Man's selection requires a conspicuous starting variation, whereas nature can preserve the slightest difference`  
+   - [x] She has incomparably longer time at her disposal, working over whole geological periods
+   - [ ] She acts on far larger populations than any breeder could ever assemble
+   - [ ] She can produce entirely new variations at will rather than waiting for them
+   - [ ] She never allows two distinct varieties to cross with one another
+   **Expected answer:** She has incomparably longer time at her disposal, working over whole geological periods
 
 ---
 
-### Lesson 3.2: Nature as a Superior Selector
+### Lesson 3.2: Nature's Superior Workmanship
 
-**Concepts:** Natural selection defined as preservation of favourable and rejection of injurious variations, with neutral variations left fluctuating, The systematic contrast between man's selection (external characters, own good, short time, unexercised traits) and nature's (whole machinery of life, the being's good, geological time, every character exercised), Darwin's image of selection daily and hourly scrutinising every variation, silently and insensibly, and why the process is invisible on human timescales, Selection acting on characters of apparently trifling importance, evidenced by protective coloration in grouse and by disease and pest resistance in fruit
+**Concepts:** Man selects only visible external characters, while nature can act on internal organs, constitutional differences, and the whole machinery of life, Man selects for his own good, nature only for the good of the being she tends, Man's fleeting wishes and short time versus variations accumulated over whole geological periods, Natural selection as daily and hourly scrutiny — rejecting the bad, preserving and adding up the good, silently and insensibly, No country's inhabitants are perfectly adapted, as shown by naturalised foreigners conquering natives
 
 **Written from source segments:** [0, 1]
 
 #### Lesson content
 
-# Nature as a Superior Selector
+# Nature's Superior Workmanship
 
-In the opening of Chapter IV of *On the Origin of Species*, Darwin has just persuaded his reader that breeders can reshape pigeons, sheep and cabbages by picking out the individuals they like. Now he asks the harder question: **can the same principle work in nature?** His answer is not merely "yes" — it is that nature does the job *better*, and he sets out point by point why the human breeder is the clumsier of the two selectors.
+Darwin has just argued that natural selection *can* act in nature. Now he asks a sharper question: how good is it, compared with the breeder whose results we already admire?
 
-## The definition being defended
+> "As man can produce and certainly has produced a great result by his methodical and unconscious means of selection, what may not nature effect?"
 
-First, recall what Darwin means. "This preservation of favourable variations and the rejection of injurious variations, I call Natural Selection." Note the third category he adds immediately: variations that are *neither* useful nor injurious are not touched by selection at all, and are "left a fluctuating element" — as, he suggests, in polymorphic species. Natural selection is not a force that tidies up every difference; it is a filter that only bites where a difference matters to survival.
+The answer comes as a point-by-point comparison, and it is not flattering to man.
 
-## The comparison, item by item
+## 1. What each can see
 
-Darwin's rhetorical strategy is a list of contrasts. It is worth having them straight.
+**Man can act only on external and visible characters.** He must be able to notice a difference before he can breed for it — so his selection is limited to the surface of the animal or plant.
 
-| Man | Nature |
-| --- | --- |
-| Acts only on external, visible characters | Acts on every internal organ, every shade of constitutional difference, "the whole machinery of life" |
-| Selects for his own good | Selects only for the good of the being she tends |
-| Seldom exercises a selected character in a fitting way | Fully exercises every selected character, under well-suited conditions |
-| Keeps natives of many climates in one country | Each being is placed in conditions suited to it |
-| Protects inferior individuals through hard seasons | Rigidly destroys what is in the least degree injurious |
-| Does not let the most vigorous males struggle for females | Allows that struggle to run its course |
-| Often begins from a half-monstrous or eye-catching form | The slightest difference of structure may turn the nicely-balanced scale |
-| Works within a short human lifetime of "fleeting wishes" | Accumulates change over whole geological periods |
+**Nature cares nothing for appearances, except in so far as they may be useful to any being.** Because her test is survival rather than inspection, she can act on:
 
-Some of these deserve unpacking.
+- every internal organ,
+- every shade of constitutional difference,
+- "the whole machinery of life."
 
-**Appearances versus utility.** "Nature cares nothing for appearances, except in so far as they may be useful to any being." A breeder cannot see a slightly more efficient liver or a marginally better-tempered digestion; he can see a curly feather. Nature has no such handicap: any internal difference that alters survival is exposed to selection, whether or not it is visible.
+A hidden weakness of the liver or a slight difference of constitution is invisible to the breeder but perfectly visible to the struggle for existence.
 
-**Exercise of the selected character.** This is the subtlest of Darwin's points. Man "feeds a long and a short beaked pigeon on the same food"; he does not make the long-legged quadruped run in any special way; he exposes long- and short-woolled sheep to the same climate. That is, the character he has selected is never actually *put to use* in the circumstances where it would pay off. In nature, a longer beak is tested every day against the food it must reach, and a thicker fleece against the winter it must survive. Selection and the trial of the selected feature are the same event.
+## 2. Whose good is served
 
-**Time.** "How fleeting are the wishes and efforts of man! how short his time!" A breeder's project dies with him or with his fashion; nature has geological periods. Darwin adds that great variability is not even required, because "as man can certainly produce great results by adding up in any given direction mere individual differences, so could Nature, but far more easily, from having incomparably longer time at her disposal."
+**Man selects only for his own good; Nature only for that of the being which she tends.** The breeder wants fatter mutton or a curious tail; the resulting animal may be worse off for it. Natural selection preserves only what benefits the possessor.
 
-The conclusion he draws is that nature's productions are "truer" in character than man's, better adapted to complex conditions, and bear "the stamp of far higher workmanship."
+## 3. Conditions and exercise
 
-## The famous image: daily and hourly scrutinising
+Under nature, "every selected character is fully exercised by her; and the being is placed under well-suited conditions of life." Man's practice is the opposite, and Darwin lists his failings almost as a charge-sheet:
 
-Darwin then compresses the whole argument into one of the most quoted sentences he ever wrote:
+- he keeps the natives of many climates in the same country;
+- he feeds a long-beaked and a short-beaked pigeon on the same food;
+- he does not exercise a long-backed or long-legged quadruped in any peculiar manner;
+- he exposes sheep with long and short wool to the same climate;
+- he does not allow the most vigorous males to struggle for the females;
+- he does not rigidly destroy all inferior animals, but *protects*, as far as he can, all his productions through each varying season.
 
-> It may be said that natural selection is daily and hourly scrutinising, throughout the world, every variation, even the slightest; rejecting that which is bad, preserving and adding up all that is good; silently and insensibly working, whenever and wherever opportunity offers, at the improvement of each organic being in relation to its organic and inorganic conditions of life.
+So the characters man selects are never tested by the conditions that would make them pay.
 
-Four things are packed in here:
+## 4. Where each begins
 
-1. **Ubiquity in time and space** — daily and hourly, throughout the world. Selection is not an occasional catastrophe but a continuous audit.
-2. **Sensitivity** — *every* variation, even the slightest. Nothing is too small to be scrutinised, though of course only what affects survival is acted upon.
-3. **Cumulation** — "preserving and adding up." Single small gains are stored and compounded; this is what makes slow change powerful.
-4. **Invisibility** — "silently and insensibly." We see nothing of it happening.
+Man "often begins his selection by some half-monstrous form; or at least by some modification prominent enough to catch his eye, or to be plainly useful to him." He needs a difference big enough to be conspicuous.
 
-That last point is not a weakness in the theory but a prediction from it. "We see nothing of these slow changes in progress, until the hand of time has marked the long lapse of ages, and then so imperfect is our view into long past geological ages, that we only see that the forms of life are now different from what they formerly were." The process is invisible on a human timescale, and even the geological record shows us only the before-and-after, not the intermediate work. A reader who demands to *watch* natural selection produce a species has misunderstood the scale involved.
+Nature needs nothing of the kind: "Under nature, the slightest difference of structure or constitution may well turn the nicely-balanced scale in the struggle for life, and so be preserved." The scale is so finely balanced that a difference too small for a breeder to notice can decide who lives.
 
-A note on the metaphor: "scrutinising" is language borrowed from the breeder eyeing his stock, and Darwin says only that natural selection *may be said* to do this. Nature is not a person with intentions. The personification is a compressed way of describing the statistical outcome of differential survival — but it is exactly the personification that Darwin's critics seized on, and it repays reading as a figure of speech rather than a claim about agency.
+## 5. Time
 
-## Trifling characters
+This is the decisive contrast:
 
-Because nature's scrutiny is so fine, characters we would dismiss as unimportant fall under it. Darwin's examples:
+> "How fleeting are the wishes and efforts of man! how short his time! and consequently how poor will his products be, compared with those accumulated by nature during whole geological periods."
 
-- Leaf-eating insects are green; bark-feeders are mottled-grey.
-- The alpine ptarmigan is white in winter; the red-grouse is the colour of heather; the black-grouse the colour of peaty earth.
+Man's aims also *change* — a fashion in pigeons lasts a few decades. Nature's standard is simply survival, applied continuously across geological periods. Earlier in the chapter Darwin makes the same point from the other side: no extreme variability is needed, because as man gets great results by adding up mere individual differences, "so could Nature, but far more easily, from having incomparably longer time at her disposal."
 
-Why believe these tints are useful? Because grouse, if not destroyed, "would increase in countless numbers"; they suffer heavily from birds of prey; and hawks hunt **by eyesight**. Darwin's supporting anecdote is that in parts of the Continent people are warned not to keep white pigeons, as most liable to destruction. The chain of reasoning runs: heavy mortality + a visually hunting predator = colour is a life-or-death character.
+## The conclusion
 
-Against the objection that killing the odd oddly-coloured bird could hardly matter, Darwin answers with the breeder's own practice: "we should remember how essential it is in a flock of white sheep to destroy every lamb with the faintest trace of black." Small, occasional culling is precisely how a character is kept true and constant.
+Given all this, Darwin asks: can we wonder that nature's productions should be far "truer" in character than man's; that they should be infinitely better adapted to the most complex conditions of life, and should plainly bear the stamp of far higher workmanship?
 
-His plant examples make the same point from horticulture. Botanists treat the down on a fruit and the colour of its flesh as the most trifling of characters, yet the horticulturist Downing reported that in the United States smooth-skinned fruits suffer far more from the curculio beetle than downy ones; purple plums suffer more from one disease than yellow plums; and yellow-fleshed peaches are attacked more by another disease. If such differences matter even under cultivation, "with all the aids of art," then in the wild — where a tree must struggle with other trees and a host of enemies — they would "effectually settle" which variety succeeded.
+He then adds the famous summary of how this workmanship proceeds — not by dramatic strokes but by ceaseless inspection:
 
-## Why this matters to the argument
+> "Natural selection is daily and hourly scrutinising, throughout the world, every variation, even the slightest; rejecting that which is bad, preserving and adding up all that is good; silently and insensibly working, whenever and wherever opportunity offers, at the improvement of each organic being in relation to its organic and inorganic conditions of life."
 
-The chapter's opening problem was an analogy: selection works for man, so might it work in nature? Darwin's move here converts the analogy from a concession into an advantage. Domestic selection, far from being the strong case that nature must live up to, turns out to be a hobbled, superficial, short-lived, half-hearted imitation. If man can make greyhounds and fantails with such poor tools, the reader is invited to ask, "what may not nature effect?"
+And because it is silent and insensible, we cannot watch it: "We see nothing of these slow changes in progress, until the hand of time has marked the long lapse of ages," and even then our view into past geological ages is so imperfect that we see only that the forms of life were once different from what they are now.
 
+## Why no country is already perfect
+
+One might object that if nature is so good a workman, her productions should already be finished — leaving nothing for selection to do. Darwin denies it. No country can be named in which the natives are so perfectly adapted that none could be improved, because in all countries the natives have been so far conquered by naturalised productions that they have let foreigners take firm possession of the land. Since foreigners have everywhere beaten some natives, the natives *might* have been modified with advantage, so as to have better resisted the intruders. Superior workmanship, then, does not mean completed workmanship.
+
+## Points to hold on to
+
+- The breeder's limits are limits of *perception* (only visible characters), of *purpose* (his own good), of *conditions* (no fitting exercise, no rigid destruction), and above all of *time*.
+- Nature's advantages are the mirror image of those limits.
+- "Higher workmanship" is not a claim about design or intention; it is a claim about the fineness of the test and the length of time it has run.
 
 #### Quiz
 
-1. **According to Darwin, what happens to variations that are neither useful nor injurious to their possessor?**  
-   kind: `mcq` | concept: `Natural selection defined as preservation of favourable and rejection of injurious variations, with neutral variations left fluctuating`  
-   - [x] They are left as a fluctuating element, untouched by natural selection
-   - [ ] They are slowly eliminated, since only positively useful traits are preserved
-   - [ ] They are preserved indefinitely, because nothing acts to remove them from a population
-   - [ ] They become useful over geological time as conditions inevitably change
-   **Expected answer:** They are left as a fluctuating element, untouched by natural selection
+1. **According to Darwin, what is the crucial limit on the characters a human breeder can select?**  
+   kind: `mcq` | concept: `Man selects only visible external characters, while nature can act on internal organs, constitutional differences, and the whole machinery of life`  
+   - [x] He can act only on external and visible characters, whereas nature reaches internal organs and every shade of constitutional difference
+   - [ ] He can act only on characters that are inherited strongly, whereas nature can fix even characters that are not passed on
+   - [ ] He can act only on domesticated species, whereas nature works on wild and tame forms alike
+   - [ ] He can act only on characters that vary widely, whereas nature can work with species that show no variation at all
+   **Expected answer:** He can act only on external and visible characters, whereas nature reaches internal organs and every shade of constitutional difference
 
-2. **Darwin complains that man 'feeds a long and a short beaked pigeon on the same food' and 'exposes sheep with long and short wool to the same climate.' What defect in human selection are these examples meant to illustrate?**  
-   kind: `mcq` | concept: `The systematic contrast between man's selection (external characters, own good, short time, unexercised traits) and nature's (whole machinery of life, the being's good, geological time, every character exercised)`  
-   - [x] That the breeder never puts the character he has selected to use in conditions fitted to it
-   - [ ] That the breeder cannot detect internal or constitutional differences at all
-   - [ ] That the breeder allows too much interbreeding between distinct domestic varieties
-   - [ ] That the breeder's chosen characters are too small to affect survival either way
-   **Expected answer:** That the breeder never puts the character he has selected to use in conditions fitted to it
+2. **Darwin lists several ways man fails to place his selected characters under fitting conditions. Which of the following is one of his examples?**  
+   kind: `mcq` | concept: `Man selects for his own good, nature only for the good of the being she tends`  
+   - [x] He feeds a long-beaked and a short-beaked pigeon on the same food
+   - [ ] He crosses breeds from distant countries before their characters are fixed
+   - [ ] He keeps his pigeons in cages too small for them to fly and strengthen the wing
+   - [ ] He breeds from too few individuals, so that the stock loses vigour
+   **Expected answer:** He feeds a long-beaked and a short-beaked pigeon on the same food
 
-3. **In Darwin's famous sentence, natural selection works 'silently and insensibly.' Why is this invisibility consistent with his theory rather than an objection to it?**  
-   kind: `short` | concept: `Darwin's image of selection daily and hourly scrutinising every variation, silently and insensibly, and why the process is invisible on human timescales`  
-   **Expected answer:** Because the changes are so slow that nothing is seen in progress until the long lapse of ages has passed; and even then our view into past geological ages is so imperfect that we only observe that forms of life were formerly different, not the intermediate work. The theory predicts a process too gradual to be watched on a human timescale.
+3. **Why does Darwin say man's products will be poor compared with nature's, even granting that man's selection is powerful?**  
+   kind: `short` | concept: `Man's fleeting wishes and short time versus variations accumulated over whole geological periods`  
+   **Expected answer:** Because man's wishes and efforts are fleeting and his time is short, whereas nature's productions are accumulated during whole geological periods (nature has incomparably longer time at her disposal).
 
-4. **What reasoning does Darwin give for believing that the colours of grouse and ptarmigan are of real service to them?**  
-   kind: `mcq` | concept: `Selection acting on characters of apparently trifling importance, evidenced by protective coloration in grouse and by disease and pest resistance in fruit`  
-   - [x] Grouse would multiply enormously if unchecked, they suffer heavily from birds of prey, and hawks hunt by eyesight
-   - [ ] Grouse of unusual colours have been observed to leave fewer offspring in careful field counts
-   - [ ] The colours match the habitat so exactly that chance alone could not account for the resemblance
-   - [ ] Breeders have shown that plumage colour is inherited more strongly than any other character
-   **Expected answer:** Grouse would multiply enormously if unchecked, they suffer heavily from birds of prey, and hawks hunt by eyesight
+4. **How does Darwin characterise the ongoing operation of natural selection?**  
+   kind: `mcq` | concept: `Natural selection as daily and hourly scrutiny — rejecting the bad, preserving and adding up the good, silently and insensibly`  
+   - [x] As daily and hourly scrutiny of every variation, even the slightest, rejecting the bad and adding up the good, silently and insensibly
+   - [ ] As a series of decisive crises in which whole populations are remade whenever the climate alters
+   - [ ] As an occasional intervention that acts only when a strikingly new form appears in a species
+   - [ ] As a steady pressure that acts on visible structures first and only later reaches the constitution
+   **Expected answer:** As daily and hourly scrutiny of every variation, even the slightest, rejecting the bad and adding up the good, silently and insensibly
 
-5. **Downing's observations on American fruit — that smooth-skinned fruits suffer more from the curculio beetle, and purple plums more from a certain disease than yellow ones — serve what purpose in Darwin's argument?**  
-   kind: `mcq` | concept: `Selection acting on characters of apparently trifling importance, evidenced by protective coloration in grouse and by disease and pest resistance in fruit`  
-   - [x] They show that characters botanists call trifling can decide which variety survives, and would do so still more forcibly in the wild
-   - [ ] They show that cultivated plants vary more freely than wild ones, giving selection more material to work on
-   - [ ] They show that disease resistance is the single character on which natural selection most often acts
-   - [ ] They show that man's selection, when aided by art, can equal nature's in the fineness of its discrimination
-   **Expected answer:** They show that characters botanists call trifling can decide which variety survives, and would do so still more forcibly in the wild
+5. **What evidence does Darwin give that the native inhabitants of a country are never so perfectly adapted that none of them could be improved?**  
+   kind: `short` | concept: `No country's inhabitants are perfectly adapted, as shown by naturalised foreigners conquering natives`  
+   **Expected answer:** In all countries the natives have been so far conquered by naturalised productions that they have allowed foreigners to take firm possession of the land; since foreigners have everywhere beaten some natives, the natives might have been modified with advantage so as better to resist such intruders.
 
-6. **Darwin says man 'often begins his selection by some half-monstrous form; or at least by some modification prominent enough to catch his eye.' State the contrast he draws with nature on this point.**  
-   kind: `short` | concept: `The systematic contrast between man's selection (external characters, own good, short time, unexercised traits) and nature's (whole machinery of life, the being's good, geological time, every character exercised)`  
-   **Expected answer:** Under nature the slightest difference of structure or constitution may turn the nicely-balanced scale in the struggle for life and so be preserved — nature acts on differences far too small to attract a breeder's notice, rather than requiring a conspicuous or striking modification to start from.
+6. **Darwin says man 'often begins his selection by some half-monstrous form.' What contrast does he draw with nature?**  
+   kind: `mcq` | concept: `Man selects only visible external characters, while nature can act on internal organs, constitutional differences, and the whole machinery of life`  
+   - [x] Under nature the slightest difference of structure or constitution may turn the nicely-balanced scale in the struggle for life and so be preserved
+   - [ ] Under nature monstrous forms arise far more often, so selection has richer material to work from
+   - [ ] Under nature monstrosities are destroyed at once, so only the average form of a species is ever preserved
+   - [ ] Under nature selection begins with whole populations rather than with any single individual variation
+   **Expected answer:** Under nature the slightest difference of structure or constitution may turn the nicely-balanced scale in the struggle for life and so be preserved
+
+---
+
+### Lesson 3.3: Daily and Hourly Scrutiny: The Invisibility of Slow Change
+
+**Concepts:** Natural selection as continuous, worldwide scrutiny that rejects the injurious, preserves and accumulates the beneficial, and ignores the neutral, The imperceptibility of slow change: nothing visible within human time, and only an imperfect view of past geological ages showing that forms of life were once different, Characters of apparently trifling importance (colour, down on fruit) as life-and-death traits under natural conditions, The contrast between man's selection, limited to external and visible characters and short in time, and nature's action on internal organs and constitution over geological periods
+
+**Written from source segments:** [0, 1]
+
+#### Lesson content
+
+# Daily and Hourly Scrutiny: The Invisibility of Slow Change
+
+## The famous sentence
+
+At the close of his comparison between man's selection and nature's, Darwin gathers the whole argument of the chapter into a single sentence:
+
+> "It may be said that natural selection is daily and hourly scrutinising, throughout the world, every variation, even the slightest; rejecting that which is bad, preserving and adding up all that is good; silently and insensibly working, whenever and wherever opportunity offers, at the improvement of each organic being in relation to its organic and inorganic conditions of life."
+
+It is worth slowing down over the phrasing, because nearly every clause is doing work.
+
+**"Daily and hourly."** Selection is not an occasional event, a catastrophe, or a special intervention. It is continuous. Every hour, in every field and forest and sea, more individuals are born than can possibly survive, and the differences between them are being tested.
+
+**"Throughout the world."** There is no privileged laboratory. The process is coextensive with life itself.
+
+**"Every variation, even the slightest."** This is Darwin's deliberate answer to an objection. Man, he has just argued, "often begins his selection by some half-monstrous form; or at least by some modification prominent enough to catch his eye." Nature has no eye to catch. "Under nature, the slightest difference of structure or constitution may well turn the nicely-balanced scale in the struggle for life, and so be preserved."
+
+**"Rejecting that which is bad, preserving and adding up all that is good."** Two operations, not one. Rejection alone would only prune; the *adding up* is what accumulates small differences into large ones over generations. Note also that the sorting is two-sided but not three-sided: earlier in the chapter Darwin is careful to say that "variations neither useful nor injurious would not be affected by natural selection, and would be left a fluctuating element, as perhaps we see in the species called polymorphic." Selection is indifferent to what does not matter.
+
+**"Silently and insensibly."** *Insensibly* here means *below the threshold of the senses* — not gradual in the loose modern sense, but literally imperceptible.
+
+**"At the improvement of each organic being in relation to its ... conditions of life."** Improvement is always relative, never absolute. There is no scale of general excellence; there is only fit to a particular, shifting set of organic and inorganic circumstances.
+
+## Why we see nothing of it
+
+Darwin immediately confronts the obvious complaint. If this is happening daily and hourly everywhere, why has nobody watched it happen?
+
+> "We see nothing of these slow changes in progress, until the hand of time has marked the long lapse of ages, and then so imperfect is our view into long past geological ages, that we only see that the forms of life are now different from what they formerly were."
+
+There are two distinct limitations packed into that sentence, and it is easy to run them together.
+
+1. **A limitation of the present.** Within a human lifetime, or even the whole span of recorded observation, the changes are too small to register. "How fleeting are the wishes and efforts of man! how short his time!" Darwin had already written, contrasting man's brief campaigns of breeding with what nature accumulates "during whole geological periods."
+
+2. **A limitation of the past.** Even when time *has* done its work, our access to that work is fragmentary. Darwin does not claim that geology displays the process; he claims the opposite. Our view into past ages is *imperfect*, and what it yields is a bare comparative fact — that the forms of life were once different from what they are now. The record shows the outcome, dimly, and not the mechanism.
+
+This is an unusually modest claim for a theory's central chapter, and the modesty is strategic. Darwin is not asking the reader to accept that anyone has seen natural selection produce a species. He is asking the reader to accept an inference: given that variation occurs, that it is heritable, that far more are born than can survive, and that the slightest advantage tells — the accumulation follows, whether or not we are equipped to witness it.
+
+## Testing the claim on trifles
+
+How can a claim about *the slightest* variation be argued at all, if the slight ones are invisible? Darwin's move is to take characters that naturalists themselves dismiss as trivial and show that they are matters of life and death.
+
+- **Colour.** Leaf-eating insects are green; bark-feeders mottled-grey; the alpine ptarmigan white in winter, the red-grouse the colour of heather, the black-grouse the colour of peaty earth. Grouse "if not destroyed at some period of their lives, would increase in countless numbers"; they suffer largely from birds of prey; "and hawks are guided by eyesight to their prey." The evidence Darwin offers for the eyesight point is homely and practical: on parts of the Continent, people are warned not to keep white pigeons, as being the most liable to destruction.
+
+- **The force of a small, occasional loss.** One might object that killing off an odd individual of the wrong colour now and then can hardly matter. Darwin answers with the breeder's practice: "we should remember how essential it is in a flock of white sheep to destroy every lamb with the faintest trace of black." A tiny, repeated, consistent culling is exactly what fixes and keeps a character "true and constant."
+
+- **Down and flesh-colour in fruit.** Botanists rank these among "characters of the most trifling importance." Yet the horticulturist Downing reports that in the United States smooth-skinned fruits suffer far more from a beetle, a curculio, than those with down; that purple plums suffer far more from a certain disease than yellow plums; and that another disease attacks yellow-fleshed peaches far more than those with other coloured flesh. If such differences tell even "with all the aids of art" in cultivation, then in nature, where a tree struggles with other trees and a host of enemies, they "would effectually settle which variety ... should succeed."
+
+## The reach of nature's scrutiny
+
+The scrutiny passage also completes the contrast with the breeder. "Man can act only on external and visible characters: nature cares nothing for appearances, except in so far as they may be useful to any being. She can act on every internal organ, on every shade of constitutional difference, on the whole machinery of life." The breeder feeds a long-beaked and a short-beaked pigeon on the same food, exposes long- and short-woolled sheep to the same climate, protects his inferior stock through each varying season, and does not let the most vigorous males struggle for the females. Nature does none of these things: "Every selected character is fully exercised by her; and the being is placed under well-suited conditions of life."
+
+So the invisibility is not a weakness in the process but a consequence of its thoroughness combined with its slowness. A power that works on every organ, every constitution, every hour, in increments too small to see, will leave us — looking backward through a broken record — with nothing but the observation that things were once otherwise.
+
+#### Quiz
+
+1. **According to Darwin, what do we actually get from our view into long past geological ages?**  
+   kind: `mcq` | concept: `The imperceptibility of slow change: nothing visible within human time, and only an imperfect view of past geological ages showing that forms of life were once different`  
+   - [ ] A fragmentary but continuous series of intermediate forms, from which the steps of selection can be reconstructed
+   - [x] Only the bare fact that the forms of life are now different from what they formerly were, since our view is imperfect
+   - [ ] Direct evidence of the hour-by-hour rejection of injurious variations, preserved in the rocks
+   - [ ] Nothing whatever, since the changes are silent and insensible in the past as much as in the present
+   **Expected answer:** Only the bare fact that the forms of life are now different from what they formerly were, since our view is imperfect
+
+2. **What does Darwin say happens to variations that are neither useful nor injurious?**  
+   kind: `short` | concept: `Natural selection as continuous, worldwide scrutiny that rejects the injurious, preserves and accumulates the beneficial, and ignores the neutral`  
+   **Expected answer:** They are not affected by natural selection and are left as a fluctuating element, as perhaps in the species called polymorphic.
+
+3. **Why does Darwin bring up the practice of destroying every lamb with the faintest trace of black in a flock of white sheep?**  
+   kind: `mcq` | concept: `Characters of apparently trifling importance (colour, down on fruit) as life-and-death traits under natural conditions`  
+   - [ ] To show that breeders, unlike nature, are willing to destroy their inferior animals rigidly
+   - [ ] To illustrate that a character once acquired will drift unless a fresh variation renews it
+   - [x] To answer the thought that the occasional destruction of an animal of a particular colour would produce little effect
+   - [ ] To prove that colour is a character of the most trifling importance even to careful breeders
+   **Expected answer:** To answer the thought that the occasional destruction of an animal of a particular colour would produce little effect
+
+4. **Which of Downing's American observations does Darwin cite?**  
+   kind: `mcq` | concept: `Characters of apparently trifling importance (colour, down on fruit) as life-and-death traits under natural conditions`  
+   - [ ] Downy fruits suffer far more from the curculio beetle than smooth-skinned ones
+   - [x] Smooth-skinned fruits suffer far more from a curculio beetle than those with down
+   - [ ] Yellow plums suffer far more from a certain disease than purple plums
+   - [ ] Peaches with coloured flesh are attacked by disease far more than yellow-fleshed ones
+   **Expected answer:** Smooth-skinned fruits suffer far more from a curculio beetle than those with down
+
+5. **State the contrast Darwin draws between the characters man can act on and those nature can act on.**  
+   kind: `short` | concept: `The contrast between man's selection, limited to external and visible characters and short in time, and nature's action on internal organs and constitution over geological periods`  
+   **Expected answer:** Man can act only on external and visible characters, while nature cares nothing for appearances except as they are useful, and can act on every internal organ, every shade of constitutional difference, on the whole machinery of life.
+
+6. **What evidence does Darwin offer that hawks are guided to their prey by eyesight?**  
+   kind: `mcq` | concept: `Characters of apparently trifling importance (colour, down on fruit) as life-and-death traits under natural conditions`  
+   - [ ] That grouse would increase in countless numbers if they were never destroyed at some period of life
+   - [ ] That the alpine ptarmigan turns white in winter and the black-grouse matches peaty earth
+   - [ ] That leaf-eating insects are green while bark-feeders are mottled-grey
+   - [x] That in parts of the Continent people are warned not to keep white pigeons, as the most liable to destruction
+   **Expected answer:** That in parts of the Continent people are warned not to keep white pigeons, as the most liable to destruction
 
 ---
 
@@ -976,7 +1017,7 @@ The chapter's opening problem was an analogy: selection works for man, so might 
 
 ### Lesson 4.1: Colour and Concealment in Insects and Birds
 
-**Concepts:** Protective colouration matching the background (green leaf-eaters, mottled-grey bark-feeders, ptarmigan, red-grouse, black-grouse), Predation by sight as the selective mechanism, evidenced by the white-pigeon warning, Characters of apparently trifling importance can be acted on by natural selection, Selection both originates a trait and afterwards keeps it true and constant (the white-sheep analogy)
+**Concepts:** Natural selection acting on characters of apparently trifling importance, Protective colouration matching an organism's habitual background, Visually hunting predators as the agency that makes colour a matter of life and death, The white-sheep analogy: rare removal suffices to keep a character true and constant, Downing's fruit examples as a parallel case in plants
 
 **Written from source segments:** [0, 1]
 
@@ -984,197 +1025,224 @@ The chapter's opening problem was an analogy: selection works for man, so might 
 
 # Colour and Concealment in Insects and Birds
 
-## Why colour is a test case for natural selection
+## Trifling characters are not trifling
 
-Darwin faced an obvious objection. Natural selection, he argued, preserves variations that help an organism survive. But surely most of the differences we notice between animals — a shade of grey here, a tint of brown there — are far too trifling to matter to life and death? If selection can only work on important characters, its scope would be small.
+Darwin has just argued that natural selection is "daily and hourly scrutinising, throughout the world, every variation, even the slightest." A natural objection follows: surely selection can only work on obviously important things — the strength of a limb, the shape of a beak. What about a shade of colour?
 
-His reply is that we are poor judges of what counts as trifling. As he puts it, natural selection is "daily and hourly scrutinising, throughout the world, every variation, even the slightest; rejecting that which is bad, preserving and adding up all that is good." Colour, which looks to us like mere decoration, turns out to be a matter of being eaten or not being eaten.
+Darwin's answer is direct:
 
-## The catalogue of matched tints
+> "Although natural selection can act only through and for the good of each being, yet characters and structures, which we are apt to consider as of very trifling importance, may thus be acted on."
 
-Darwin assembles a short list in which each animal's colour matches the surface it lives on or against:
+Note the logical shape of the claim. Natural selection preserves what is *useful to the organism itself*. So if a merely decorative-looking trait is being maintained by selection, it must be useful — and Darwin's task is to show that colour, in particular, is.
 
-| Organism | Colour | Background it matches |
+## The catalogue of matching tints
+
+He assembles a short list in which each animal's colour corresponds to the background against which it lives:
+
+| Organism | Colour | Surroundings |
 |---|---|---|
-| Leaf-eating insects | Green | The foliage they feed on |
-| Bark-feeding insects | Mottled grey | Tree bark |
-| Alpine ptarmigan | White **in winter** | Snow |
-| Red-grouse | Colour of heather | Heather moorland |
-| Black-grouse | Colour of peaty earth | Peat bogs |
+| Leaf-eating insects | green | foliage they feed on |
+| Bark-feeders | mottled-grey | tree bark |
+| Alpine ptarmigan | white **in winter** | snow |
+| Red-grouse | the colour of heather | moorland heather |
+| Black-grouse | the colour of peaty earth | peat |
 
-Notice the structure of the argument. It is not one lucky coincidence but a repeated pattern, and — crucially — the pattern tracks the habitat rather than the family. The red-grouse and the black-grouse are close relatives, yet they differ in colour exactly as their haunts differ. The ptarmigan is white only in winter, when the ground is white; the colour follows the background even through the year. Darwin concludes: "we must believe that these tints are of service to these birds and insects in preserving them from danger."
+The list is chosen so that the correspondence cannot be a coincidence. It is not that all birds of cold places are white and all insects green; rather, each species' tint tracks the particular thing it lives among. The ptarmigan case is especially pointed, because its whiteness is *seasonal* — the colour changes when the background changes.
 
-## The link that makes the argument work: hawks hunt by eyesight
+From this Darwin concludes: "we must believe that these tints are of service to these birds and insects in preserving them from danger."
 
-A matching colour is only useful if the animal's chief enemy finds prey by looking. Darwin supplies the missing premise in three steps:
+## The supporting argument: who does the killing, and how
 
-1. Grouse, "if not destroyed at some period of their lives, would increase in countless numbers" — so something is killing most of them.
-2. They are known to suffer largely from birds of prey.
-3. "Hawks are guided by eyesight to their prey."
+A sceptic could still say the resemblance is a curiosity with no consequences. Darwin therefore supplies the mechanism, in three steps.
 
-If the predator hunts by sight, then any bird that is slightly harder to see is slightly less likely to be taken, and being slightly less likely to be taken is precisely what natural selection needs.
+1. **There is heavy mortality to be explained.** "Grouse, if not destroyed at some period of their lives, would increase in countless numbers." Since they do not increase in countless numbers, something is killing them in large quantity. This is the struggle for existence applied to a single named bird.
+2. **The killers are identified.** Grouse "are known to suffer largely from birds of prey."
+3. **The killers hunt by sight.** "Hawks are guided by eyesight to their prey." This is the crucial link: only if the predator hunts visually does a difference in colour translate into a difference in the chance of dying.
 
-## The white pigeon: evidence from human practice
+For the third step Darwin offers a piece of everyday human evidence: "on parts of the Continent persons are warned not to keep white pigeons, as being the most liable to destruction." Pigeon-keepers are not naturalists with a theory to defend; they are practical people who have noticed which of their birds get taken. Their warning is independent testimony that conspicuous colour costs a bird its life.
 
-For step 3 Darwin does not merely assert that hawks hunt by eye — he points to what people already do about it. "On parts of the Continent persons are warned not to keep white pigeons, as being the most liable to destruction." This is a small piece of everyday practical knowledge, but it is exactly the right kind of evidence: it shows that conspicuous colouring measurably raises the death rate from a sight-hunting predator, under conditions where the birds are otherwise identical. The pigeon-keeper's warning is a natural experiment in favour of Darwin's reasoning about grouse.
+Hence, Darwin says, "I can see no reason to doubt that natural selection might be most effective in giving the proper colour to each kind of grouse, and in keeping that colour, when once acquired, true and constant." Selection does two jobs here — it *originates* the fitting colour, and it afterwards *maintains* it by removing the strays.
 
-## Would occasional deaths really be enough?
+## "But surely one bird now and then makes no difference"
 
-A sceptic might grant all this and still object that only a few birds per year would be lost through being the wrong shade — too few to reshape a species. Darwin answers with an analogy from breeding: "we should remember how essential it is in a flock of white sheep to destroy every lamb with the faintest trace of black." A breeder who wants pure white wool must cull relentlessly, because even faint traces reappear and spread if tolerated. Selection against a colour, applied consistently, is powerful even when each individual act of destruction seems small. Nature applies exactly such a filter, but over geological time.
+Darwin anticipates the objection that the occasional loss of an oddly coloured individual is too rare an event to shape a species. He answers with an analogy from the breeder's yard: "we should remember how essential it is in a flock of white sheep to destroy every lamb with the faintest trace of black."
 
-Natural selection therefore does two jobs here: it can give "the proper colour to each kind of grouse" in the first place, and it can keep that colour "true and constant" afterwards by removing the deviants that keep cropping up.
+The point is about how little it takes to keep a character pure. A breeder who wants white sheep must cull even the *faintest* trace of black — not the obviously black lambs only. If that small, steady pressure suffices in a man's hands to hold a colour true, then hawks removing the conspicuous grouse will do the same work in nature.
 
-## The same lesson in plants
+## The same logic in plants
 
-Darwin extends the point beyond concealment, to show that supposedly worthless characters have real consequences. Botanists treat the down on a fruit and the colour of its flesh as characters of the most trifling importance. Yet the horticulturist Downing reported that in the United States smooth-skinned fruits suffer far more from a beetle, a curculio, than downy ones; that purple plums suffer far more from a certain disease than yellow plums; and that another disease attacks yellow-fleshed peaches more than other-coloured flesh. If such differences matter even under cultivation, with all the aids of art, they would settle which variety survived in a wild struggle with other trees and a host of enemies.
+Colour and surface texture in fruit are, Darwin notes, "considered by botanists as characters of the most trifling importance." Yet the horticulturist Downing reports from the United States that:
 
-## What to take away
+- smooth-skinned fruits suffer far more from a beetle, a curculio, than those with down;
+- purple plums suffer far more from a certain disease than yellow plums;
+- another disease attacks yellow-fleshed peaches far more than those with other coloured flesh.
 
-- "Trifling" characters are trifling only to our eyes; the relevant judge is the organism's enemies.
-- An adaptive explanation of colour needs a mechanism: here, a predator that hunts by sight.
-- Repeated matching across related species in different habitats is stronger evidence than any single case.
-- Small, persistent differences in death rate are enough, given time, to fix and maintain a trait.
+These differences show up even "with all the aids of art" — that is, under cultivation, where the grower is protecting his trees. In the wild, where a tree "would have to struggle with other trees and with a host of enemies," Darwin argues such differences "would effectually settle which variety... should succeed."
+
+Notice that this is a different route to the same conclusion. In the grouse the cost of colour comes from a predator's eye; in the plum it comes from a beetle and a disease. Either way, a character a naturalist would have dismissed as ornamental turns out to be a matter of life and death — and therefore fair game for natural selection.
+
+## What to carry away
+
+- Concealing colour is Darwin's showcase example of selection acting on an apparently negligible character.
+- The argument is not "the colour matches, therefore it is adaptive" alone; it is completed by identifying a visually hunting enemy and the mortality it inflicts.
+- Rare culling is enough: the white-sheep flock shows how a small, persistent removal keeps a character "true and constant."
 
 #### Quiz
 
-1. **According to the lesson, why is the alpine ptarmigan's white winter plumage a particularly telling example?**  
-   kind: `mcq` | concept: `Protective colouration matching the background (green leaf-eaters, mottled-grey bark-feeders, ptarmigan, red-grouse, black-grouse)`  
-   - [x] Because the colour changes with the season, so it tracks the background rather than being a fixed family trait
-   - [ ] Because white plumage is the most conspicuous colour and therefore the hardest to explain
-   - [ ] Because the ptarmigan is the only grouse known to be hunted by hawks
-   - [ ] Because the ptarmigan lives where no predators hunt by eyesight, isolating the effect of climate
-   **Expected answer:** Because the colour changes with the season, so it tracks the background rather than being a fixed family trait
+1. **Why does Darwin bring up the fact that hawks are guided by eyesight to their prey?**  
+   kind: `mcq` | concept: `Visually hunting predators as the agency that makes colour a matter of life and death`  
+   - [x] Because it establishes that a difference in an animal's colour can translate into a difference in its chance of being killed
+   - [ ] Because it shows that hawks are the only predators capable of eliminating an entire variety of grouse
+   - [ ] Because it proves that birds of prey deliberately select the individuals that differ most from their fellows
+   - [ ] Because it explains why the ptarmigan must change its plumage rather than keep one colour all year
+   **Expected answer:** Because it establishes that a difference in an animal's colour can translate into a difference in its chance of being killed
 
-2. **What role does the warning against keeping white pigeons play in Darwin's argument?**  
-   kind: `mcq` | concept: `Predation by sight as the selective mechanism, evidenced by the white-pigeon warning`  
-   - [x] It supplies practical evidence that conspicuous colour raises death rates from sight-hunting predators
-   - [ ] It shows that domesticated birds vary more widely in colour than wild ones do
-   - [ ] It demonstrates that breeders can produce any colour they wish given enough generations
-   - [ ] It proves that hawks prefer domestic prey to wild grouse when both are available
-   **Expected answer:** It supplies practical evidence that conspicuous colour raises death rates from sight-hunting predators
+2. **According to the lesson, what are people warned about on parts of the Continent, and what does Darwin use this to show?**  
+   kind: `short` | concept: `Visually hunting predators as the agency that makes colour a matter of life and death`  
+   **Expected answer:** They are warned not to keep white pigeons, as being the most liable to destruction. Darwin uses this as independent, practical evidence that predators hunt by sight and that a conspicuous colour makes a bird more likely to be killed.
 
-3. **Name the background that each of the red-grouse and the black-grouse is said to match in colour.**  
-   kind: `short` | concept: `Protective colouration matching the background (green leaf-eaters, mottled-grey bark-feeders, ptarmigan, red-grouse, black-grouse)`  
-   **Expected answer:** The red-grouse is the colour of heather; the black-grouse is the colour of peaty earth.
+3. **What is Darwin's point in mentioning that in a flock of white sheep it is essential to destroy every lamb with the faintest trace of black?**  
+   kind: `mcq` | concept: `The white-sheep analogy: rare removal suffices to keep a character true and constant`  
+   - [x] That a small but steady removal of odd individuals is enough to keep a colour true and constant
+   - [ ] That breeders' methods are more rigorous than anything occurring in nature
+   - [ ] That black colouring in sheep is inherently injurious and would be destroyed in the wild too
+   - [ ] That a character can only be fixed if every individual of the flock is inspected each season
+   **Expected answer:** That a small but steady removal of odd individuals is enough to keep a colour true and constant
 
-4. **Darwin mentions the flock of white sheep in which every lamb with the faintest trace of black is destroyed. What objection is this analogy meant to answer?**  
-   kind: `mcq` | concept: `Selection both originates a trait and afterwards keeps it true and constant (the white-sheep analogy)`  
-   - [x] That the occasional destruction of oddly coloured individuals is too rare to have any real effect
-   - [ ] That breeders, unlike nature, can only work on characters visible from the outside
-   - [ ] That colour differences in birds are inherited differently from colour differences in mammals
-   - [ ] That predators would eventually learn to detect even perfectly concealed prey
-   **Expected answer:** That the occasional destruction of oddly coloured individuals is too rare to have any real effect
+4. **Which pairing of organism and tint does Darwin actually give in this passage?**  
+   kind: `mcq` | concept: `Protective colouration matching an organism's habitual background`  
+   - [x] The black-grouse the colour of peaty earth
+   - [ ] The red-grouse the colour of bare rock
+   - [ ] Bark-feeding insects green and leaf-eaters mottled-grey
+   - [ ] The alpine ptarmigan white throughout the year
+   **Expected answer:** The black-grouse the colour of peaty earth
 
-5. **Which statement best captures the lesson's point about 'characters of trifling importance'?**  
-   kind: `mcq` | concept: `Characters of apparently trifling importance can be acted on by natural selection`  
-   - [x] Traits that seem negligible to human observers may be decisive in the eyes of an organism's enemies
-   - [ ] Traits are trifling until a physical change of climate suddenly makes them useful
-   - [ ] Only traits that breeders have already found valuable can be shaped by natural selection
-   - [ ] Trifling traits fluctuate freely because selection cannot reach characters as superficial as colour
-   **Expected answer:** Traits that seem negligible to human observers may be decisive in the eyes of an organism's enemies
+5. **Which of Downing's American observations does Darwin cite?**  
+   kind: `mcq` | concept: `Downing's fruit examples as a parallel case in plants`  
+   - [x] Smooth-skinned fruits suffer far more from a beetle, a curculio, than those with down
+   - [ ] Downy fruits are attacked by a curculio, while smooth-skinned ones escape it
+   - [ ] Yellow plums suffer far more from a certain disease than purple plums
+   - [ ] Yellow-fleshed peaches resist disease better than peaches with other coloured flesh
+   **Expected answer:** Smooth-skinned fruits suffer far more from a beetle, a curculio, than those with down
 
-6. **Besides giving grouse their proper colour in the first place, what second job does Darwin say natural selection performs with respect to that colour?**  
-   kind: `short` | concept: `Selection both originates a trait and afterwards keeps it true and constant (the white-sheep analogy)`  
-   **Expected answer:** It keeps the colour true and constant once acquired, by continually removing individuals that deviate from it.
+6. **Darwin says that when we see these matching tints 'we must believe that these tints are of service' to their bearers. What general claim about natural selection is this example meant to support?**  
+   kind: `short` | concept: `Natural selection acting on characters of apparently trifling importance`  
+   **Expected answer:** That natural selection can act on characters and structures which we are apt to consider of very trifling importance — since selection works only for the good of each being, a maintained trait such as colour must in fact be useful, here in preserving the animal from danger.
 
 ---
 
-### Lesson 4.2: Small Differences, Large Consequences
+### Lesson 4.2: Small Differences, Large Consequences: Sheep, Plums, and Peaches
 
-**Concepts:** Natural selection can act on characters that appear trivial, such as fruit down and flesh colour, Downing's horticultural evidence: curculio and smooth skins, disease in purple versus yellow plums, disease in yellow-fleshed peaches, The a fortiori argument from cultivation to the wild: effects visible under human protection are magnified in the struggle for existence, The white-sheep flock as a model of fine, repeated discrimination keeping a character true and constant, Protective colouration in grouse, insects and pigeons as evidence that appearance is under lethal scrutiny
+**Concepts:** Natural selection can act on characters humans judge to be of trifling importance, Protective coloration works because predators such as hawks hunt by sight, Repeated destruction of a few individuals of one colour can keep a population's character true and constant (the white sheep flock), Downing's horticultural observations: down, skin, and flesh colour determine vulnerability to particular beetles and diseases, The a fortiori argument from cultivation to the state of nature
 
 **Written from source segments:** [0, 1]
 
 #### Lesson content
 
-# Small Differences, Large Consequences
+# Small Differences, Large Consequences: Sheep, Plums, and Peaches
 
-## The problem: which characters can selection touch?
+## The problem: does natural selection bother with trifles?
 
-A reasonable objection to natural selection runs like this: *fine, selection may work on obviously useful things — the length of a beak, the thickness of a coat — but surely most of the features that distinguish varieties and species are trivial? Down on a peach skin, the tint of a plum, the colour of the flesh inside. Nothing in the struggle for life could possibly hinge on those.*
+Darwin has just argued that natural selection is "daily and hourly scrutinising, throughout the world, every variation, even the slightest; rejecting that which is bad, preserving and adding up all that is good." A sceptical reader might grant this for obviously important structures — a beak, a lung, a limb — while doubting that it could touch the things naturalists file under *trifling*: a shade of colour, the fuzz on a fruit skin, the tint of flesh inside a peach.
 
-Darwin's answer is that our sense of what is trivial is untrustworthy. "Characters and structures, which we are apt to consider as of very trifling importance, may thus be acted on." What matters is not whether a character looks important to us, but whether it makes any difference at all to the being's chances — and characters that look decorative to a botanist often turn out to be the hinge on which survival swings.
+Darwin's reply is that we are poor judges of what is trifling. "Although natural selection can act only through and for the good of each being, yet characters and structures, which we are apt to consider as of very trifling importance, may thus be acted on." Our sense of what matters is an aesthetic and taxonomic sense; nature's is a matter of who eats whom.
 
-To make the case he does something clever: he goes to horticulture, where the effects of such characters have actually been recorded.
+## Colour as protection
 
-## Downing's evidence from American orchards
+His first evidence is the fit between colour and background:
 
-Darwin cites Andrew Jackson Downing, "an excellent horticulturist," reporting from the United States. Botanists classify the down on fruit and the colour of the flesh as characters of the most trifling importance. Yet Downing found:
+- leaf-eating insects are green;
+- bark-feeders are mottled-grey;
+- the alpine ptarmigan is white in winter;
+- the red-grouse is the colour of heather;
+- the black-grouse is the colour of peaty earth.
 
-- **Smooth-skinned fruits suffer far more from a beetle, the curculio, than fruits with down.** The down, a purely superficial character, functions as a defence against an insect enemy.
-- **Purple plums suffer far more from a certain disease than yellow plums.** Skin colour tracks susceptibility.
-- **Yellow-fleshed peaches are attacked far more by another disease than peaches with other-coloured flesh.** Here the character is internal and invisible until the fruit is cut — and it still matters.
+Such tints, Darwin says, "are of service to these birds and insects in preserving them from danger." And danger is real: grouse "if not destroyed at some period of their lives, would increase in countless numbers," and they are known to suffer largely from birds of prey. Crucially, **hawks hunt by eyesight**, which is what makes colour a matter of life and death rather than decoration. Darwin adds a homely confirmation: on parts of the Continent people are warned not to keep white pigeons, as being the most liable to destruction.
 
-Note the pattern carefully. It is not that down is simply *good* and colour simply *bad*. Each character helps against one enemy and may be irrelevant or harmful against another: yellow protects the plum, yellow endangers the peach. The value of a character is always relative to the particular enemies and conditions the organism faces.
+## The objection from rarity — and the white sheep
 
-## Why the orchard argument is an *a fortiori* argument
+Here comes the natural objection, and it is worth stating carefully. Suppose a hawk only *occasionally* picks off the odd conspicuously coloured bird. Surely such rare accidents cannot mould a whole population?
 
-The force of the example lies in a comparison of circumstances. A cultivated orchard is a sheltered place. The grower prunes, sprays, waters, props, and weeds; he protects his trees from competition and from many of their enemies. Darwin's phrase is that these results occur "with all the aids of art."
+Darwin answers with an image drawn from the practice of breeders:
 
-If, *even under that protection*, the difference between a downy and a smooth skin already makes a great difference to which variety a grower can successfully cultivate, then in a state of nature — where "the trees would have to struggle with other trees and with a host of enemies" and no one intervenes on their behalf — such differences "would effectually settle which variety, whether a smooth or downy, a yellow or purple fleshed fruit, should succeed."
+> "Nor ought we to think that the occasional destruction of an animal of any particular colour would produce little effect: we should remember how essential it is in a flock of white sheep to destroy every lamb with the faintest trace of black."
 
-The argument runs from the mild case to the severe one. The protected setting gives us the *lower bound* on how much a trifling character can matter; nature removes the protection and so amplifies the effect. This is the reverse of the more familiar comparison in the chapter, where man's selection is the weaker instrument and nature's the stronger; here too, nature's scrutiny is the more searching.
+The force of the example lies in the word *essential*. A shepherd who wants a pure white flock cannot be casual about it. He must cull not the obviously black lambs only, but **every lamb with the faintest trace of black** — and he must do it in every generation. If such small, occasional removals were ineffective, the practice would be pointless; the fact that breeders find it necessary proves that removing a few individuals of a particular colour, repeated over generations, keeps a whole flock's colour true and constant. Darwin claims the same for nature: selection can be "most effective in giving the proper colour to each kind of grouse, and in keeping that colour, when once acquired, true and constant."
 
-## The flock of white sheep
+Note the two jobs selection is doing here — *giving* a character and *keeping* it. The second job is easy to overlook, but it explains why populations do not drift away from a good colour once they have it.
 
-Alongside the fruit, Darwin offers a second illustration, this one from animal breeding, aimed at a slightly different doubt. Someone might grant that colour affects survival now and then, but object that the occasional death of one oddly coloured individual could hardly reshape a whole population.
+## Downing's fruit trees
 
-Darwin replies: "we should remember how essential it is in a flock of white sheep to destroy every lamb with the faintest trace of black."
+Darwin then moves from animals to plants, and from a hypothetical shepherd to published horticulture. "In plants the down on the fruit and the colour of the flesh are considered by botanists as characters of the most trifling importance" — these are exactly the sorts of details used to tell varieties apart while meaning nothing, supposedly, to the plant. Yet the American horticulturist Downing reports from the United States that:
 
-Breeders know from experience that keeping a flock white is not achieved by removing conspicuously black sheep. It requires culling every lamb showing even *the faintest trace* of black, and it requires doing so consistently. That is what it takes to keep a character "true and constant." The lesson transfers directly: a repeated, small, discriminating destruction — applied to the slightest degrees of a character, over many generations — is exactly the kind of process that can hold a character fixed or shift it. We should not dismiss a selective pressure because any single instance of it looks negligible.
+| Character | Consequence |
+|---|---|
+| Smooth skin vs. down | **Smooth-skinned fruits suffer far more** from a beetle, a curculio, than those with down |
+| Purple vs. yellow plums | **Purple plums suffer far more** from a certain disease than yellow plums |
+| Colour of peach flesh | **Yellow-fleshed peaches** are attacked far more by another disease than those with other coloured flesh |
 
-The same passage supplies the wild parallel: leaf-eating insects are green, bark-feeders mottled-grey, the alpine ptarmigan white in winter, the red grouse the colour of heather, the black grouse that of peaty earth. Grouse are hunted by hawks, and hawks hunt by eyesight; on parts of the Continent people are warned not to keep white pigeons, as being the most liable to destruction. Colour, a character with no mechanical function whatever, is under continuous lethal scrutiny.
+Three things deserve notice.
 
-## What the lesson establishes
+First, the very characters botanists call most trifling — down and flesh-colour — turn out to be the ones tied to enemies and diseases. Trifling to the classifier, decisive to the beetle.
 
-Three points worth carrying forward:
+Second, the enemies differ. There is no single "best" fruit. Yellow plums resist the plum disease, but yellow flesh is the liability in peaches. A character is not good or bad in itself; it is good or bad against a particular enemy in a particular place. Change the enemy and the advantage reverses.
 
-1. **No character is exempt in advance.** Since nature "cares nothing for appearances, except in so far as they may be useful to any being," the test of a character is its consequences, not its apparent significance. Man selects visible, striking features; nature can act on every shade of constitutional difference.
-2. **Effects that are demonstrable under cultivation are magnified in the wild.** Human care damps down the consequences of a character; the struggle for existence sharpens them.
-3. **Selection works by fine discrimination, repeated.** "The faintest trace of black" is the operative standard. Slight differences are precisely what natural selection is competent to sort — "daily and hourly scrutinising, throughout the world, every variation, even the slightest."
+Third, and most important, is Darwin's *a fortiori* argument — the argument from the easier case to the harder one:
 
-Darwin's conclusion for such cases is therefore twofold: natural selection can *give* the proper colour to each kind of grouse, and it can *keep* that colour, once acquired, true and constant. Origination and maintenance are the same process seen at different moments.
+> "If, with all the aids of art, these slight differences make a great difference in cultivating the several varieties, assuredly, in a state of nature, where the trees would have to struggle with other trees and with a host of enemies, such differences would effectually settle which variety, whether a smooth or downy, a yellow or purple fleshed fruit, should succeed."
+
+A cultivated orchard is a pampered place: the grower waters, prunes, sprays, and protects. Even there, with all the aids of art cushioning the plants, skin and flesh colour make a great practical difference. Strip away the cushion — set the trees to compete with other trees and with a host of enemies — and the same small differences must weigh far more heavily, enough to "effectually settle which variety should succeed."
+
+## The lesson to carry forward
+
+The cases are cumulative rather than repetitive:
+
+1. **Grouse and pigeons**: colour matters because predators use eyesight.
+2. **White sheep**: repeated destruction of a few oddly coloured individuals is enough to hold or shift a population's character.
+3. **Downing's fruits**: even characters expert observers dismiss as trifling can govern survival — and if they do so under cultivation, they will do so more sharply in the wild.
+
+Together they support the wider claim Darwin made earlier in the chapter: "nature cares nothing for appearances, except in so far as they may be useful to any being," and "under nature, the slightest difference of structure or constitution may well turn the nicely-balanced scale in the struggle for life, and so be preserved." Our judgement that a character is unimportant is a fact about us, not about the organism.
 
 #### Quiz
 
-1. **According to Downing, as cited by Darwin, which fruits suffer more from the curculio beetle?**  
-   kind: `mcq` | concept: `Downing's horticultural evidence`  
-   - [x] Smooth-skinned fruits suffer far more than those with down
-   - [ ] Downy fruits suffer far more, the down giving the beetle purchase
-   - [ ] Purple-skinned fruits suffer far more than yellow-skinned ones
-   - [ ] Yellow-fleshed fruits suffer far more than those with other coloured flesh
-   **Expected answer:** Smooth-skinned fruits suffer far more than those with down
+1. **Why does Darwin bring up the flock of white sheep?**  
+   kind: `mcq` | concept: `Repeated destruction of a few individuals of one colour can keep a population's character true and constant (the white sheep flock)`  
+   - [x] To show that occasional destruction of individuals of a particular colour, repeated in each generation, has a real effect on a population
+   - [ ] To show that domestic animals vary far more widely in colour than wild animals ever do
+   - [ ] To show that breeders unintentionally weaken their flocks by removing perfectly healthy lambs
+   - [ ] To show that white is the colour most easily preserved once a breeder has established it
+   **Expected answer:** To show that occasional destruction of individuals of a particular colour, repeated in each generation, has a real effect on a population
 
-2. **Why does Darwin think the orchard evidence is stronger, not weaker, for his case about wild plants?**  
-   kind: `mcq` | concept: `The a fortiori argument from cultivation to the wild`  
-   - [x] Because the effects appear even under cultivation's protections, so in nature, amid competing trees and many enemies, they would be greater still
-   - [ ] Because horticulturists select deliberately, which proves that unconscious selection in nature must operate faster
-   - [ ] Because cultivated varieties vary more freely than wild ones, so any character can be produced at will
-   - [ ] Because diseases of orchard trees are known to spread to wild trees, extending the same losses to nature
-   **Expected answer:** Because the effects appear even under cultivation's protections, so in nature, amid competing trees and many enemies, they would be greater still
+2. **According to Downing, as Darwin reports him, which fruits suffer far more from the curculio beetle?**  
+   kind: `mcq` | concept: `Downing's horticultural observations: down, skin, and flesh colour determine vulnerability to particular beetles and diseases`  
+   - [x] Smooth-skinned fruits, compared with those bearing down
+   - [ ] Downy fruits, compared with those with smooth skins
+   - [ ] Purple-skinned fruits, compared with yellow ones
+   - [ ] Yellow-fleshed fruits, compared with other flesh colours
+   **Expected answer:** Smooth-skinned fruits, compared with those bearing down
 
-3. **What point is Darwin making with the remark about destroying every lamb with the faintest trace of black in a flock of white sheep?**  
-   kind: `mcq` | concept: `The white-sheep flock as a model of fine, repeated discrimination`  
-   - [x] That maintaining a character requires discrimination against even the slightest deviation, repeated consistently
-   - [ ] That breeders prefer monstrous or striking forms when they begin a new line of selection
-   - [ ] That white is a naturally advantageous colour and tends to spread in flocks left to themselves
-   - [ ] That the occasional loss of a single individual has too little effect to alter a population
-   **Expected answer:** That maintaining a character requires discrimination against even the slightest deviation, repeated consistently
+3. **In Downing's observations, purple plums suffer more than yellow plums from a certain disease. What happens with peaches?**  
+   kind: `mcq` | concept: `Downing's horticultural observations: down, skin, and flesh colour determine vulnerability to particular beetles and diseases`  
+   - [x] A different disease attacks yellow-fleshed peaches more than peaches of other flesh colours
+   - [ ] The same disease attacks purple-fleshed peaches more than yellow-fleshed ones
+   - [ ] Peaches escape disease altogether because of the down on their skins
+   - [ ] The disease of plums spreads to peaches only where the two are grown together
+   **Expected answer:** A different disease attacks yellow-fleshed peaches more than peaches of other flesh colours
 
-4. **In Darwin's examples, does a character like yellow colouring have a fixed value for the plant? Explain in a sentence, using the plum and peach cases.**  
-   kind: `short` | concept: `Natural selection can act on characters that appear trivial`  
-   **Expected answer:** No. Yellow plums suffer less from a certain disease than purple ones, but yellow-fleshed peaches are attacked far more by another disease than peaches with other coloured flesh; the value of a character depends on which enemies and conditions the organism faces.
+4. **Darwin says that if slight differences like down and flesh colour matter 'with all the aids of art', then in a state of nature they would matter even more. Explain in a sentence or two why cultivation makes the wild case stronger rather than weaker.**  
+   kind: `short` | concept: `The a fortiori argument from cultivation to the state of nature`  
+   **Expected answer:** Cultivated trees are protected and helped by the grower, yet these small differences still make a great difference to how the varieties fare. In nature the trees have to struggle with other trees and with a host of enemies without that protection, so the same differences must weigh still more heavily and would effectually settle which variety succeeds.
 
-5. **Why does Darwin bring up the warning, on parts of the Continent, against keeping white pigeons?**  
-   kind: `mcq` | concept: `Protective colouration as evidence that appearance is under lethal scrutiny`  
-   - [x] To show that hawks hunt by eyesight, so that mere colour is under constant lethal scrutiny
-   - [ ] To show that domesticated birds lose the wariness that protects wild ones
-   - [ ] To show that breeders' fashions in colour eventually shape wild populations too
-   - [ ] To show that white plumage is the result of an unhealthy constitution in birds
-   **Expected answer:** To show that hawks hunt by eyesight, so that mere colour is under constant lethal scrutiny
+5. **What fact about how hawks hunt makes the colour of grouse a matter of survival in Darwin's argument?**  
+   kind: `short` | concept: `Protective coloration works because predators such as hawks hunt by sight`  
+   **Expected answer:** Hawks are guided by eyesight to their prey, so a bird whose colour matches its background (heather for the red-grouse, peaty earth for the black-grouse) is less likely to be seen and taken. Darwin adds that on parts of the Continent people are warned not to keep white pigeons, as they are the most liable to destruction.
 
-6. **Darwin says natural selection could both give and keep the proper colour of each kind of grouse. What is the significance of putting it in those two parts?**  
-   kind: `short` | concept: `Selection as both originating and maintaining characters`  
-   **Expected answer:** It shows that origination and maintenance are the same process at different moments: the same continual rejection of slightly disadvantageous variants that first establishes an advantageous colour also holds it true and constant afterwards.
+6. **What does Darwin say botanists think of the down on fruit and the colour of the flesh?**  
+   kind: `mcq` | concept: `Natural selection can act on characters humans judge to be of trifling importance`  
+   - [x] They regard them as characters of the most trifling importance
+   - [ ] They regard them as the surest guide to a plant's true affinities
+   - [ ] They regard them as useful to the plant but useless for classification
+   - [ ] They regard them as varying too much to be described at all
+   **Expected answer:** They regard them as characters of the most trifling importance
 
 ---
