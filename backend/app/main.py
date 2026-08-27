@@ -1,6 +1,7 @@
 import logging
 import os
 import uuid
+from collections import defaultdict
 from datetime import UTC, datetime
 
 import httpx
@@ -10,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app import generation, ingest, models
+from app import days, fsrs, generation, ingest, models, review
 from app.attempts import (
     _attempt_state,
     _attempts_by_item,
@@ -20,10 +21,12 @@ from app.attempts import (
     _sanitize_elapsed_ms,
     iso_utc,
 )
+from app.concepts import normalize_concept
 from app.db import get_session, init_db
 from app.llm import get_provider
 from app.llm.base import LLMCallError
 from app.metering import CostLimitExceeded, MeteredLLM, acknowledge_alert, alert_state
+from app.rating import rating_v1
 
 logger = logging.getLogger("studyforge.api")
 
@@ -351,14 +354,21 @@ def _completion_state(lesson: models.Lesson) -> dict:
 @app.post("/lessons/{lesson_id}/complete")
 def complete_lesson(lesson_id: int, session: Session = Depends(get_session)):
     """Idempotent: completed_at records when the lesson was first finished, so a
-    repeat POST must not push that timestamp forward."""
+    repeat POST must not push that timestamp forward.
+
+    Completion is also where a lesson's concepts enter the review schedule. Grading
+    here rather than on each answer means the learner chose the boundary, and it is
+    idempotent for the same reason the timestamp is: review.grade_lesson only reads
+    attempts newer than the card's last review, so a repeat POST rates nothing.
+    """
     lesson = session.get(models.Lesson, lesson_id)
     if not lesson:
         raise HTTPException(404, "Lesson not found")
+    scheduled = review.grade_lesson(session, lesson)
     if lesson.completed_at is None:
         lesson.completed_at = datetime.now(UTC)
-        session.commit()
-    return _completion_state(lesson)
+    session.commit()
+    return _completion_state(lesson) | {"scheduled_concepts": len(scheduled)}
 
 
 @app.delete("/lessons/{lesson_id}/complete")
@@ -372,6 +382,187 @@ def uncomplete_lesson(lesson_id: int, session: Session = Depends(get_session)):
         lesson.completed_at = None
         session.commit()
     return _completion_state(lesson)
+
+
+def _card_payload(
+    row: models.ReviewCard, item: models.QuizItem | None, now: datetime
+) -> dict:
+    """One queue entry: the card, the question to ask, and the four button intervals."""
+    return {
+        "card_id": row.id,
+        "concept_key": row.concept_key,
+        "concept_label": row.concept_label,
+        "state": row.state,
+        "due": iso_utc(row.due),
+        "lapses": row.lapses,
+        "retrievability": review.card_retrievability(row, now),
+        "preview": review.preview(row, now),
+        # No answer key: the learner has not answered yet, and the whole point of a
+        # review is that they retrieve it rather than recognize it.
+        "item": None
+        if item is None
+        else {
+            "id": item.id,
+            "question": item.question,
+            "kind": item.kind,
+            "options": item.options,
+        },
+    }
+
+
+@app.get("/review/today")
+def get_review_today(session: Session = Depends(get_session)):
+    """The Today screen: what is due, how the learner is doing, and what is slipping."""
+    now = review.now_utc()
+    counts = review.due_counts(session, now)
+    struggling = review.needs_attention(session, now)
+    due_now = counts["due_today"]
+    return {
+        "date": days.today_key(now),
+        **counts,
+        **review.retention(session, now),
+        "day_streak": review.day_streak(session, now),
+        "estimated_minutes": review.estimated_minutes(session, due_now),
+        # "4 of these you have struggled with before", on the review session card.
+        "struggling_due": sum(1 for entry in struggling if entry["is_due"]),
+        "needs_attention": [entry | {"due": iso_utc(entry["due"])} for entry in struggling],
+    }
+
+
+@app.get("/review/queue")
+def get_review_queue(
+    limit: int = review.DEFAULT_QUEUE_LIMIT, session: Session = Depends(get_session)
+):
+    """Cards due right now, hardest-to-recall first.
+
+    `limit` caps how many are handed to the client, but nothing is rescheduled to fit
+    it: `due_total` reports the real backlog. Trimming the schedule to fit a session
+    would be the scheduler lying to make a number look better.
+    """
+    limit = max(1, min(limit, 200))
+    now = review.now_utc()
+    rows = review.due_cards(session, now)
+    served = rows[:limit]
+    items = review.pick_items(session, [row.concept_key for row in served])
+    return {
+        "due_total": len(rows),
+        "estimated_minutes": review.estimated_minutes(session, len(rows)),
+        "cards": [_card_payload(row, items.get(row.concept_key), now) for row in served],
+    }
+
+
+class ReviewAnswer(BaseModel):
+    item_id: int
+    answer: str
+    elapsed_ms: int | None = None
+
+
+@app.post("/review/cards/{card_id}/answer")
+def answer_review(card_id: int, body: ReviewAnswer, session: Session = Depends(get_session)):
+    """Record an answer given during a review session and suggest a rating for it.
+
+    Nothing is scheduled here. The learner sees their own answer against the expected
+    one and then rates their recall, which is what the review screen shows and what
+    the separate rate endpoint applies. The suggestion exists so the UI can preselect
+    a button, and whether the learner overrides it is recorded when they rate.
+    """
+    card = session.get(models.ReviewCard, card_id)
+    if not card:
+        raise HTTPException(404, "Review card not found")
+    item = session.get(models.QuizItem, body.item_id)
+    if not item:
+        raise HTTPException(404, "Quiz item not found")
+    if normalize_concept(item.concept) != card.concept_key:
+        raise HTTPException(400, "That quiz item does not test this concept")
+    if not body.answer.strip():
+        raise HTTPException(400, "Answer cannot be empty")
+
+    attempt = _record_attempt(
+        session,
+        item,
+        body.answer,
+        _grade(body.answer, item.answer),
+        _sanitize_elapsed_ms(body.elapsed_ms),
+        source=review.REVIEW_SESSION_SOURCE,
+    )
+    suggested = rating_v1([attempt], {item.id: item})
+    return {
+        "correct": attempt.correct,
+        "expected": item.answer,
+        "submitted": attempt.submitted_answer,
+        "attempt_id": attempt.id,
+        "suggested_rating": suggested.rating,
+        "rating_v": suggested.rating_v,
+        "preview": review.preview(card, review.now_utc()),
+    }
+
+
+class ReviewRating(BaseModel):
+    rating: int
+    suggested_rating: int | None = None
+    attempt_ids: list[int] | None = None
+
+
+@app.post("/review/cards/{card_id}/rate")
+def rate_review(card_id: int, body: ReviewRating, session: Session = Depends(get_session)):
+    """Apply the learner's rating to a card and reschedule it."""
+    card = session.get(models.ReviewCard, card_id)
+    if not card:
+        raise HTTPException(404, "Review card not found")
+    if body.rating not in fsrs.RATINGS:
+        raise HTTPException(400, f"rating must be one of {list(fsrs.RATINGS)}")
+
+    suggested = body.suggested_rating
+    log = review.record_review(
+        session,
+        card.concept_key,
+        card.concept_label,
+        body.rating,
+        suggested_rating=suggested,
+        # "learner" only when they actually disagreed with the suggestion. Recording
+        # every rating as an override would drown the signal that the derivation is
+        # miscalibrated, which is the reason the column exists.
+        rating_source=review.LEARNER
+        if suggested is not None and suggested != body.rating
+        else review.DERIVED,
+        attempt_ids=body.attempt_ids,
+    )
+    session.commit()
+    return {
+        "card_id": card.id,
+        "concept_key": card.concept_key,
+        "state": card.state,
+        "stability": card.stability,
+        "difficulty": card.difficulty,
+        "due": iso_utc(card.due),
+        "reps": card.reps,
+        "lapses": card.lapses,
+        "scheduled_days": log.scheduled_days,
+        "interval_label": review.format_interval(card.due - log.reviewed_at),
+    }
+
+
+@app.get("/courses/{course_id}/concepts")
+def get_course_concepts(course_id: int, session: Session = Depends(get_session)):
+    """The concept map's data: every concept in the course with its mastery bucket.
+
+    `locked` is deliberately absent from the buckets. Concept prerequisites are not in
+    the data model yet, so nothing here can honestly say a concept is gated.
+    """
+    course = session.get(models.Course, course_id)
+    if not course:
+        raise HTTPException(404, "Course not found")
+    now = review.now_utc()
+    concepts = review.course_concepts(session, course, now)
+    counts: dict[str, int] = defaultdict(int)
+    for concept in concepts:
+        counts[concept["bucket"]] += 1
+    return {
+        "course_id": course.id,
+        "title": course.title,
+        "counts": dict(counts),
+        "concepts": [entry | {"due": iso_utc(entry["due"])} for entry in concepts],
+    }
 
 
 @app.get("/usage")

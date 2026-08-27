@@ -145,7 +145,7 @@ def _record_attempt(
     Everything but the submitted answer and the elapsed time comes off the quiz item
     server-side, so a client cannot claim a different lesson, concept, or answer key.
     """
-    duplicate = _recent_duplicate(session, item.id, submitted)
+    duplicate = _recent_duplicate(session, item.id, submitted, source)
     if duplicate is not None:
         return duplicate
 

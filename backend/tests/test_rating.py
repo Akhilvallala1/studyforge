@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 import pytest
 
 from app import rating
-from app.fsrs import AGAIN, EASY, GOOD, HARD
+from app.fsrs import AGAIN, GOOD, HARD
 
 
 @dataclass
@@ -126,11 +126,13 @@ def test_first_try_correct_and_slow_is_good_not_hard():
     assert result.rating == GOOD
 
 
-def test_first_try_correct_and_fast_is_easy():
+def test_a_fast_first_try_is_still_only_good():
+    """The item is recorded as fast, and that timing feeds the session-length
+    estimate, but it does not lift the derived rating. See rate_item for why."""
     item = FakeItem()
     fast = int(rating.answer_budget_ms(item) * rating.EASY_SPEED_FRACTION)
     result = _rate([FakeAttempt(correct=True, elapsed_ms=fast)], [item])
-    assert result.rating == EASY
+    assert result.rating == GOOD
     assert result.items[0].fast is True
 
 
@@ -181,22 +183,31 @@ def test_hard_beats_easy_and_good():
     assert _rate(attempts, [a, b]).rating == HARD
 
 
-def test_easy_requires_unanimity():
-    """One fast answer is not allowed to push the card up, because speed is the noisy
-    signal. Over-reviewing costs minutes; under-reviewing costs the memory."""
+def test_derivation_never_reaches_easy_however_fast_the_answer():
+    """Easy is reachable only by the learner pressing it, never by derivation.
+
+    A wrong Easy applies the 1.87x stability bonus and silently over-extends the
+    gap, costing the memory; a wrong Good costs minutes. And where derivation runs,
+    the evidence for Easy is weak: timing is frequently absent, and fast-and-correct
+    on a multiple-choice item is confounded with recognition and guessing.
+    """
     a, b = FakeItem(id=1), FakeItem(id=2)
     fast = int(rating.answer_budget_ms(a) * rating.EASY_SPEED_FRACTION)
-    mixed = [
-        FakeAttempt(quiz_item_id=1, correct=True, elapsed_ms=fast),
-        FakeAttempt(quiz_item_id=2, correct=True, elapsed_ms=None),
-    ]
-    assert _rate(mixed, [a, b]).rating == GOOD
 
     both_fast = [
         FakeAttempt(quiz_item_id=1, correct=True, elapsed_ms=fast),
         FakeAttempt(quiz_item_id=2, correct=True, elapsed_ms=fast),
     ]
-    assert _rate(both_fast, [a, b]).rating == EASY
+    assert _rate(both_fast, [a, b]).rating == GOOD
+
+    instant = [FakeAttempt(quiz_item_id=1, correct=True, elapsed_ms=1)]
+    assert _rate(instant, [a]).rating == GOOD
+
+    mixed = [
+        FakeAttempt(quiz_item_id=1, correct=True, elapsed_ms=fast),
+        FakeAttempt(quiz_item_id=2, correct=True, elapsed_ms=None),
+    ]
+    assert _rate(mixed, [a, b]).rating == GOOD
 
 
 def test_no_gradeable_attempts_yields_no_rating():

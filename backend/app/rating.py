@@ -121,12 +121,24 @@ def grade_item(attempts, item) -> ItemGrade:
         rating = AGAIN
     elif tries > 1:
         rating = HARD
-    elif fast:
-        rating = EASY
     else:
-        # Slowness never demotes Good to Hard in v1. A slow correct answer is a
-        # correct answer; timing is noisy enough that acting on it in both directions
-        # would schedule from the noise.
+        # Derivation stops at Good and never reaches Easy, deliberately.
+        #
+        # Easy applies the w16 bonus (1.87x) to the stability increment, so a wrong
+        # Easy is a silently over-long gap and a concept the learner loses without
+        # warning. A wrong Good costs a few minutes of reviewing something known.
+        # When one direction of error is that much cheaper, take it.
+        #
+        # The evidence for Easy is also weak where derivation runs. elapsed_ms is
+        # optional on the request and discarded when implausible, so identical
+        # knowledge would schedule differently depending on whether the browser
+        # reported a number. On a multiple-choice item, fast and correct is
+        # confounded with recognition and with guessing, and recognition is not what
+        # is being scheduled.
+        #
+        # Easy stays reachable where the evidence is good: the learner presses it in
+        # a review session, having just seen whether they truly recalled it. Timing
+        # still earns its keep in the session-length estimate.
         rating = GOOD
 
     return ItemGrade(
