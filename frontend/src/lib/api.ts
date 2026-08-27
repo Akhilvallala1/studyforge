@@ -7,6 +7,10 @@ import type {
   CourseSummary,
   GenerateResult,
   LessonDetail,
+  ReviewAnswerResult,
+  ReviewQueue,
+  ReviewRatingResult,
+  ReviewToday,
   UsageSummary,
 } from "./types";
 
@@ -130,6 +134,51 @@ export function completeLesson(id: number): Promise<CompleteResult> {
 
 export function uncompleteLesson(id: number): Promise<CompleteResult> {
   return request(`/lessons/${id}/complete`, { method: "DELETE" });
+}
+
+export function getReviewToday(): Promise<ReviewToday> {
+  return get("/review/today");
+}
+
+export function getReviewQueue(limit?: number): Promise<ReviewQueue> {
+  const query = limit ? `?limit=${limit}` : "";
+  return get(`/review/queue${query}`);
+}
+
+/**
+ * Record an answer given during a review session. Nothing is scheduled by this:
+ * the learner compares their answer with the reference one and then rates, which
+ * is what `rateReviewCard` applies. A 409 means this item was already answered in
+ * this exposure, which is enforced server-side at one try per item.
+ */
+export function answerReviewCard(
+  cardId: number,
+  itemId: number,
+  answer: string,
+  elapsedMs?: number,
+): Promise<ReviewAnswerResult> {
+  const body =
+    elapsedMs === undefined
+      ? { item_id: itemId, answer }
+      : { item_id: itemId, answer, elapsed_ms: elapsedMs };
+  return postJson(`/review/cards/${cardId}/answer`, body);
+}
+
+/**
+ * Apply the learner's rating and reschedule the card. `suggestedRating` is passed
+ * back so the backend can record whether the learner overrode the derivation.
+ */
+export function rateReviewCard(
+  cardId: number,
+  rating: number,
+  suggestedRating?: number | null,
+  attemptIds?: number[],
+): Promise<ReviewRatingResult> {
+  return postJson(`/review/cards/${cardId}/rate`, {
+    rating,
+    suggested_rating: suggestedRating ?? null,
+    attempt_ids: attemptIds ?? [],
+  });
 }
 
 export function getUsage(limit?: number): Promise<UsageSummary> {

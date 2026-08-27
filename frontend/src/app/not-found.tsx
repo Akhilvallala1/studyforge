@@ -8,7 +8,7 @@ export default function NotFound() {
         That course or lesson doesn&apos;t exist.
       </p>
       <Link
-        href="/"
+        href="/courses"
         className="mt-6 rounded-lg bg-zinc-900 px-5 py-2.5 font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
       >
         All courses
