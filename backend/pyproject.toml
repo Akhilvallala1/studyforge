@@ -13,6 +13,9 @@ dependencies = [
     "python-dotenv>=1.0",
     "httpx>=0.27",
     "python-multipart>=0.0.9",
+    # Pure data, no code: the IANA timezone database. Windows ships no system zoneinfo,
+    # so without this every ZoneInfo() lookup raises and study days silently become UTC.
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]
