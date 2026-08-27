@@ -19,7 +19,27 @@ HOSTILE_LESSON_TITLE = "Handling Untrusted Content"
 def _source_material(prompt: str) -> str:
     marker = "Source material:"
     index = prompt.find(marker)
-    return prompt[index + len(marker) :].strip() if index != -1 else prompt.strip()
+    text = prompt[index + len(marker) :].strip() if index != -1 else prompt.strip()
+    return re.sub(r"\[segment \d+\]", " ", text).strip()
+
+
+def _segment_count(prompt: str) -> int:
+    match = re.search(r"The source material has (\d+) segments", prompt)
+    return int(match.group(1)) if match else 1
+
+
+def _split_segments(count: int, buckets: int) -> list[list[int]]:
+    """Deal every segment index into `buckets` lesson slots, round robin.
+
+    Round robin rather than contiguous slicing so that a fake course, like a real
+    one, has at least one lesson reaching the end of the document. That is the
+    property the coverage metric exists to check, and a fixture that never
+    exhibits it cannot exercise the check.
+    """
+    dealt: list[list[int]] = [[] for _ in range(buckets)]
+    for index in range(count):
+        dealt[index % buckets].append(index)
+    return [segments or [0] for segments in dealt]
 
 
 def _topic(prompt: str) -> str:
@@ -40,6 +60,7 @@ class FakeProvider:
 
     def _outline(self, prompt: str) -> str:
         topic = _topic(prompt)
+        dealt = _split_segments(_segment_count(prompt), 4)
         return json.dumps(
             {
                 "title": f"Fake Course: {topic}",
@@ -54,10 +75,12 @@ class FakeProvider:
                             {
                                 "title": f"Introduction to {topic}",
                                 "summary": "Orientation and core vocabulary.",
+                                "segments": dealt[0],
                             },
                             {
                                 "title": HOSTILE_LESSON_TITLE,
                                 "summary": "Rendering hostile markdown safely.",
+                                "segments": dealt[1],
                             },
                         ],
                     },
@@ -67,10 +90,12 @@ class FakeProvider:
                             {
                                 "title": f"{topic} in Practice",
                                 "summary": "Worked examples and common pitfalls.",
+                                "segments": dealt[2],
                             },
                             {
                                 "title": f"Reviewing {topic}",
                                 "summary": "Recap and self-check.",
+                                "segments": dealt[3],
                             },
                         ],
                     },
