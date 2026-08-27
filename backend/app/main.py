@@ -93,6 +93,9 @@ def generation_failure(exc: Exception, stage: str) -> HTTPException:
     that will never succeed.
     """
     logger.exception("Course generation failed during stage %s", stage)
+    # This branch must stay above _is_model_failure. UnsafeURLError subclasses
+    # ValueError, which counts as a model failure, so moving it down would turn every
+    # refused URL into "the model could not generate a course from this material".
     if isinstance(exc, ingest.UnsafeURLError):
         return HTTPException(400, str(exc))
     if stage == "url":

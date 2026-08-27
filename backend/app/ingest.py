@@ -12,11 +12,29 @@ from pypdf import PdfReader
 
 MAX_CHUNK_CHARS = 8000
 
-MAX_REDIRECTS = 5
+# Real chains stack up (http to https, apex to www, locale, consent), so 5 was tight
+# enough to refuse legitimate pages. httpx itself defaults to 20.
+MAX_REDIRECTS = 10
+
+# RFC 6598 carrier-grade NAT. Python deliberately reports these as public, but some
+# cloud providers use the range for internal networks, so it is checked by hand.
+_CGNAT = ipaddress.ip_network("100.64.0.0/10")
 
 
 class UnsafeURLError(ValueError):
     """The URL points somewhere the server should not fetch on a caller's behalf."""
+
+
+def _is_internal(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return (
+        address.is_private
+        or address.is_loopback
+        or address.is_link_local
+        or address.is_reserved
+        or address.is_multicast
+        or address.is_unspecified
+        or (address.version == 4 and address in _CGNAT)
+    )
 
 
 def _allow_private_hosts() -> bool:
@@ -45,6 +63,17 @@ def _check_host(url: str) -> None:
 
     Every hostname the request touches is checked, not only the first, because a
     permitted public URL is free to redirect to 127.0.0.1.
+
+    The name is classified by what it RESOLVES to, never by how it is spelled. That
+    is what makes the alternate-encoding tricks (decimal and octal IPs, IPv4-mapped
+    IPv6, fullwidth digits, IDN homographs) uninteresting: either the name resolves
+    and the address is judged, or it does not and the fetch is refused.
+
+    Known limitation, deliberately not fixed: the name is resolved here and resolved
+    again by httpx when it connects, so a domain the attacker controls with a
+    sub-second TTL could in principle answer differently the second time. Closing
+    that means connecting to the validated address with a Host header through a
+    custom transport, which is disproportionate for a self-hosted study app.
     """
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
@@ -52,29 +81,33 @@ def _check_host(url: str) -> None:
     host = parsed.hostname
     if not host:
         raise UnsafeURLError("That URL has no host")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        # urlparse defers port parsing to attribute access, so a malformed port
+        # arrives here as a bare ValueError. Left unwrapped it escapes as a generic
+        # failure and the caller is told to retry a URL that cannot work.
+        raise UnsafeURLError("That URL has an invalid port") from exc
     if _allow_private_hosts():
         return
 
     try:
         # Every address the name resolves to, since a name can carry both a public
         # and a private record and httpx may pick either.
-        infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80))
+        infos = socket.getaddrinfo(host, port or (443 if parsed.scheme == "https" else 80))
     except OSError as exc:
         raise UnsafeURLError(f"Could not resolve {host}") from exc
 
     for info in infos:
         address = ipaddress.ip_address(info[4][0])
-        if (
-            address.is_private
-            or address.is_loopback
-            or address.is_link_local
-            or address.is_reserved
-            or address.is_multicast
-            or address.is_unspecified
-        ):
+        if _is_internal(address):
+            # Deliberately not naming the resolved address. This message reaches the
+            # UI verbatim, and reporting "resolves to 10.1.2.3" versus "could not
+            # resolve" turns the endpoint into an internal DNS oracle. The half that
+            # helps a legitimate user is kept.
             raise UnsafeURLError(
-                f"{host} resolves to {address}, which is on a private or local network. "
-                "Set STUDYFORGE_ALLOW_PRIVATE_URLS=true if that is deliberate."
+                f"{host} is on a private or local network, which StudyForge will not "
+                "fetch. Set STUDYFORGE_ALLOW_PRIVATE_URLS=true if that is deliberate."
             )
 
 

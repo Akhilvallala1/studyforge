@@ -53,6 +53,59 @@ class TestURLSafety:
         with pytest.raises(ingest.UnsafeURLError, match="127.0.0.1"):
             ingest.extract_url("https://example.com/start")
 
+    def test_a_host_with_both_public_and_private_records_is_refused(self, monkeypatch):
+        """A name can carry several A records, and httpx may connect to any of them.
+        Checking only the first would let an attacker publish one public address and
+        one private one and win whenever the private record was picked."""
+        monkeypatch.setattr(
+            ingest.socket,
+            "getaddrinfo",
+            lambda *a, **k: [
+                (2, 1, 6, "", ("93.184.216.34", 443)),
+                (2, 1, 6, "", ("10.0.0.7", 443)),
+            ],
+        )
+        with pytest.raises(ingest.UnsafeURLError):
+            ingest.extract_url("https://split-horizon.example/")
+
+    @pytest.mark.parametrize("url", ["http://example.com:99999/", "http://example.com:notaport/"])
+    def test_a_malformed_port_is_a_bad_request_not_a_gateway_error(self, url):
+        """urlparse defers port parsing to attribute access, so this arrives as a bare
+        ValueError. Unwrapped it becomes a 502, telling the caller to retry a URL that
+        can never work."""
+        with pytest.raises(ingest.UnsafeURLError, match="port"):
+            ingest.extract_url(url)
+
+    def test_the_redirect_cap_terminates(self, monkeypatch):
+        monkeypatch.setattr(
+            ingest.socket, "getaddrinfo", lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 443))]
+        )
+        monkeypatch.setattr(
+            httpx.Client,
+            "get",
+            lambda self, url, *a, **k: httpx.Response(
+                302, headers={"location": "/again"}, request=httpx.Request("GET", url)
+            ),
+        )
+        with pytest.raises(ingest.UnsafeURLError, match="too many times"):
+            ingest.extract_url("https://example.com/loop")
+
+    def test_a_public_url_still_fetches(self, monkeypatch):
+        """The guard must not be so strict that ordinary pages stop working."""
+        monkeypatch.setattr(
+            ingest.socket, "getaddrinfo", lambda *a, **k: [(2, 1, 6, "", ("93.184.216.34", 443))]
+        )
+        monkeypatch.setattr(
+            httpx.Client,
+            "get",
+            lambda self, url, *a, **k: httpx.Response(
+                200, text="<h1>Real page</h1><script>x</script>", request=httpx.Request("GET", url)
+            ),
+        )
+        text = ingest.extract_url("https://example.com/article")
+        assert "Real page" in text
+        assert "script" not in text
+
     def test_private_addresses_are_allowed_when_explicitly_enabled(self, monkeypatch):
         """A self-hoster ingesting from a wiki on their own LAN is a real use, so the
         default is a setting rather than a ban."""
