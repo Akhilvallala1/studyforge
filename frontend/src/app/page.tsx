@@ -54,8 +54,18 @@ function sessionSentence(today: ReviewToday): string {
   const head = `${today.due_now} due now, about ${today.estimated_minutes} ${
     today.estimated_minutes === 1 ? "minute" : "minutes"
   }.`;
-  if (today.struggling_due === 0) return head;
-  return `${head} ${today.struggling_due} of these you have struggled with before.`;
+  const parts = [head];
+  // The counts can also disagree while some cards are servable, and the tile above
+  // shows the larger number, so account for the difference here too rather than only
+  // when nothing at all is due.
+  const later = today.due_today - today.due_now;
+  if (later > 0) {
+    parts.push(`${later} more ${later === 1 ? "comes" : "come"} back later today.`);
+  }
+  if (today.struggling_due > 0) {
+    parts.push(`${today.struggling_due} of these you have struggled with before.`);
+  }
+  return parts.join(" ");
 }
 
 interface NextUp {

@@ -358,14 +358,20 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
                   How well did you recall it?
                 </p>
                 <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-                  {phase.preview.map((option) => {
+                  {phase.preview.map((option, index) => {
                     const style = RATING_STYLES[option.name];
                     const suggested = option.rating === phase.suggested;
+                    // Focus the suggested button, or the first one when there is no
+                    // suggestion. The 409 path has none (the answer was recorded in an
+                    // earlier sitting), and without the fallback nothing holds the ref,
+                    // focus falls to the body, and the learner tabs from the top of the
+                    // page to reach the only controls left on screen.
+                    const takesFocus = phase.suggested === null ? index === 0 : suggested;
                     return (
                       <button
                         key={option.rating}
                         type="button"
-                        ref={suggested ? ratingRef : undefined}
+                        ref={takesFocus ? ratingRef : undefined}
                         disabled={busy}
                         onClick={() => void rate(option.rating)}
                         aria-label={`${style.title}, next review in ${option.label}${
