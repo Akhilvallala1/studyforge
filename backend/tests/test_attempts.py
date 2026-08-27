@@ -436,11 +436,13 @@ class TestFriendlyGenerationErrors:
         assert "refused" not in detail
 
     def test_unreadable_pdf_gets_pdf_copy(self, client):
+        """400, not 502: the upload is the problem, and a gateway error invites the
+        caller to retry something that will never succeed."""
         resp = client.post(
             "/courses/generate/pdf",
             files={"file": ("broken.pdf", b"not a pdf at all", "application/pdf")},
         )
-        assert resp.status_code == 502
+        assert resp.status_code == 400
         assert resp.json()["detail"] == (
             "Could not read that PDF. It may be scanned images or corrupted."
         )
