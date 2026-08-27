@@ -83,20 +83,25 @@ def _is_model_failure(exc: Exception) -> bool:
 
 
 def generation_failure(exc: Exception, stage: str) -> HTTPException:
-    """Log the real error and return a 502 carrying copy a learner can act on.
+    """Log the real error and return copy a learner can act on.
 
     Call from inside an `except` block: logger.exception needs the live traceback.
+
+    The status says whose problem it is. A refused URL or an unreadable upload is
+    the request's fault and gets a 4xx; a provider or pipeline failure is ours and
+    gets a 502. Returning 502 for a corrupt PDF told the caller to retry something
+    that will never succeed.
     """
     logger.exception("Course generation failed during stage %s", stage)
+    if isinstance(exc, ingest.UnsafeURLError):
+        return HTTPException(400, str(exc))
     if stage == "url":
-        message = URL_FETCH_MESSAGE
-    elif stage == "pdf":
-        message = PDF_PARSE_MESSAGE
-    elif _is_model_failure(exc):
-        message = MODEL_FAILURE_MESSAGE
-    else:
-        message = GENERIC_GENERATION_MESSAGE
-    return HTTPException(502, message)
+        return HTTPException(502, URL_FETCH_MESSAGE)
+    if stage == "pdf":
+        return HTTPException(400, PDF_PARSE_MESSAGE)
+    if _is_model_failure(exc):
+        return HTTPException(502, MODEL_FAILURE_MESSAGE)
+    return HTTPException(502, GENERIC_GENERATION_MESSAGE)
 
 
 def _save_course(session: Session, course: dict) -> models.Course:

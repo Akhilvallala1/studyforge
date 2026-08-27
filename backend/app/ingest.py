@@ -1,12 +1,81 @@
 """Turn source material (PDF bytes, plain text, or a URL) into cleaned text chunks."""
 
 import io
+import ipaddress
+import os
 import re
+import socket
+from urllib.parse import urlparse
 
 import httpx
 from pypdf import PdfReader
 
 MAX_CHUNK_CHARS = 8000
+
+MAX_REDIRECTS = 5
+
+
+class UnsafeURLError(ValueError):
+    """The URL points somewhere the server should not fetch on a caller's behalf."""
+
+
+def _allow_private_hosts() -> bool:
+    """Whether to permit fetching private, loopback and link-local addresses.
+
+    Off by default. A self-hoster running StudyForge alongside a wiki on the same
+    LAN has a real reason to turn it on, so this is a setting rather than a ban, but
+    it must be a deliberate act: the safe default protects anyone who exposes the
+    API to people they do not fully trust.
+    """
+    return os.environ.get("STUDYFORGE_ALLOW_PRIVATE_URLS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+
+
+def _check_host(url: str) -> None:
+    """Reject a URL that would make the server fetch something on its own network.
+
+    Without this the URL ingest is a server-side request forgery surface: anyone who
+    can reach the API can use it to probe localhost and the private network, reading
+    back whatever responds as course material. That matters even for a self-hosted
+    app the moment it is exposed beyond one machine, and a cloud deployment would
+    hand out its metadata endpoint.
+
+    Every hostname the request touches is checked, not only the first, because a
+    permitted public URL is free to redirect to 127.0.0.1.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"}:
+        raise UnsafeURLError(f"Only http and https URLs can be fetched, not {parsed.scheme!r}")
+    host = parsed.hostname
+    if not host:
+        raise UnsafeURLError("That URL has no host")
+    if _allow_private_hosts():
+        return
+
+    try:
+        # Every address the name resolves to, since a name can carry both a public
+        # and a private record and httpx may pick either.
+        infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80))
+    except OSError as exc:
+        raise UnsafeURLError(f"Could not resolve {host}") from exc
+
+    for info in infos:
+        address = ipaddress.ip_address(info[4][0])
+        if (
+            address.is_private
+            or address.is_loopback
+            or address.is_link_local
+            or address.is_reserved
+            or address.is_multicast
+            or address.is_unspecified
+        ):
+            raise UnsafeURLError(
+                f"{host} resolves to {address}, which is on a private or local network. "
+                "Set STUDYFORGE_ALLOW_PRIVATE_URLS=true if that is deliberate."
+            )
 
 
 def extract_pdf(data: bytes) -> str:
@@ -16,7 +85,26 @@ def extract_pdf(data: bytes) -> str:
 
 
 def extract_url(url: str) -> str:
-    response = httpx.get(url, follow_redirects=True, timeout=30)
+    """Fetch a page and strip it to text, refusing to fetch private addresses.
+
+    Redirects are followed by hand rather than by httpx so that each hop can be
+    checked. Handing follow_redirects to the client would check only the URL the
+    caller supplied, and the interesting attack is a public URL that redirects
+    inward.
+    """
+    with httpx.Client(follow_redirects=False, timeout=30) as client:
+        for _ in range(MAX_REDIRECTS + 1):
+            _check_host(url)
+            response = client.get(url)
+            if not response.is_redirect:
+                break
+            location = response.headers.get("location")
+            if not location:
+                break
+            url = str(response.url.join(location))
+        else:
+            raise UnsafeURLError("That URL redirected too many times")
+
     response.raise_for_status()
     html = response.text
     # Crude tag strip - good enough for the MVP; a real HTML-to-text pass is a TODO.
