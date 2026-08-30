@@ -1,5 +1,8 @@
 """End-to-end course generation through the API with STUDYFORGE_LLM_PROVIDER=fake."""
 
+import json
+
+from app import generation, remediation
 from app.llm import get_provider
 from app.llm.fake_provider import HOSTILE_LESSON_TITLE, FakeProvider
 
@@ -26,6 +29,75 @@ def test_fake_provider_reports_estimated_token_usage():
     assert result.output_tokens == max(1, len(result.text) // 4)
     assert provider.is_paid is False
     assert provider.name == "fake"
+
+
+def _remediation_prompt(concept="Gradient Descent", lesson="Optimization Basics"):
+    return (
+        f"{remediation.MATERIAL_OPEN}\n"
+        f"Concept: {concept}\n\n"
+        f"--- Lesson: {lesson} ---\n"
+        f"Some lesson text about {concept}.\n"
+        f"{remediation.MATERIAL_CLOSE}"
+    )
+
+
+def test_fake_provider_answers_every_live_system_prompt():
+    """The drift guard. Dispatch is by phrase, so the phrases are fed in for real.
+
+    A stage this provider does not recognize falls through to the lesson branch and
+    hands back JSON the caller cannot parse. That is not a loud failure: it looks
+    like a 502 from the model. Remediation shipped broken offline exactly this way,
+    so every stage's real system prompt is checked against the real parser here.
+    """
+    provider = FakeProvider()
+
+    outline = generation.parse_json_response(
+        provider.generate(generation.outline_system(4), "Source material:\n\nText.").text
+    )
+    assert outline["modules"]
+
+    lesson = generation.parse_json_response(
+        provider.generate(generation.LESSON_SYSTEM, "Lesson title: A\nSource material:\n\nText.").text
+    )
+    assert lesson["content"] and lesson["quiz"]
+
+    # parse_note raises unless both fields are present and non-empty.
+    content = remediation.parse_note(
+        provider.generate(remediation.REMEDIATION_SYSTEM, _remediation_prompt()).text
+    )
+    assert "In simpler terms" in content
+    assert "Worked example" in content
+
+
+def test_fake_remediation_is_deterministic_and_concept_sensitive():
+    provider = FakeProvider()
+    system = remediation.REMEDIATION_SYSTEM
+
+    first = provider.generate(system, _remediation_prompt("Backpropagation")).text
+    again = provider.generate(system, _remediation_prompt("Backpropagation")).text
+    other = provider.generate(system, _remediation_prompt("Quorum Reads")).text
+
+    assert first == again
+    assert first != other
+    # Named in the note, not just varied by a hash, so an offline UI is readable.
+    assert "Backpropagation" in json.loads(first)["restatement"]
+    assert "Quorum Reads" in json.loads(other)["restatement"]
+
+
+def test_fake_remediation_carries_hostile_markdown_for_the_hostile_concept():
+    """A note is model-written markdown in the browser, so it gets the same check."""
+    provider = FakeProvider()
+    note = json.loads(
+        provider.generate(
+            remediation.REMEDIATION_SYSTEM, _remediation_prompt(HOSTILE_LESSON_TITLE)
+        ).text
+    )
+    assert "<script>alert(1)</script>" in note["worked_example"]
+
+    benign = json.loads(
+        provider.generate(remediation.REMEDIATION_SYSTEM, _remediation_prompt("Recursion")).text
+    )
+    assert "<script>" not in benign["worked_example"]
 
 
 def test_generate_endpoint_with_fake_provider(client, monkeypatch):

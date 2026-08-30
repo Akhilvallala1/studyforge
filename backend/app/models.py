@@ -306,13 +306,26 @@ class RemediationNote(Base):
     explanation and time to use it, not five near-identical ones stacking up.
 
     status goes to "cleared" rather than the row being deleted, so the history of what
-    was hard, and when it stopped being hard, survives.
+    was hard, and when it stopped being hard, survives. A row is only ever written
+    for a generation that succeeded, so a failed call leaves nothing here and the
+    learner can try again; see remediation.generate_note.
 
     model and run_id record which model wrote it and which generation run it belongs
     to, matching llm_calls, so a note can be tied back to its cost and to the prompt
     version that produced it.
     """
 
+    # SCHEMA DIVERGENCE, deliberate, and the reason is worth knowing before adding
+    # a second active note per card. A partial unique index on card_id over the
+    # open statuses briefly existed on this table and was removed when the
+    # concurrency guard moved in-process (see remediation.generation_slot).
+    # create_all never drops anything, so a database created while it existed
+    # still carries uq_remediation_notes_open_card and a fresh one does not. No
+    # current path can trip it, since exactly one note per card is ever active,
+    # and adding the startup DDL to drop it would reintroduce the machinery that
+    # removal was the point of. But a change that allows two active notes for one
+    # card would pass on a fresh install and fail only on an old one, which is a
+    # bad afternoon to hand someone without this note.
     __tablename__ = "remediation_notes"
     __table_args__ = (Index("ix_remediation_notes_card_created", "card_id", "created_at"),)
 
