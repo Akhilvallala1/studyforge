@@ -6,12 +6,12 @@ import { LessonMarkdown } from "@/components/LessonMarkdown";
 import { ApiError, getRemediation, requestRemediation } from "@/lib/api";
 import type { NeedsAttentionEntry, RemediationNote } from "@/lib/types";
 
-/* How a request that lost the race waits for the winner. The server hands back a
-   reservation, not an explanation, so the only way to learn the outcome is to ask
-   again. GET is the thing to poll: it costs nothing, and it answers null until the
-   note is genuinely finished. Bounded rather than open ended, because a generation
-   the server abandoned is reaped on its own clock and no amount of polling will
-   produce it; when the budget runs out the learner is told to try again instead. */
+/* How a request that lost the race waits for the winner. The refusal carries no
+   note, so the only way to learn the outcome is to ask again. GET is the thing to
+   poll: it costs nothing, it cannot claim the slot, and it answers null until the
+   note is genuinely finished. Bounded rather than open ended, because the slot lives
+   in the winning request and dies with it: if that request never completes, nothing
+   will ever arrive, so the wait ends and the learner is invited to ask again. */
 const POLL_INTERVAL_MS = 3000;
 const POLL_ATTEMPTS = 20;
 
@@ -156,10 +156,11 @@ export function ReteachConcept({
       }
       const { error: code, note: existing } = outcome.conflict;
       if (code === "generation_in_progress") {
-        // Checked before `existing`, and deliberately so. This conflict carries a
-        // reservation row rather than an explanation: its content is the empty
-        // string, and falling through to the branch below would render a blank panel
-        // as though the model had produced it. Wait for the real one instead.
+        // Matched on the code, never on whether a note arrived, and checked before
+        // the branches below. This refusal and not_flagged both come back with a null
+        // note and mean opposite things: an explanation is being written, versus none
+        // is wanted. Falling through would tell a learner whose explanation is
+        // mid-flight that they are no longer missing the concept.
         setAwaiting(true);
         setAnnouncement(`An explanation of ${entry.concept_label} is already being written.`);
         return;
