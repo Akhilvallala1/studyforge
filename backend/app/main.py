@@ -9,7 +9,6 @@ from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import func
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import days, fsrs, generation, ingest, models, remediation, review
@@ -588,21 +587,9 @@ def _remediation_conflict(
 def _blocking_conflict(
     existing: models.RemediationNote | None, now: datetime
 ) -> HTTPException | None:
-    """The 409 an existing row earns, or None if it does not stand in the way.
-
-    One function so the sequential path and the lost-race path cannot answer the
-    same situation differently.
-    """
+    """The 409 an existing note earns, or None if it does not stand in the way."""
     if existing is None:
         return None
-    if existing.status == remediation.PENDING:
-        # Its content is still empty, so it is carried back only for its id and
-        # cooldown. A client that rendered it as an explanation would show a blank.
-        return _remediation_conflict(
-            "generation_in_progress",
-            "An explanation for this concept is already being written.",
-            existing,
-        )
     if existing.status == remediation.ACTIVE:
         return _remediation_conflict(
             "note_active", "This concept already has an explanation.", existing
@@ -630,10 +617,12 @@ def create_remediation(card_id: int, session: Session = Depends(get_session)):
     trigger the Today screen's button is drawn from, so it only fires on a stale or
     hand-made request.
 
-    The checks below produce good messages; they are not what enforces the budget.
-    remediation.reserve does that, by committing its claim before the model is
-    called, so two simultaneous requests cannot both get through. Losing that race is
-    not an error: it is answered with the same 409 the sequential path would give.
+    The whole check-and-call sits inside remediation.generation_slot, because
+    checking whether a note exists and then writing one is a check-then-act guard
+    that two simultaneous requests both pass; a double-clicked button produces
+    exactly that pair, and both would pay for a model call. The second request is
+    refused at once with `generation_in_progress` rather than made to wait, since
+    waiting behind a 600s provider timeout looks to the browser like a hang.
 
     The card is not touched. It keeps its stability, its lapses, and its due date,
     and it stays in the review queue: re-teaching is offered alongside the schedule,
@@ -644,33 +633,31 @@ def create_remediation(card_id: int, session: Session = Depends(get_session)):
         raise HTTPException(404, "Review card not found")
 
     now = review.now_utc()
-    touched = remediation.clear_resolved(session, now)
-    touched += remediation.reap_abandoned(session, now)
-    if touched:
-        session.commit()
-
-    conflict = _blocking_conflict(remediation.latest_note(session, card.id), now)
-    if conflict is not None:
-        raise conflict
-    if card.concept_key not in remediation.flagged_keys(session, now):
-        raise _remediation_conflict(
-            "not_flagged", "This concept is not currently one you are missing.", None
-        )
-
     try:
-        note = remediation.generate_note(session, card, get_provider(), now=now)
-    except IntegrityError as exc:
-        # Another request reserved this card between the check above and the write.
-        # Whoever committed first owns the slot, and this one reports what it found.
-        session.rollback()
-        logger.info("remediation for card %s lost the reservation race", card_id)
-        existing = remediation.latest_note(session, card.id)
-        raise (
-            _blocking_conflict(existing, review.now_utc())
-            or _remediation_conflict(
-                "note_active", "This concept already has an explanation.", existing
-            )
+        with remediation.generation_slot(card.id):
+            if remediation.clear_resolved(session, now):
+                session.commit()
+
+            conflict = _blocking_conflict(remediation.latest_note(session, card.id), now)
+            if conflict is not None:
+                raise conflict
+            if card.concept_key not in remediation.flagged_keys(session, now):
+                raise _remediation_conflict(
+                    "not_flagged", "This concept is not currently one you are missing.", None
+                )
+            note = remediation.generate_note(session, card, get_provider(), now=now)
+    except remediation.AlreadyGenerating as exc:
+        # No note to hand back: the request holding the slot has not written one yet.
+        logger.info("remediation for card %s refused, already generating", card_id)
+        raise _remediation_conflict(
+            "generation_in_progress",
+            "An explanation for this concept is already being written.",
+            None,
         ) from exc
+    except HTTPException:
+        # The 409s raised inside the slot above. Re-raised before the catch-all, which
+        # would otherwise turn every one of them into a 502.
+        raise
     except remediation.NoMaterial as exc:
         session.rollback()
         logger.warning("remediation refused for card %s: %s", card_id, exc)
@@ -686,8 +673,10 @@ def create_remediation(card_id: int, session: Session = Depends(get_session)):
             },
         ) from exc
     except Exception as exc:
-        # generate_note has already deleted its reservation, so the learner can click
-        # again rather than waiting out a cooldown for a note that was never written.
+        # A failed generation writes no row and the slot is released on the way out,
+        # so the learner can click again rather than waiting out a week's cooldown
+        # for a note that was never written.
+        session.rollback()
         logger.exception("Remediation failed for card %s", card_id)
         raise HTTPException(502, REMEDIATION_FAILURE_MESSAGE) from exc
 

@@ -17,7 +17,6 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy.exc import IntegrityError
 
 from app import fsrs, models, remediation, review
 from app.concepts import normalize_concept
@@ -51,6 +50,25 @@ class RecordingProvider:
         self.calls.append((system, prompt))
         text = json.dumps({"restatement": self.restatement, "worked_example": self.worked_example})
         return LLMResult(text=text, input_tokens=120, output_tokens=60)
+
+
+class GatedProvider(RecordingProvider):
+    """Blocks inside generate() so a second request arrives mid-generation."""
+
+    def __init__(self):
+        super().__init__()
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def generate(self, system: str, prompt: str, max_tokens: int = 64000):
+        # Only the first caller is held. A second one is what should never happen,
+        # so it is let through to be counted rather than blocked into a timeout:
+        # a broken guard then fails the assertions below, not the clock.
+        held = not self.entered.is_set()
+        self.entered.set()
+        if held:
+            assert self.release.wait(timeout=10), "test never released the provider"
+        return super().generate(system, prompt, max_tokens)
 
 
 class MalformedProvider:
@@ -300,95 +318,81 @@ def test_generation_resumes_once_the_cooldown_expires(client, provider):
     assert len(_notes(card_id)) == 2
 
 
-def test_two_reservations_for_one_card_cannot_both_win(client, provider):
-    """The database, not the endpoint's precheck, is what makes the cooldown hold.
-
-    Two interleaved sessions, no threads: this is the race reduced to the two
-    statements that actually collide.
-    """
-    card_id, _, _ = _seed_concept([fsrs.AGAIN, fsrs.AGAIN])
-    first, second = SessionLocal(), SessionLocal()
+def _slot_is_free(card_id):
+    """Whether the slot can be taken right now, leaving it as it was found."""
     try:
-        remediation.reserve(first, first.get(models.ReviewCard, card_id))
-        with pytest.raises(IntegrityError):
-            remediation.reserve(second, second.get(models.ReviewCard, card_id))
-    finally:
-        second.rollback()
-        second.close()
-        first.close()
-
-    assert len(_notes(card_id)) == 1
+        with remediation.generation_slot(card_id):
+            return True
+    except remediation.AlreadyGenerating:
+        return False
 
 
-def test_concurrent_posts_generate_exactly_one_note(client, monkeypatch):
+def test_the_generation_slot_admits_one_holder_at_a_time():
+    assert _slot_is_free(4242)
+    with remediation.generation_slot(4242):
+        assert not _slot_is_free(4242)
+    # Released on the way out, so the next request gets in.
+    assert _slot_is_free(4242)
+
+
+def test_the_generation_slot_is_per_card():
+    """One concept being re-taught must not block re-teaching a different one."""
+    with remediation.generation_slot(4243):
+        assert _slot_is_free(4244)
+
+
+def test_the_generation_slot_is_released_when_the_body_raises():
+    with pytest.raises(RuntimeError), remediation.generation_slot(4245):
+        raise RuntimeError("boom")
+    assert _slot_is_free(4245)
+
+
+def test_a_second_request_mid_generation_is_refused(client, monkeypatch):
     """A double-clicked Re-teach button must not buy two explanations.
 
-    The barrier holds both requests inside reserve() until each has passed its
-    precheck, so the collision is forced rather than hoped for. Without the unique
-    index this produces two provider calls and two notes.
+    The first request is held inside the provider call, which is exactly where the
+    window is, so the second arrives while the first is still mid-generation. That
+    is the collision, forced rather than hoped for: without the slot both pay.
     """
-    stub = _install(monkeypatch, RecordingProvider())
+    stub = _install(monkeypatch, GatedProvider())
     card_id, _, _ = _seed_concept([fsrs.AGAIN, fsrs.AGAIN])
-
-    at_the_gate = threading.Barrier(2, timeout=10)
-    real_reserve = remediation.reserve
-
-    def gated_reserve(session, card, now=None):
-        at_the_gate.wait()
-        return real_reserve(session, card, now)
-
-    monkeypatch.setattr(remediation, "reserve", gated_reserve)
-
     url = f"/review/cards/{card_id}/remediation"
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        responses = [f.result() for f in [pool.submit(client.post, url) for _ in range(2)]]
 
-    assert sorted(r.status_code for r in responses) == [200, 409]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(client.post, url)
+        assert stub.entered.wait(timeout=10), "first request never reached the provider"
+        second = pool.submit(client.post, url).result()
+        stub.release.set()
+        first_response = first.result()
+
+    assert first_response.status_code == 200
+    assert second.status_code == 409
+    detail = second.json()["detail"]
+    assert detail["error"] == "generation_in_progress"
+    # No note is handed back, because the request holding the slot has not written
+    # one yet. Null rather than a blank note the UI might render as an explanation.
+    assert detail["note"] is None
+
     assert len(stub.calls) == 1
     assert len(_notes(card_id)) == 1
 
-    loser = next(r for r in responses if r.status_code == 409)
-    # Whichever way the two threads finished, the loser gets a refusal the client
-    # already knows how to render.
-    assert loser.json()["detail"]["error"] in {"generation_in_progress", "note_active"}
 
+def test_the_cooldown_is_durable_where_the_slot_is_not(client, provider):
+    """The budget lives in the database; only the concurrent window is in memory.
 
-def test_an_abandoned_reservation_is_reaped(client, provider):
-    """A crash between reserving and filling must not cost the concept a week."""
+    This is the trade the in-process slot makes, so it gets a test. Clearing the
+    lock registry is what a restart does, and the week's budget survives it.
+    """
     card_id, _, _ = _seed_concept([fsrs.AGAIN, fsrs.AGAIN])
-    session = SessionLocal()
-    try:
-        stranded = remediation.reserve(session, session.get(models.ReviewCard, card_id))
-        stranded.created_at = review.now_utc() - remediation.PENDING_TIMEOUT - timedelta(minutes=1)
-        session.commit()
-    finally:
-        session.close()
+    url = f"/review/cards/{card_id}/remediation"
+    assert client.post(url).status_code == 200
 
-    response = client.post(f"/review/cards/{card_id}/remediation")
+    remediation._card_locks.clear()
 
-    assert response.status_code == 200
-    # Not compared by id: SQLite hands the reaped row's rowid straight back to the
-    # next insert, so a fresh note can legitimately reuse it. What matters is that
-    # exactly one row survives and it is a finished note rather than the stale claim.
-    notes = _notes(card_id)
-    assert len(notes) == 1
-    assert notes[0].status == remediation.ACTIVE
-    assert "Worked example" in notes[0].content
-
-
-def test_a_fresh_reservation_is_not_reaped(client, provider):
-    card_id, _, _ = _seed_concept([fsrs.AGAIN, fsrs.AGAIN])
-    session = SessionLocal()
-    try:
-        remediation.reserve(session, session.get(models.ReviewCard, card_id))
-    finally:
-        session.close()
-
-    response = client.post(f"/review/cards/{card_id}/remediation")
-
+    response = client.post(url)
     assert response.status_code == 409
-    assert response.json()["detail"]["error"] == "generation_in_progress"
-    assert provider.calls == []
+    assert response.json()["detail"]["error"] == "note_active"
+    assert len(provider.calls) == 1
 
 
 # --------------------------------------------------------------------------
