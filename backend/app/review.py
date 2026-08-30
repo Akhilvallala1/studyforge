@@ -673,6 +673,11 @@ def needs_attention(session: Session, now: datetime | None = None) -> list[dict]
         row = cards[card_id]
         flagged.append(
             {
+                # The remediation endpoints are keyed by card, and this list is the only
+                # place the Today screen learns which concepts are flagged, so the id has
+                # to travel with the entry: without it the screen knows a concept needs
+                # re-teaching but has no way to ask for it.
+                "card_id": row.id,
                 "concept_key": row.concept_key,
                 "concept_label": row.concept_label,
                 "missed": misses,
