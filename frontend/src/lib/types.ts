@@ -227,11 +227,23 @@ export interface RemediationNote {
 }
 
 /**
- * Why the server would not write a new explanation. None of these is a failure:
- * `note_active` and `cooldown_active` both carry the note the learner already has,
- * and `not_flagged` means the concept stopped being one they keep missing.
+ * Why the server would not write a new explanation. None of these is a failure.
+ *
+ * `note_active` and `cooldown_active` carry the explanation the learner already has.
+ * `not_flagged` means the concept stopped being one they keep missing, and carries
+ * no note at all.
+ *
+ * `generation_in_progress` is the one that must never be rendered as content. It
+ * carries the reservation row of a request that is still running, whose `content` is
+ * the empty string, which is exactly why the server does not report it as
+ * `note_active`. Treating the two alike would show a blank explanation as though it
+ * were the real one.
  */
-export type RemediationConflictCode = "note_active" | "cooldown_active" | "not_flagged";
+export type RemediationConflictCode =
+  | "note_active"
+  | "cooldown_active"
+  | "generation_in_progress"
+  | "not_flagged";
 
 export interface RemediationConflict {
   error: RemediationConflictCode;

@@ -3,8 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 
 import { LessonMarkdown } from "@/components/LessonMarkdown";
-import { ApiError, requestRemediation } from "@/lib/api";
+import { ApiError, getRemediation, requestRemediation } from "@/lib/api";
 import type { NeedsAttentionEntry, RemediationNote } from "@/lib/types";
+
+/* How a request that lost the race waits for the winner. The server hands back a
+   reservation, not an explanation, so the only way to learn the outcome is to ask
+   again. GET is the thing to poll: it costs nothing, and it answers null until the
+   note is genuinely finished. Bounded rather than open ended, because a generation
+   the server abandoned is reaped on its own clock and no amount of polling will
+   produce it; when the budget runs out the learner is told to try again instead. */
+const POLL_INTERVAL_MS = 3000;
+const POLL_ATTEMPTS = 20;
 
 /** Recall probability as a bar. Empty, not full, when the card has never been scheduled. */
 function RecallBar({ retrievability }: { retrievability: number | null }) {
@@ -55,6 +64,7 @@ export function ReteachConcept({
   const [note, setNote] = useState<RemediationNote | null>(initialNote);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
+  const [awaiting, setAwaiting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -66,16 +76,59 @@ export function ReteachConcept({
 
   const panelId = `reteach-panel-${entry.card_id}`;
   const hasNote = note !== null;
+  // Our own call and someone else's look the same from here: work is happening and
+  // the button must not start a second one.
+  const busy = pending || awaiting;
 
   // The call is one model round trip that reports no progress, so the honest signal
   // is that time is passing. Same choice GenerateForm makes, and for the same reason:
   // a percentage here would be invented.
   useEffect(() => {
-    if (!pending) return;
+    if (!busy) return;
     const started = Date.now();
     const timer = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
     return () => clearInterval(timer);
-  }, [pending]);
+  }, [busy]);
+
+  // Wait out a generation another request is already running. Only GET is polled:
+  // repeating the POST would keep asking for a slot that is taken, and each reply
+  // would have to be re-interpreted, where GET answers the only question here.
+  useEffect(() => {
+    if (!awaiting) return;
+    let cancelled = false;
+    let attempts = 0;
+    const timer = setInterval(async () => {
+      attempts += 1;
+      let found: RemediationNote | null = null;
+      try {
+        found = await getRemediation(entry.card_id);
+      } catch {
+        // One failed poll is not worth telling the learner about; the next is due
+        // in a few seconds and the loop is bounded either way.
+      }
+      if (cancelled) return;
+      if (found) {
+        setNote(found);
+        setAvailableFrom(null);
+        setAwaiting(false);
+        wantsFocus.current = true;
+        setOpen(true);
+        setAnnouncement(`An explanation of ${entry.concept_label} is ready.`);
+        return;
+      }
+      if (attempts >= POLL_ATTEMPTS) {
+        setAwaiting(false);
+        setNotice(
+          "That explanation is taking longer than usual. Try Re-teach again in a moment.",
+        );
+        setAnnouncement("");
+      }
+    }, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [awaiting, entry.card_id, entry.concept_label]);
 
   // Focus lands on the explanation once it is on screen, so a keyboard or screen
   // reader user ends up at the thing they asked for rather than back at the body.
@@ -102,6 +155,15 @@ export function ReteachConcept({
         return;
       }
       const { error: code, note: existing } = outcome.conflict;
+      if (code === "generation_in_progress") {
+        // Checked before `existing`, and deliberately so. This conflict carries a
+        // reservation row rather than an explanation: its content is the empty
+        // string, and falling through to the branch below would render a blank panel
+        // as though the model had produced it. Wait for the real one instead.
+        setAwaiting(true);
+        setAnnouncement(`An explanation of ${entry.concept_label} is already being written.`);
+        return;
+      }
       if (existing) {
         // note_active and cooldown_active both mean "you already have one of these".
         // Only the cooldown needs to say when another could be written; an active note
@@ -145,14 +207,14 @@ export function ReteachConcept({
     setOpen(true);
   }
 
-  const label = pending
+  const label = busy
     ? "Writing…"
     : hasNote
       ? open
         ? "Hide explanation"
         : "Show explanation"
       : "Re-teach";
-  const accessibleName = pending
+  const accessibleName = busy
     ? `Writing an explanation of ${entry.concept_label}`
     : hasNote
       ? open
@@ -176,7 +238,7 @@ export function ReteachConcept({
             type="button"
             ref={buttonRef}
             onClick={handleClick}
-            disabled={pending}
+            disabled={busy}
             aria-label={accessibleName}
             aria-expanded={hasNote ? open : undefined}
             aria-controls={hasNote && open ? panelId : undefined}
@@ -196,14 +258,18 @@ export function ReteachConcept({
         {announcement}
       </div>
 
-      {pending && (
+      {busy && (
         <div className="mt-3 flex items-center gap-3 rounded-lg border border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <span
             aria-hidden
             className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-700 dark:border-t-zinc-100"
           />
           <div className="text-[13px]">
-            <p className="font-medium">Writing an explanation of this concept.</p>
+            <p className="font-medium">
+              {awaiting
+                ? "An explanation of this concept is already being written. Waiting for it."
+                : "Writing an explanation of this concept."}
+            </p>
             <p className="mt-0.5 tabular-nums text-zinc-600 dark:text-zinc-400">
               Elapsed: {formatElapsed(elapsed)}
             </p>
