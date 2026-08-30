@@ -183,6 +183,60 @@ export function rateReviewCard(
   });
 }
 
+/**
+ * What asking for a re-teach came back with.
+ *
+ * A 409 is not an error here. All three of its codes mean "show the learner what
+ * they already have", and two of them carry that note in the body, so the conflict
+ * is returned rather than thrown: rendering it as a failure would hide the very
+ * explanation the server just handed over. Genuine failures still throw ApiError:
+ * 404 unknown card, 402 spend cap reached, 422 no lesson material left to explain
+ * from, 502 the model failed.
+ */
+export type RemediationOutcome =
+  | { kind: "note"; note: RemediationNote }
+  | { kind: "conflict"; conflict: RemediationConflict };
+
+/** The message logic `request` applies, over a body that has already been read. */
+function messageFromErrorBody(body: unknown, fallback: string): string {
+  const detail = (body as { detail?: unknown } | null)?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) return messageFromValidationDetail(detail) ?? fallback;
+  if (detail && typeof detail === "object") {
+    return messageFromObjectDetail(detail as ObjectDetail) ?? fallback;
+  }
+  return fallback;
+}
+
+/**
+ * Re-teach a concept the learner keeps missing. One metered model call, at most one
+ * per concept per week; the server refuses with a 409 rather than spending again.
+ *
+ * Does not go through `request`, which reads the body only to build an error message
+ * and would throw the 409 note away.
+ */
+export async function requestRemediation(cardId: number): Promise<RemediationOutcome> {
+  const res = await fetch(`${BASE_URL}/review/cards/${cardId}/remediation`, { method: "POST" });
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    // Non-JSON body, so the status has to carry the meaning on its own.
+  }
+  if (res.ok) return { kind: "note", note: body as RemediationNote };
+  if (res.status === 409) {
+    const detail = (body as { detail?: RemediationConflict } | null)?.detail;
+    if (detail && typeof detail.error === "string") return { kind: "conflict", conflict: detail };
+  }
+  const fallback = res.statusText || `Request failed with status ${res.status}`;
+  throw new ApiError(res.status, messageFromErrorBody(body, fallback));
+}
+
+/** The concept's current explanation, or null when it has none. Costs nothing. */
+export function getRemediation(cardId: number): Promise<RemediationNote | null> {
+  return get(`/review/cards/${cardId}/remediation`);
+}
+
 export function getUsage(limit?: number): Promise<UsageSummary> {
   const query = limit ? `?limit=${limit}` : "";
   return get(`/usage${query}`);
