@@ -230,14 +230,16 @@ export interface RemediationNote {
  * Why the server would not write a new explanation. None of these is a failure.
  *
  * `note_active` and `cooldown_active` carry the explanation the learner already has.
- * `not_flagged` means the concept stopped being one they keep missing, and carries
- * no note at all.
  *
- * `generation_in_progress` is the one that must never be rendered as content. It
- * carries the reservation row of a request that is still running, whose `content` is
- * the empty string, which is exactly why the server does not report it as
- * `note_active`. Treating the two alike would show a blank explanation as though it
- * were the real one.
+ * `generation_in_progress` means another request is inside this card's generation
+ * slot right now. It carries no note, because the request holding the slot has not
+ * finished writing one, so there is nothing to show yet and nothing to do but wait.
+ *
+ * `not_flagged` means the concept stopped being one they keep missing, and carries
+ * no note either. That collision is the thing to be careful about: it and
+ * `generation_in_progress` both arrive with a null note and mean opposite things,
+ * one that an explanation is on its way and one that none is wanted, so they have to
+ * be told apart by their code and never by whether a note came with them.
  */
 export type RemediationConflictCode =
   | "note_active"
