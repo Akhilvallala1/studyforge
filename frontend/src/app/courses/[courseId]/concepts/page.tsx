@@ -76,8 +76,14 @@ export default async function CourseConceptsPage(
           {weakest ? (
             <section className="mt-6 flex items-center justify-between gap-5 rounded-lg border border-zinc-200 px-5 py-4 dark:border-zinc-800">
               <div>
+                {/*
+                  Scoped in the heading, not only in the sentence under it. Only
+                  concepts with a scheduled card are ranked, so "your weakest concept"
+                  unqualified would claim a comparison across the whole course that was
+                  never made.
+                */}
                 <h2 className="text-[15px] font-semibold">
-                  {weakest.concept_label} is your weakest concept
+                  {weakest.concept_label} is the weakest concept you have studied so far
                 </h2>
                 <p className="mt-1 text-[13px] text-zinc-600 dark:text-zinc-400">
                   {weakestExplanation(weakest)}

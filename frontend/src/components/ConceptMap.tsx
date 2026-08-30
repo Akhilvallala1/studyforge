@@ -12,47 +12,81 @@ import type { ConceptLesson, ConceptNode, MasteryBucket } from "@/lib/types";
  *
  * Laid out by hand in plain SVG. A few dozen circles in fixed columns is arithmetic,
  * not a graph layout problem, and it does not justify a charting dependency.
+ *
+ * Labels sit BELOW their node rather than inside it. Inside the circle a label got
+ * about six characters at the smallest radius, which turned "Consistency" and
+ * "Consensus" into two identical "Cons..." stubs on real data: two different concepts
+ * that look the same are worse than no label at all. Below the node a label has the
+ * column's full width and is simply readable. That also puts every string on the page
+ * background instead of on a saturated fill, which is what makes the contrast numbers
+ * work, and it frees radius to mean only frequency.
  */
 
 const COLUMN_WIDTH = 212;
+/** Keeps wrapped labels clear of the column rules. */
+const COLUMN_PADDING = 12;
+const LABEL_WIDTH = COLUMN_WIDTH - COLUMN_PADDING * 2;
+
 const COLUMN_LABEL_Y = 34;
 const COLUMN_SUBLABEL_Y = 48;
 const RULE_TOP = 44;
-const RULE_BOTTOM_INSET = 24;
-const FIRST_ROW_Y = 118;
-const ROW_PITCH = 110;
-const MIN_RADIUS = 22;
-const MAX_RADIUS = 38;
-const BOTTOM_PADDING = 40;
-/** The artboard's height, kept as a floor so a small course does not render squashed. */
-const MIN_HEIGHT = 360;
+const RULE_BOTTOM_INSET = 20;
+
+const MIN_RADIUS = 16;
+const MAX_RADIUS = 34;
+
+const LABEL_GAP = 12;
+const LABEL_FONT = 12;
+const LABEL_LINE_HEIGHT = 14;
+const MASTERY_FONT = 10;
+const MASTERY_LINE_HEIGHT = 13;
 const MAX_LABEL_LINES = 2;
+
+/**
+ * How far a node's block reaches below its centre, budgeted for the worst case of two
+ * label lines so that rows line up whatever their labels turn out to be.
+ */
+const BLOCK_BELOW_CENTER =
+  MAX_RADIUS +
+  LABEL_GAP +
+  LABEL_FONT +
+  (MAX_LABEL_LINES - 1) * LABEL_LINE_HEIGHT +
+  MASTERY_LINE_HEIGHT;
+const ROW_GAP = 22;
+const ROW_PITCH = BLOCK_BELOW_CENTER + ROW_GAP + MAX_RADIUS;
+const HEADER_GAP = 20;
+const FIRST_ROW_Y = COLUMN_SUBLABEL_Y + HEADER_GAP + MAX_RADIUS;
+const BOTTOM_PADDING = 20;
+const MIN_HEIGHT = 200;
 
 interface BucketStyle {
   fill: string;
-  text: string;
   border?: string;
   /** How the bucket is named in the legend and in every accessible label. */
   label: string;
+  /** The same state in one word, printed under each node where space is tight. */
+  short: string;
 }
 
 /**
- * Four buckets, and deliberately no "locked". See `unknownBucketFallback` for what
- * happens if a future server sends one anyway.
+ * Four buckets, and deliberately no "locked". See `bucketOf` for what happens if a
+ * future server sends one anyway.
+ *
+ * There is no text colour here because no text is ever drawn on these fills. Colour is
+ * a redundant encoding on this map, never the only one: every node states its mastery
+ * in words underneath. That matters because the palette cannot carry the distinction on
+ * its own, and is not being asked to. Solid against shaky measures 1.10 luminance
+ * contrast, and green against amber is the commonest confusion pair there is.
  */
 export const BUCKET_STYLES: Record<MasteryBucket, BucketStyle> = {
-  mastered: {
-    fill: "var(--concept-mastered)",
-    text: "var(--concept-mastered-text)",
-    label: "Mastered",
-  },
-  solid: { fill: "var(--concept-solid)", text: "var(--concept-solid-text)", label: "Solid" },
-  shaky: { fill: "var(--concept-shaky)", text: "var(--concept-shaky-text)", label: "Shaky, due soon" },
+  mastered: { fill: "var(--concept-mastered)", label: "Mastered", short: "Mastered" },
+  solid: { fill: "var(--concept-solid)", label: "Solid", short: "Solid" },
+  shaky: { fill: "var(--concept-shaky)", label: "Shaky, due soon", short: "Shaky" },
   not_started: {
     fill: "var(--concept-not-started)",
-    text: "var(--concept-not-started-text)",
     border: "var(--concept-not-started-border)",
     label: "Not started",
+    short: "Not started",
   },
 };
 
@@ -76,7 +110,7 @@ function bucketOf(bucket: string): MasteryBucket {
  * Node radius from occurrence count, scaled across the course's own range so the
  * biggest and smallest concepts are always visibly different. A course where every
  * concept comes up equally often gets one uniform mid-size, which is the truth: there
- * is nothing to rank.
+ * is nothing to rank. Radius encodes frequency and nothing else.
  */
 function radiusScale(concepts: ConceptNode[]): (occurrences: number) => number {
   const counts = concepts.map((concept) => Math.max(1, concept.occurrences));
@@ -90,20 +124,27 @@ function radiusScale(concepts: ConceptNode[]): (occurrences: number) => number {
   };
 }
 
+/**
+ * Characters that fit in `width` at `fontSize`. Approximate on purpose: SVG text cannot
+ * be measured server-side, and an average glyph width for this weight is close enough
+ * when the budget is a whole column rather than the inside of a circle.
+ */
+function charBudget(width: number, fontSize: number): number {
+  return Math.max(4, Math.floor(width / (fontSize * 0.55)));
+}
+
 function truncate(text: string, maxChars: number): string {
   return text.length <= maxChars ? text : `${text.slice(0, Math.max(1, maxChars - 3))}...`;
 }
 
 /**
- * Greedy word wrap into at most two lines that fit inside the circle. Purely visual:
- * the untruncated label is always in the node's accessible name and its tooltip, so a
- * long concept is never only half-readable.
+ * Greedy word wrap into at most two lines across the column's width. At 12px that is
+ * roughly 28 characters a line, so ordinary concept names arrive intact. Anything still
+ * too long is truncated visually only: the untruncated label is always in the node's
+ * tooltip and in the text equivalent below.
  */
-function wrapLabel(label: string, radius: number, fontSize: number): string[] {
-  // A chord safely inside the circle rather than its diameter, and an average glyph
-  // width for the weight used here. Approximate on purpose: SVG cannot measure text
-  // server-side, and being a little conservative costs nothing.
-  const maxChars = Math.max(4, Math.floor((radius * 1.7) / (fontSize * 0.55)));
+function wrapLabel(label: string, fontSize: number): string[] {
+  const maxChars = charBudget(LABEL_WIDTH, fontSize);
   const words = label.split(/\s+/).filter(Boolean);
   if (!words.length) return [];
 
@@ -165,7 +206,7 @@ export function ConceptMap({
   const rows = Math.max(1, ...columns.map((column) => column.concepts.length));
   const height = Math.max(
     MIN_HEIGHT,
-    FIRST_ROW_Y + (rows - 1) * ROW_PITCH + MAX_RADIUS + BOTTOM_PADDING,
+    FIRST_ROW_Y + (rows - 1) * ROW_PITCH + BLOCK_BELOW_CENTER + BOTTOM_PADDING,
   );
 
   const title = `Concept map for ${courseTitle}`;
@@ -177,7 +218,7 @@ export function ConceptMap({
     <>
       {/*
         The scroll lives here, not on the page. The map keeps its intrinsic pixel size
-        rather than scaling to the viewport, because a scaled-down 848px map puts 11px
+        rather than scaling to the viewport, because a scaled-down 848px map puts 12px
         labels below legibility on a phone. Focusable so the scroll is reachable by
         keyboard, which a plain overflow container is not.
       */}
@@ -229,22 +270,22 @@ export function ConceptMap({
                   fontSize={10}
                   fill="var(--concept-column-sublabel)"
                 >
-                  {truncate(column.lesson.title, 30)}
+                  {truncate(column.lesson.title, charBudget(LABEL_WIDTH, 10))}
                 </text>
 
                 {column.concepts.map((concept, rowIndex) => {
                   const style = BUCKET_STYLES[bucketOf(concept.bucket)];
                   const radius = radiusOf(concept.occurrences);
                   const centerY = FIRST_ROW_Y + rowIndex * ROW_PITCH;
-                  const fontSize = radius >= 32 ? 12 : 11;
-                  const lineHeight = fontSize + 2;
-                  const lines = wrapLabel(concept.concept_label, radius, fontSize);
-                  const firstLineY =
-                    centerY - ((lines.length - 1) * lineHeight) / 2 + fontSize * 0.34;
+                  const lines = wrapLabel(concept.concept_label, LABEL_FONT);
+                  // Measured from the largest possible radius, not this node's own, so
+                  // labels sit on one baseline across a row however the circles differ.
+                  const textTop = centerY + MAX_RADIUS + LABEL_GAP;
+                  const masteryY = textTop + LABEL_FONT + lines.length * LABEL_LINE_HEIGHT + 1;
 
                   return (
                     <g key={concept.concept_key}>
-                      {/* Hover text. The full label, since the drawn one may be clipped. */}
+                      {/* Hover text, carrying the full label in case the drawn one wrapped short. */}
                       <title>{nodeDescription(concept, columnIndex + 1)}</title>
                       <circle
                         cx={centerX}
@@ -258,15 +299,29 @@ export function ConceptMap({
                         <text
                           key={line + lineIndex}
                           x={centerX}
-                          y={firstLineY + lineIndex * lineHeight}
+                          y={textTop + LABEL_FONT + lineIndex * LABEL_LINE_HEIGHT}
                           textAnchor="middle"
-                          fontSize={fontSize}
+                          fontSize={LABEL_FONT}
                           fontWeight={600}
-                          fill={style.text}
+                          fill="var(--concept-label-text)"
                         >
                           {line}
                         </text>
                       ))}
+                      {/*
+                        Mastery in words on every node. This is the non-colour channel:
+                        it is what a colour-blind sighted reader uses, and it says the
+                        same thing the tooltip and the text equivalent say.
+                      */}
+                      <text
+                        x={centerX}
+                        y={masteryY}
+                        textAnchor="middle"
+                        fontSize={MASTERY_FONT}
+                        fill="var(--concept-muted-text)"
+                      >
+                        {style.short}
+                      </text>
                     </g>
                   );
                 })}
@@ -280,7 +335,7 @@ export function ConceptMap({
         The same map as text. ARIA inside SVG is unevenly supported, and role="img" on
         the root makes the whole drawing a single leaf node, so per-node labels there
         would be announced by nothing. This list is the version screen readers actually
-        get, and it is the reason mastery is never carried by colour alone.
+        get. Sighted readers are covered separately, by the mastery word under each node.
       */}
       <ul className="sr-only">
         {columns.map((column, columnIndex) => (
