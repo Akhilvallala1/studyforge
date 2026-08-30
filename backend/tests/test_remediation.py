@@ -385,16 +385,23 @@ def test_a_second_request_mid_generation_is_refused(client, monkeypatch):
 def test_the_cooldown_is_durable_where_the_slot_is_not(client, provider):
     """The budget lives in the database; only the concurrent window is in memory.
 
-    The scenario has to be a CLEARED note whose cooldown is still running, because
-    that is the only refusal resting on the cooldown alone. An earlier version of
-    this test asserted note_active, which is decided by a status column and would
-    be green on a build with no durability whatever, so it proved nothing it
-    claimed. This one fails the moment the cooldown stops being read from the row.
+    The test has to distinguish what a restart forgets from what it must not, so
+    it sets up both at once and makes the restart decide between them:
 
-    The registry wipe is scenario, not lever: it is what a restart does to the
-    in-process guard, and it cannot be made load-bearing against an implementation
-    that keeps nothing in memory. What carries the assertion is that the refusal
-    still comes out of a persisted column with every in-process trace erased.
+    - a slot left HELD, as a process killed mid-generation would leave it. This is
+      in memory and SHOULD be forgotten.
+    - a CLEARED note whose cooldown is still running. This is in the database and
+      MUST survive.
+
+    Wiping the registry is therefore load-bearing rather than decorative. Delete
+    that line and the held slot is still there, the request is refused with
+    generation_in_progress, and this test fails. Two earlier versions did not have
+    that property: one asserted note_active, decided by a status column before
+    anything consults memory, which would pass on a build with no durability at
+    all; the other asserted cooldown_active but passed with the wipe removed,
+    because a completed request has already released its lock.
+
+    The status is CLEARED so that the cooldown, not the status, is what refuses.
     """
     card_id, _, _ = _seed_concept([fsrs.AGAIN, fsrs.AGAIN])
     url = f"/review/cards/{card_id}/remediation"
@@ -403,7 +410,6 @@ def test_the_cooldown_is_durable_where_the_slot_is_not(client, provider):
     session = SessionLocal()
     try:
         note = session.get(models.RemediationNote, created["id"])
-        # Cleared, so status cannot be what refuses, but still inside the week.
         note.status = remediation.CLEARED
         note.cleared_at = review.now_utc()
         note.cooldown_until = review.now_utc() + timedelta(hours=1)
@@ -411,12 +417,21 @@ def test_the_cooldown_is_durable_where_the_slot_is_not(client, provider):
     finally:
         session.close()
 
+    # A generation that never finished, exactly as a killed process leaves it: the
+    # card's lock acquired and never released.
+    abandoned = threading.Lock()
+    abandoned.acquire()
+    remediation._card_locks[card_id] = abandoned
+
+    # The restart. The held slot goes with the process; the row does not.
     remediation._card_locks.clear()
 
     response = client.post(url)
 
     assert response.status_code == 409
     detail = response.json()["detail"]
+    # cooldown_active, not generation_in_progress: the volatile guard was forgotten
+    # and the durable budget was not.
     assert detail["error"] == "cooldown_active"
     assert detail["note"]["id"] == created["id"]
     assert len(provider.calls) == 1
