@@ -534,6 +534,56 @@ class TestMastery:
         assert columns["Shared concept"] == 0
         assert [entry["concept_label"] for entry in body["concepts"]].count("Shared concept") == 1
 
+    def test_course_order_is_module_position_then_lesson_position(self, client):
+        """Columns follow (module.position, lesson.position), not row order.
+
+        Every row here is created in the wrong order on purpose: the second module is
+        inserted first, and inside the first module the later lesson is inserted first.
+        So lesson ids run exactly backwards from course order. A map built from ids or
+        from insertion order would come out reversed and still look entirely plausible
+        on screen, which is the failure this guards.
+        """
+        session = SessionLocal()
+        try:
+            course = models.Course(title="Ordering", description="")
+            second = models.Module(title="Second module", position=1)
+            second.lessons.append(
+                models.Lesson(
+                    title="Third lesson", position=0, content="# Third", concepts=["gamma qq"]
+                )
+            )
+            first = models.Module(title="First module", position=0)
+            first.lessons.append(
+                models.Lesson(
+                    title="Second lesson", position=1, content="# Second", concepts=["beta qq"]
+                )
+            )
+            first.lessons.append(
+                models.Lesson(
+                    title="First lesson", position=0, content="# First", concepts=["alpha qq"]
+                )
+            )
+            course.modules.append(second)
+            course.modules.append(first)
+            session.add(course)
+            session.commit()
+            course_id = course.id
+            # The premise of the test: ids really do run backwards from course order.
+            assert min(lesson.id for lesson in second.lessons) < min(
+                lesson.id for lesson in first.lessons
+            )
+        finally:
+            session.close()
+
+        body = client.get(f"/courses/{course_id}/concepts").json()
+        assert [entry["title"] for entry in body["lessons"]] == [
+            "First lesson",
+            "Second lesson",
+            "Third lesson",
+        ]
+        columns = {entry["concept_label"]: entry["lesson_index"] for entry in body["concepts"]}
+        assert columns == {"alpha qq": 0, "beta qq": 1, "gamma qq": 2}
+
     def test_occurrences_count_every_mention_across_the_course(self, client):
         course_id = _make_course(
             [("Lesson A", ["Repeated", "Once"]), ("Lesson B", ["Repeated"])],
