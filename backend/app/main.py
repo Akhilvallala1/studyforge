@@ -611,11 +611,12 @@ def create_remediation(card_id: int, session: Session = Depends(get_session)):
     """Re-teach a concept the learner keeps missing: one metered model call.
 
     Every refusal is a 409 carrying an `error` code, so the client has one branch to
-    write rather than four. `note_active`, `cooldown_active`, and
-    `generation_in_progress` hand back the existing row; `not_flagged` means
-    review.needs_attention does not currently report this concept, which is the same
-    trigger the Today screen's button is drawn from, so it only fires on a stale or
-    hand-made request.
+    write rather than four. `note_active` and `cooldown_active` hand back the
+    existing note in `detail.note`. The other two carry `detail.note = null`:
+    `generation_in_progress` because the request holding the slot has not written
+    anything yet, and `not_flagged` because review.needs_attention does not
+    currently report this concept, which is the same trigger the Today screen's
+    button is drawn from, so it only fires on a stale or hand-made request.
 
     The whole check-and-call sits inside remediation.generation_slot, because
     checking whether a note exists and then writing one is a check-then-act guard

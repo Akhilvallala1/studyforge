@@ -110,7 +110,7 @@ def generation_slot(card_id: int):
 REMEDIATION_STAGE = "remediation"
 
 # One SUCCESSFUL generation per concept per week, and the word is load-bearing: a
-# generation that fails releases its reservation so the learner can ask again, so
+# generation that fails writes no row at all, so the learner can ask again, and
 # what is bounded here is explanations delivered, not calls attempted. Repeated
 # failures are bounded only by the global spend cap. That is the deliberate trade,
 # because a learner staring at an error they cannot retry is the worse outcome.
@@ -304,9 +304,9 @@ def latest_note(session: Session, card_id: int) -> models.RemediationNote | None
 
     Cleared notes count here on purpose: the cooldown is carried by the row, so a
     concept that stopped being flagged and started again a day later must still be
-    able to say why it will not generate a second note yet. Pending reservations
-    count too, which is how a request arriving while another is still generating is
-    told to wait rather than starting a second call.
+    able to say why it will not generate a second note yet. That makes this the
+    lookup the weekly budget rests on, and the only one that has to see rows the
+    learner is no longer shown.
     """
     return (
         session.query(models.RemediationNote)
@@ -317,10 +317,11 @@ def latest_note(session: Session, card_id: int) -> models.RemediationNote | None
 
 
 def active_note(session: Session, card_id: int) -> models.RemediationNote | None:
-    """The finished note for this card, if it has one.
+    """The note the learner should currently be shown, if there is one.
 
-    Pending reservations are excluded: a row whose content is still empty is not an
-    explanation, and handing one to the UI would render a blank note.
+    Narrower than latest_note on purpose: a cleared row still holds the cooldown
+    that latest_note reads, but it is no longer an explanation this concept needs,
+    so the GET endpoint answers null rather than re-showing it.
     """
     return (
         session.query(models.RemediationNote)
