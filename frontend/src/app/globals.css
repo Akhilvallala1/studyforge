@@ -12,10 +12,39 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/*
+ * Concept map palette. The mastery fills are the artboard's exact colours and are
+ * shared by the SVG nodes and the legend swatches, so the two can never drift apart.
+ * The three saturated fills carry their own dark text and read correctly on either
+ * background, so only the not-started chip and the greys are restated for dark mode:
+ * a #f4f4f5 circle on a near-black page is a spotlight, not a muted "untouched" state.
+ */
+:root {
+  --concept-mastered: #059669;
+  --concept-mastered-text: #ffffff;
+  --concept-solid: #6ee7b7;
+  --concept-solid-text: #064e3b;
+  --concept-shaky: #fbbf24;
+  --concept-shaky-text: #78350f;
+  --concept-not-started: #f4f4f5;
+  --concept-not-started-border: #d4d4d8;
+  --concept-not-started-text: #71717a;
+  --concept-rule: #e4e4e7;
+  --concept-column-label: #71717a;
+  --concept-column-sublabel: #a1a1aa;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    --concept-not-started: #27272a;
+    --concept-not-started-border: #3f3f46;
+    --concept-not-started-text: #a1a1aa;
+    --concept-rule: #27272a;
+    --concept-column-label: #a1a1aa;
+    --concept-column-sublabel: #71717a;
   }
 }
 

@@ -690,7 +690,29 @@ def needs_attention(session: Session, now: datetime | None = None) -> list[dict]
     return flagged
 
 
-def course_concepts(session: Session, course: models.Course, now: datetime | None = None) -> list[dict]:
+def course_lessons(session: Session, course: models.Course) -> list[models.Lesson]:
+    """Every lesson in the course, in the order the course teaches them.
+
+    The single source of that ordering. The concept map's columns and the lesson_index
+    on each concept have to agree exactly or concepts land in the wrong column, so both
+    are built from one call to this rather than from two separately-ordered queries.
+    """
+    return (
+        session.query(models.Lesson)
+        .join(models.Module)
+        .filter(models.Module.course_id == course.id)
+        .options(selectinload(models.Lesson.quiz_items))
+        .order_by(models.Module.position, models.Lesson.position, models.Lesson.id)
+        .all()
+    )
+
+
+def course_concepts(
+    session: Session,
+    course: models.Course,
+    now: datetime | None = None,
+    lessons: list[models.Lesson] | None = None,
+) -> list[dict]:
     """Every concept in a course with its mastery bucket, for the concept map.
 
     A Python join, not a SQL one: the concepts live in Lesson.concepts, a JSON column
@@ -698,26 +720,32 @@ def course_concepts(session: Session, course: models.Course, now: datetime | Non
     global. The lessons and their quiz items are pulled in one eager query rather than
     lazy-loading per lesson, which otherwise costs a query per lesson and grows with
     the size of the course. Card lookups are chunked against SQLite's parameter limit.
+
+    Two fields exist for the map's layout, and both are claims this data can support.
+    `lesson_index` is the position, in course order, of the FIRST lesson that names the
+    concept: the map groups a concept under the lesson that introduces it, which is a
+    fact about the syllabus. It is emphatically not a prerequisite, and nothing may
+    render it as one. `occurrences` counts how many times the concept is named across
+    the course, in lesson concept lists and quiz items together, which is the "how
+    often they come up" the map sizes its nodes by.
     """
     moment = now_utc() if now is None else _naive_utc(now)
-    lessons = (
-        session.query(models.Lesson)
-        .join(models.Module)
-        .filter(models.Module.course_id == course.id)
-        .options(selectinload(models.Lesson.quiz_items))
-        .all()
-    )
+    if lessons is None:
+        lessons = course_lessons(session, course)
 
     labels: dict[str, str] = {}
-    for lesson in lessons:
-        for raw in lesson.concepts or []:
-            key = normalize_concept(raw if isinstance(raw, str) else "")
-            if key:
-                labels.setdefault(key, raw)
-        for item in lesson.quiz_items:
-            key = normalize_concept(item.concept)
-            if key:
-                labels.setdefault(key, item.concept)
+    first_lesson: dict[str, int] = {}
+    occurrences: dict[str, int] = defaultdict(int)
+    for index, lesson in enumerate(lessons):
+        named = [raw for raw in (lesson.concepts or []) if isinstance(raw, str)]
+        named += [item.concept for item in lesson.quiz_items]
+        for raw in named:
+            key = normalize_concept(raw)
+            if not key:
+                continue
+            labels.setdefault(key, raw)
+            first_lesson.setdefault(key, index)
+            occurrences[key] += 1
 
     cards: dict[str, models.ReviewCard] = {}
     keys = list(labels)
@@ -731,17 +759,52 @@ def course_concepts(session: Session, course: models.Course, now: datetime | Non
         cards.update({row.concept_key: row for row in rows})
 
     result = []
-    for key, label in sorted(labels.items()):
+    for key, label in labels.items():
         row = cards.get(key)
+        lesson = lessons[first_lesson[key]]
         result.append(
             {
                 "concept_key": key,
                 "concept_label": label,
                 "bucket": mastery_bucket(row, moment),
+                "lesson_id": lesson.id,
+                "lesson_title": lesson.title,
+                "lesson_index": first_lesson[key],
+                "occurrences": occurrences[key],
                 "stability": None if row is None else row.stability,
                 "retrievability": None if row is None else card_retrievability(row, moment),
                 "due": None if row is None else row.due,
                 "lapses": 0 if row is None else row.lapses,
             }
         )
+    # Course order first, then the biggest node in each column, so a client rendering
+    # the list as it arrives already matches the map's reading order.
+    result.sort(
+        key=lambda entry: (entry["lesson_index"], -entry["occurrences"], entry["concept_key"])
+    )
     return result
+
+
+def weakest_concept(concepts: list[dict]) -> dict | None:
+    """The one concept worth fifteen minutes, or None when nothing has been studied.
+
+    Only concepts with a scheduled card are eligible. A concept the learner has never
+    seen has no stability to be lowest, and calling it "weakest" would tell them they
+    are bad at something they have simply not reached yet. A course with no reviews
+    behind it therefore gets no callout at all rather than an arbitrary one.
+
+    `reason` names the comparison actually made, so copy written from this field stays
+    true if the rule is ever changed. Today there is exactly one rule.
+    """
+    scored = [entry for entry in concepts if entry.get("stability") is not None]
+    if not scored:
+        return None
+    weakest = min(
+        scored,
+        key=lambda entry: (
+            entry["stability"],
+            1.0 if entry["retrievability"] is None else entry["retrievability"],
+            entry["concept_key"],
+        ),
+    )
+    return weakest | {"reason": "lowest_stability"}

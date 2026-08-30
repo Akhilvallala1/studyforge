@@ -564,20 +564,40 @@ def get_course_concepts(course_id: int, session: Session = Depends(get_session))
 
     `locked` is deliberately absent from the buckets. Concept prerequisites are not in
     the data model yet, so nothing here can honestly say a concept is gated.
+
+    `edges_available` says the same thing to the client in a field it can branch on,
+    and it is False because no code path anywhere extracts a dependency between two
+    concepts. It exists so the map never has to guess: while it is False a client must
+    draw no arrows, and it must not infer them from `lesson_index`, which is course
+    order and not a dependency. Should a real prerequisite graph ever land, this flips
+    and an `edges` payload joins it; until then a client receiving `locked` from a
+    future server should degrade to not-started rather than invent a gate.
+
+    `lessons` is the map's column list, in the order the course teaches them, and is
+    sent whole rather than derived from `concepts` so that a lesson which teaches
+    nothing still gets a column instead of silently vanishing from the map.
     """
     course = session.get(models.Course, course_id)
     if not course:
         raise HTTPException(404, "Course not found")
     now = review.now_utc()
-    concepts = review.course_concepts(session, course, now)
+    lessons = review.course_lessons(session, course)
+    concepts = review.course_concepts(session, course, now, lessons=lessons)
     counts: dict[str, int] = defaultdict(int)
     for concept in concepts:
         counts[concept["bucket"]] += 1
+    weakest = review.weakest_concept(concepts)
     return {
         "course_id": course.id,
         "title": course.title,
+        "edges_available": False,
         "counts": dict(counts),
+        "lessons": [
+            {"id": lesson.id, "title": lesson.title, "index": index}
+            for index, lesson in enumerate(lessons)
+        ],
         "concepts": [entry | {"due": iso_utc(entry["due"])} for entry in concepts],
+        "weakest": None if weakest is None else weakest | {"due": iso_utc(weakest["due"])},
     }
 
 

@@ -3,6 +3,7 @@ import type {
   AlertState,
   AnswerResult,
   CompleteResult,
+  CourseConcepts,
   CourseDetail,
   CourseSummary,
   GenerateResult,
@@ -102,6 +103,11 @@ export function getCourse(id: number): Promise<CourseDetail> {
 
 export function getLesson(id: number): Promise<LessonDetail> {
   return get(`/lessons/${id}`);
+}
+
+/** The concept map's data: every concept in the course, its lesson, and its mastery. */
+export function getCourseConcepts(id: number): Promise<CourseConcepts> {
+  return get(`/courses/${id}/concepts`);
 }
 
 export function generateFromText(text: string): Promise<GenerateResult> {
