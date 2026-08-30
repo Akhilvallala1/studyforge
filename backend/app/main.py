@@ -672,12 +672,26 @@ def create_remediation(card_id: int, session: Session = Depends(get_session)):
                 "spent_usd": exc.spent_usd,
             },
         ) from exc
+    except ValueError as exc:
+        # The provider answered and the answer did not match the schema. Logged
+        # apart from a transport failure because the two need opposite fixes, and
+        # because reporting a schema mismatch as "the model could not be reached"
+        # is what hid the fake provider having no remediation branch at all: every
+        # offline re-teach failed, and the log said the network was to blame.
+        session.rollback()
+        logger.error(
+            "Remediation for card %s: the model replied but the reply did not match the "
+            "schema (%s)",
+            card_id,
+            exc,
+        )
+        raise HTTPException(502, REMEDIATION_FAILURE_MESSAGE) from exc
     except Exception as exc:
         # A failed generation writes no row and the slot is released on the way out,
         # so the learner can click again rather than waiting out a week's cooldown
         # for a note that was never written.
         session.rollback()
-        logger.exception("Remediation failed for card %s", card_id)
+        logger.exception("Remediation failed for card %s: the provider call failed", card_id)
         raise HTTPException(502, REMEDIATION_FAILURE_MESSAGE) from exc
 
     return remediation.note_payload(note)

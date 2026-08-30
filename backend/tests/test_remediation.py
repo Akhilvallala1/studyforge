@@ -360,9 +360,14 @@ def test_a_second_request_mid_generation_is_refused(client, monkeypatch):
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         first = pool.submit(client.post, url)
-        assert stub.entered.wait(timeout=10), "first request never reached the provider"
-        second = pool.submit(client.post, url).result()
-        stub.release.set()
+        try:
+            assert stub.entered.wait(timeout=10), "first request never reached the provider"
+            second = pool.submit(client.post, url).result()
+        finally:
+            # Always release the held request. Without this, an assertion failing
+            # above leaves it blocked, and the pool's shutdown on the way out waits
+            # for it, turning one clear failure into a slow and confusing run.
+            stub.release.set()
         first_response = first.result()
 
     assert first_response.status_code == 200
@@ -709,6 +714,45 @@ def test_a_cleared_note_stops_being_returned(client, provider):
         assert note.cleared_at is not None
     finally:
         session.close()
+
+
+# --------------------------------------------------------------------------
+# Offline QA
+# --------------------------------------------------------------------------
+
+
+def test_the_fake_provider_can_re_teach_end_to_end(client, monkeypatch):
+    """The offline path QA actually runs: fake provider, no key, no network.
+
+    This is the whole feature exercised the way qa-tester exercises it, and it is
+    the test that fails if the fake provider stops recognizing the remediation
+    system prompt. Before that branch existed, every offline re-teach returned 502.
+    """
+    from app.llm.fake_provider import FakeProvider
+
+    _install(monkeypatch, FakeProvider())
+    card_id, _, label = _seed_concept([fsrs.AGAIN, fsrs.AGAIN])
+    url = f"/review/cards/{card_id}/remediation"
+
+    created = client.post(url)
+
+    assert created.status_code == 200
+    body = created.json()
+    assert body["model"] == "fake"
+    assert body["concept_label"] == label
+    # A real note: both halves, in order, and the concept named rather than a stub.
+    assert body["content"].index("In simpler terms") < body["content"].index("Worked example")
+    assert label in body["content"]
+
+    # And it is readable back, which is the other half of what the UI needs.
+    assert client.get(url).json()["id"] == body["id"]
+
+    # The two note-carrying refusals need a note to exist first, so they are only
+    # reachable offline once the above works. Both were unverifiable before.
+    repeat = client.post(url)
+    assert repeat.status_code == 409
+    assert repeat.json()["detail"]["error"] == "note_active"
+    assert repeat.json()["detail"]["note"]["content"] == body["content"]
 
 
 def test_missing_card_is_a_404(client, provider):
