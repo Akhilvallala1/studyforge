@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app import days, fsrs, generation, ingest, models, review
+from app import days, fsrs, generation, ingest, models, remediation, review
 from app.attempts import (
     _attempt_state,
     _attempts_by_item,
@@ -67,6 +67,13 @@ MODEL_FAILURE_MESSAGE = (
     "Try again, or try shorter material."
 )
 GENERIC_GENERATION_MESSAGE = "Course generation failed. Check the server logs for details."
+REMEDIATION_FAILURE_MESSAGE = (
+    "Could not write an explanation for this concept just now. Try again in a moment."
+)
+NO_MATERIAL_MESSAGE = (
+    "There is no lesson text for this concept to explain from. It may have come from a "
+    "course that has since been deleted."
+)
 
 # Parse failures (ValueError, including json.JSONDecodeError), refusals, missing
 # keys in a provider response, and transport errors are all "the provider did not
@@ -556,6 +563,105 @@ def rate_review(card_id: int, body: ReviewRating, session: Session = Depends(get
         "scheduled_days": log.scheduled_days,
         "interval_label": review.format_interval(card.due - log.reviewed_at),
     }
+
+
+def _remediation_conflict(
+    code: str, message: str, note: models.RemediationNote | None
+) -> HTTPException:
+    """409 that carries the note the caller cannot replace.
+
+    The note travels with the refusal rather than being fetched in a second round
+    trip, because the only sensible thing for the UI to do about "you already have
+    one of these" is show the one it already has.
+    """
+    return HTTPException(
+        409,
+        detail={
+            "error": code,
+            "message": message,
+            "note": remediation.note_payload(note),
+        },
+    )
+
+
+@app.post("/review/cards/{card_id}/remediation")
+def create_remediation(card_id: int, session: Session = Depends(get_session)):
+    """Re-teach a concept the learner keeps missing: one metered model call.
+
+    Every refusal is a 409 carrying an `error` code, so the client has one branch to
+    write rather than three. `note_active` and `cooldown_active` hand back the
+    existing note for the UI to display; `not_flagged` means review.needs_attention
+    does not currently report this concept, which is the same trigger the Today
+    screen's button is drawn from, so it only fires on a stale or hand-made request.
+
+    The card is not touched. It keeps its stability, its lapses, and its due date,
+    and it stays in the review queue: re-teaching is offered alongside the schedule,
+    not instead of it.
+    """
+    card = session.get(models.ReviewCard, card_id)
+    if not card:
+        raise HTTPException(404, "Review card not found")
+
+    now = review.now_utc()
+    if remediation.clear_resolved(session, now):
+        session.commit()
+
+    existing = remediation.latest_note(session, card.id)
+    if existing is not None and existing.status == "active":
+        raise _remediation_conflict(
+            "note_active", "This concept already has an explanation.", existing
+        )
+    # Checked against the latest note whatever its status, so clearing one does not
+    # reopen the budget. The cooldown is what keeps a thrashing card from buying a
+    # fresh explanation on every lapse.
+    if remediation.in_cooldown(existing, now):
+        raise _remediation_conflict(
+            "cooldown_active",
+            "This concept was explained recently. Here is that explanation.",
+            existing,
+        )
+    if card.concept_key not in remediation.flagged_keys(session, now):
+        raise _remediation_conflict(
+            "not_flagged", "This concept is not currently one you are missing.", None
+        )
+
+    try:
+        note = remediation.generate_note(session, card, get_provider(), now=now)
+    except remediation.NoMaterial as exc:
+        session.rollback()
+        logger.warning("remediation refused for card %s: %s", card_id, exc)
+        raise HTTPException(422, NO_MATERIAL_MESSAGE) from exc
+    except CostLimitExceeded as exc:
+        session.rollback()
+        raise HTTPException(
+            402,
+            detail={
+                "error": "cost_limit_exceeded",
+                "message": "LLM spend limit reached",
+                "limit_usd": exc.limit_usd,
+                "spent_usd": exc.spent_usd,
+            },
+        ) from exc
+    except Exception as exc:
+        # Nothing partial survives: generate_note parses before it builds a row, so
+        # the rollback here is belt and braces rather than the thing that saves us.
+        session.rollback()
+        logger.exception("Remediation failed for card %s", card_id)
+        raise HTTPException(502, REMEDIATION_FAILURE_MESSAGE) from exc
+
+    session.commit()
+    return remediation.note_payload(note)
+
+
+@app.get("/review/cards/{card_id}/remediation")
+def get_remediation(card_id: int, session: Session = Depends(get_session)):
+    """The card's active remedial note, or null once the concept stops being flagged."""
+    card = session.get(models.ReviewCard, card_id)
+    if not card:
+        raise HTTPException(404, "Review card not found")
+    if remediation.clear_resolved(session, review.now_utc()):
+        session.commit()
+    return remediation.note_payload(remediation.active_note(session, card.id))
 
 
 @app.get("/courses/{course_id}/concepts")
