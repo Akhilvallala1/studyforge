@@ -7,6 +7,8 @@ import type {
   CourseSummary,
   GenerateResult,
   LessonDetail,
+  RemediationConflict,
+  RemediationNote,
   ReviewAnswerResult,
   ReviewQueue,
   ReviewRatingResult,
