@@ -1,7 +1,14 @@
 import Link from "next/link";
 
-import { ApiError, getCourse, getReviewToday, listCourses } from "@/lib/api";
-import type { CourseDetail, CourseSummary, LessonSummary, ReviewToday } from "@/lib/types";
+import { ReteachConcept } from "@/components/ReteachConcept";
+import { ApiError, getCourse, getRemediation, getReviewToday, listCourses } from "@/lib/api";
+import type {
+  CourseDetail,
+  CourseSummary,
+  LessonSummary,
+  RemediationNote,
+  ReviewToday,
+} from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -137,28 +144,11 @@ function RetentionStat({ today }: { today: ReviewToday }) {
   );
 }
 
-/** Recall probability as a bar. Empty, not full, when the card has never been scheduled. */
-function RecallBar({ retrievability }: { retrievability: number | null }) {
-  const percent = retrievability === null ? 0 : Math.round(retrievability * 100);
-  return (
-    <div
-      role="img"
-      aria-label={
-        retrievability === null
-          ? "Recall probability not known yet"
-          : `Recall probability ${percent} percent`
-      }
-      className="h-[5px] w-[84px] overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
-    >
-      <div className="h-full bg-amber-600" style={{ width: `${percent}%` }} />
-    </div>
-  );
-}
-
 export default async function TodayPage() {
   let courses: CourseSummary[] = [];
   let today: ReviewToday | null = null;
   let nextUp: NextUp | null = null;
+  let attentionNotes: (RemediationNote | null)[] = [];
   let loadError: string | null = null;
 
   try {
@@ -167,6 +157,12 @@ export default async function TodayPage() {
     // would all read zero. Skip them and show the first-run panel instead.
     if (courses.length > 0) {
       [today, nextUp] = await Promise.all([getReviewToday(), findNextUp(courses)]);
+      // One free read per flagged concept, so the button can say whether an explanation
+      // already exists rather than finding out by asking for one. Same fan-out shape as
+      // findNextUp, and one failure must not take the screen down with it.
+      attentionNotes = await Promise.all(
+        today.needs_attention.map((entry) => getRemediation(entry.card_id).catch(() => null)),
+      );
     }
   } catch (err) {
     loadError =
@@ -257,37 +253,20 @@ export default async function TodayPage() {
           <h2 id="needs-attention-heading" className="mt-8 text-[15px] font-semibold">
             Needs attention
           </h2>
+          {/* Offered, not automatic, and it does not gate the next review: saying it
+              would re-teach these "before testing them again" promised a reset that
+              nothing in the scheduler performs. */}
           <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">
-            Concepts you have missed more than once. StudyForge will re-teach these before
-            testing them again.
+            Concepts you have missed more than once. Ask StudyForge to explain one a
+            different way; it stays in your review queue either way.
           </p>
           <ul className="mt-3.5 flex flex-col gap-2">
-            {today.needs_attention.map((entry) => (
-              <li
+            {today.needs_attention.map((entry, index) => (
+              <ReteachConcept
                 key={entry.concept_key}
-                className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-zinc-200 px-[18px] py-3.5 dark:border-zinc-800"
-              >
-                <div>
-                  <div className="text-[15px] font-medium">{entry.concept_label}</div>
-                  <div className="mt-0.5 text-[13px] text-zinc-500 dark:text-zinc-400">
-                    Missed {entry.missed} of {entry.of} times
-                    {entry.is_due && " · due now"}
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-3">
-                  <RecallBar retrievability={entry.retrievability} />
-                  {/* Re-teaching is a later slice. A button that silently did nothing
-                      would be worse than one that says so. */}
-                  <button
-                    type="button"
-                    disabled
-                    title="Re-teach is coming in a later release. For now, open the lesson that introduced this concept."
-                    className="cursor-not-allowed rounded-lg border border-zinc-200 px-3.5 py-1.5 text-[13px] font-medium text-zinc-400 dark:border-zinc-800 dark:text-zinc-600"
-                  >
-                    Re-teach
-                  </button>
-                </div>
-              </li>
+                entry={entry}
+                initialNote={attentionNotes[index] ?? null}
+              />
             ))}
           </ul>
         </section>
