@@ -261,6 +261,66 @@ export interface ReviewAnswerResult {
   preview: RatingPreview[];
 }
 
+/**
+ * The four mastery buckets the concept map paints. There is deliberately no "locked":
+ * nothing in the system records prerequisites between concepts, so nothing may claim a
+ * concept is gated. `CourseConcepts.edges_available` says the same thing as a flag.
+ */
+export type MasteryBucket = "mastered" | "solid" | "shaky" | "not_started";
+
+/** One column of the map: a lesson, in the order the course teaches it. */
+export interface ConceptLesson {
+  id: number;
+  title: string;
+  /** Zero-based position in course order, matching `ConceptNode.lesson_index`. */
+  index: number;
+}
+
+export interface ConceptNode {
+  concept_key: string;
+  concept_label: string;
+  bucket: MasteryBucket;
+  /**
+   * The lesson that INTRODUCES the concept, which is how the map picks its column.
+   * Course order, not a dependency: a lower index does not mean the concept is a
+   * prerequisite of anything to its right.
+   */
+  lesson_id: number;
+  lesson_title: string;
+  lesson_index: number;
+  /** How many times the concept is named across the course; the map sizes nodes by it. */
+  occurrences: number;
+  /** Null for a concept with no scheduled card, which is every not-started one. */
+  stability: number | null;
+  retrievability: number | null;
+  due: string | null;
+  lapses: number;
+}
+
+/**
+ * The concept worth attention, or null when nothing in the course has been studied
+ * yet. `reason` names the comparison the server actually made, so copy is written from
+ * it rather than hardcoded; an unrecognised reason falls back to claiming nothing
+ * about why.
+ */
+export interface WeakestConcept extends ConceptNode {
+  reason: string;
+}
+
+export interface CourseConcepts {
+  course_id: number;
+  title: string;
+  /**
+   * False while no prerequisite graph exists, which is always, today. While it is
+   * false the map draws no arrows and must not infer any from `lesson_index`.
+   */
+  edges_available: boolean;
+  counts: Partial<Record<MasteryBucket, number>>;
+  lessons: ConceptLesson[];
+  concepts: ConceptNode[];
+  weakest: WeakestConcept | null;
+}
+
 export interface ReviewRatingResult {
   card_id: number;
   concept_key: string;

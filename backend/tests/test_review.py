@@ -49,6 +49,41 @@ def _make_lesson(concepts=("Gradient Descent", "Backpropagation"), items_per_con
         session.close()
 
 
+def _make_course(lessons, items_per_concept=1):
+    """A one-module course of several lessons, for the concept map's column layout.
+
+    `lessons` is a list of (title, concepts). Lesson titles are deliberately not in
+    alphabetical order in the callers, so a test that passes cannot be passing because
+    the rows happened to come back sorted by name.
+    """
+    session = SessionLocal()
+    try:
+        course = models.Course(title="Replication", description="")
+        module = models.Module(title="Module 1", position=0)
+        for position, (title, concepts) in enumerate(lessons):
+            row = models.Lesson(
+                title=title, position=position, content=f"# {title}", concepts=list(concepts)
+            )
+            for index, concept in enumerate(concepts):
+                for repeat in range(items_per_concept):
+                    row.quiz_items.append(
+                        models.QuizItem(
+                            question=f"{title} {index}.{repeat}?",
+                            kind="short",
+                            options=[],
+                            answer=f"answer-{index}-{repeat}",
+                            concept=concept,
+                        )
+                    )
+            module.lessons.append(row)
+        course.modules.append(module)
+        session.add(course)
+        session.commit()
+        return course.id
+    finally:
+        session.close()
+
+
 def _cards():
     session = SessionLocal()
     try:
@@ -479,6 +514,117 @@ class TestMastery:
 
     def test_an_unknown_course_is_404(self, client):
         assert client.get("/courses/999999/concepts").status_code == 404
+
+    def test_concepts_are_grouped_under_the_lesson_that_introduces_them(self, client):
+        """Course order, not alphabetical order, and a repeat stays in its first column."""
+        course_id = _make_course(
+            [
+                ("Zebra lesson", ["Replication log", "Shared concept"]),
+                ("Alpha lesson", ["Shared concept", "Quorums"]),
+            ]
+        )
+        body = client.get(f"/courses/{course_id}/concepts").json()
+
+        assert [entry["title"] for entry in body["lessons"]] == ["Zebra lesson", "Alpha lesson"]
+        columns = {entry["concept_label"]: entry["lesson_index"] for entry in body["concepts"]}
+        assert columns["Replication log"] == 0
+        assert columns["Quorums"] == 1
+        # Taught in lesson 1 and revisited in lesson 2: it belongs to the lesson that
+        # introduced it, and appears once rather than in both columns.
+        assert columns["Shared concept"] == 0
+        assert [entry["concept_label"] for entry in body["concepts"]].count("Shared concept") == 1
+
+    def test_course_order_is_module_position_then_lesson_position(self, client):
+        """Columns follow (module.position, lesson.position), not row order.
+
+        Every row here is created in the wrong order on purpose: the second module is
+        inserted first, and inside the first module the later lesson is inserted first.
+        So lesson ids run exactly backwards from course order. A map built from ids or
+        from insertion order would come out reversed and still look entirely plausible
+        on screen, which is the failure this guards.
+        """
+        session = SessionLocal()
+        try:
+            course = models.Course(title="Ordering", description="")
+            second = models.Module(title="Second module", position=1)
+            second.lessons.append(
+                models.Lesson(
+                    title="Third lesson", position=0, content="# Third", concepts=["gamma qq"]
+                )
+            )
+            first = models.Module(title="First module", position=0)
+            first.lessons.append(
+                models.Lesson(
+                    title="Second lesson", position=1, content="# Second", concepts=["beta qq"]
+                )
+            )
+            first.lessons.append(
+                models.Lesson(
+                    title="First lesson", position=0, content="# First", concepts=["alpha qq"]
+                )
+            )
+            course.modules.append(second)
+            course.modules.append(first)
+            session.add(course)
+            session.commit()
+            course_id = course.id
+            # The premise of the test: ids really do run backwards from course order.
+            assert min(lesson.id for lesson in second.lessons) < min(
+                lesson.id for lesson in first.lessons
+            )
+        finally:
+            session.close()
+
+        body = client.get(f"/courses/{course_id}/concepts").json()
+        assert [entry["title"] for entry in body["lessons"]] == [
+            "First lesson",
+            "Second lesson",
+            "Third lesson",
+        ]
+        columns = {entry["concept_label"]: entry["lesson_index"] for entry in body["concepts"]}
+        assert columns == {"alpha qq": 0, "beta qq": 1, "gamma qq": 2}
+
+    def test_occurrences_count_every_mention_across_the_course(self, client):
+        course_id = _make_course(
+            [("Lesson A", ["Repeated", "Once"]), ("Lesson B", ["Repeated"])],
+            items_per_concept=1,
+        )
+        body = client.get(f"/courses/{course_id}/concepts").json()
+        counts = {entry["concept_label"]: entry["occurrences"] for entry in body["concepts"]}
+        # "Repeated" is named in two lesson concept lists and by one quiz item in each.
+        assert counts["Repeated"] == 4
+        assert counts["Once"] == 2
+
+    def test_no_edges_are_ever_offered(self, client, lesson):
+        """The flag the map branches on. Nothing extracts prerequisites, so it stays False."""
+        course_id, _, _ = lesson
+        assert client.get(f"/courses/{course_id}/concepts").json()["edges_available"] is False
+
+    def test_the_weakest_concept_names_the_comparison_it_made(self, client, lesson):
+        course_id, lesson_id, answers = lesson
+        item_id = next(iter(answers))
+        client.post(f"/quiz/{item_id}/answer", json={"answer": answers[item_id]})
+        client.post(f"/lessons/{lesson_id}/complete")
+
+        weakest = client.get(f"/courses/{course_id}/concepts").json()["weakest"]
+        assert weakest["reason"] == "lowest_stability"
+        assert weakest["stability"] is not None
+        assert weakest["concept_label"].lower() == "gradient descent"
+
+    def test_a_course_nobody_has_studied_has_no_weakest_concept(self, client, lesson):
+        """Never-seen concepts have no stability to be lowest, so the callout is absent."""
+        course_id, _, _ = lesson
+        body = client.get(f"/courses/{course_id}/concepts").json()
+        assert all(entry["bucket"] == review.NOT_STARTED for entry in body["concepts"])
+        assert body["weakest"] is None
+
+    def test_a_course_with_no_concepts_still_reports_its_lessons(self, client):
+        """The empty state the map renders: columns exist, nothing sits in them."""
+        course_id = _make_course([("Empty lesson", [])])
+        body = client.get(f"/courses/{course_id}/concepts").json()
+        assert body["concepts"] == []
+        assert body["weakest"] is None
+        assert [entry["title"] for entry in body["lessons"]] == ["Empty lesson"]
 
 
 class TestReviewEndpoints:
