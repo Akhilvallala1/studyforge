@@ -186,12 +186,22 @@ export function rateReviewCard(
 /**
  * What asking for a re-teach came back with.
  *
- * A 409 is not an error here. All three of its codes mean "show the learner what
- * they already have", and two of them carry that note in the body, so the conflict
- * is returned rather than thrown: rendering it as a failure would hide the very
- * explanation the server just handed over. Genuine failures still throw ApiError:
- * 404 unknown card, 402 spend cap reached, 422 no lesson material left to explain
- * from, 502 the model failed.
+ * A 409 is not an error here, which is why the conflict is returned rather than
+ * thrown. Its four codes do not all mean the same thing, though, and the differences
+ * are the whole difficulty:
+ *
+ * - note_active and cooldown_active carry an explanation to show.
+ * - generation_in_progress carries nothing, because another request is still writing
+ *   one. Wait for it.
+ * - not_flagged carries nothing either, because the concept stopped being one the
+ *   learner keeps missing. Say so, kindly.
+ *
+ * The last two are indistinguishable by payload and opposite in meaning, so a caller
+ * must branch on `error` and never on whether `note` arrived. RemediationConflict is
+ * a discriminated union to make that the compiler's job.
+ *
+ * Genuine failures still throw ApiError: 404 unknown card, 402 spend cap reached,
+ * 422 no lesson material left to explain from, 502 the model failed.
  */
 export type RemediationOutcome =
   | { kind: "note"; note: RemediationNote }

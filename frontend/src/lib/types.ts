@@ -241,18 +241,21 @@ export interface RemediationNote {
  * one that an explanation is on its way and one that none is wanted, so they have to
  * be told apart by their code and never by whether a note came with them.
  */
-export type RemediationConflictCode =
-  | "note_active"
-  | "cooldown_active"
-  | "generation_in_progress"
-  | "not_flagged";
+/**
+ * A discriminated union rather than an interface with two independent fields, so the
+ * collision above is the compiler's problem instead of the reader's. Narrowing on
+ * `error` types `note` as present or absent, which means a branch cannot reach an
+ * explanation without having proved it has one, and a fifth code added here is a
+ * type error at every switch that consumes it rather than a silent fall into
+ * whichever branch happened to be last.
+ */
+export type RemediationConflict =
+  | { error: "note_active"; message: string; note: RemediationNote }
+  | { error: "cooldown_active"; message: string; note: RemediationNote }
+  | { error: "generation_in_progress"; message: string; note: null }
+  | { error: "not_flagged"; message: string; note: null };
 
-export interface RemediationConflict {
-  error: RemediationConflictCode;
-  message: string;
-  /** Present for `note_active` and `cooldown_active`, null for `not_flagged`. */
-  note: RemediationNote | null;
-}
+export type RemediationConflictCode = RemediationConflict["error"];
 
 export type RatingName = "again" | "hard" | "good" | "easy";
 

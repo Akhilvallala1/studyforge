@@ -9,11 +9,17 @@ import type { NeedsAttentionEntry, RemediationNote } from "@/lib/types";
 /* How a request that lost the race waits for the winner. The refusal carries no
    note, so the only way to learn the outcome is to ask again. GET is the thing to
    poll: it costs nothing, it cannot claim the slot, and it answers null until the
-   note is genuinely finished. Bounded rather than open ended, because the slot lives
-   in the winning request and dies with it: if that request never completes, nothing
-   will ever arrive, so the wait ends and the learner is invited to ask again. */
+   note is genuinely finished. */
 const POLL_INTERVAL_MS = 3000;
-const POLL_ATTEMPTS = 20;
+
+/* The ceiling is the server's, not a guess. The provider reads with timeout=600
+   (llm/ollama_provider.py), and both main.py and remediation.py reason against that
+   number, so a generation is entitled to take this long. A shorter bound abandons a
+   call that is still perfectly healthy and, worse, tells the learner it is slow when
+   it is not: the course-generation flow waits out the full call without a client
+   timeout at all, and there is no reason this one should be less patient. */
+const POLL_CEILING_MS = 600_000;
+const POLL_ATTEMPTS = Math.ceil(POLL_CEILING_MS / POLL_INTERVAL_MS);
 
 /** Recall probability as a bar. Empty, not full, when the card has never been scheduled. */
 function RecallBar({ retrievability }: { retrievability: number | null }) {
@@ -38,6 +44,19 @@ function formatDay(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+}
+
+/**
+ * When the next explanation of this concept could be written, or null if that moment
+ * has passed. Derived from the note rather than remembered from the click that
+ * revealed it, so the line survives a reload: the note carries the field either way,
+ * and a fact about the note should not depend on how the learner got to it.
+ */
+function nextAvailable(note: RemediationNote | null): string | null {
+  if (!note?.cooldown_until) return null;
+  const until = new Date(note.cooldown_until);
+  if (Number.isNaN(until.getTime()) || until.getTime() <= Date.now()) return null;
+  return note.cooldown_until;
 }
 
 function formatElapsed(seconds: number): string {
@@ -68,7 +87,6 @@ export function ReteachConcept({
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [availableFrom, setAvailableFrom] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -76,6 +94,7 @@ export function ReteachConcept({
 
   const panelId = `reteach-panel-${entry.card_id}`;
   const hasNote = note !== null;
+  const availableFrom = nextAvailable(note);
   // Our own call and someone else's look the same from here: work is happening and
   // the button must not start a second one.
   const busy = pending || awaiting;
@@ -109,7 +128,6 @@ export function ReteachConcept({
       if (cancelled) return;
       if (found) {
         setNote(found);
-        setAvailableFrom(null);
         setAwaiting(false);
         wantsFocus.current = true;
         setOpen(true);
@@ -117,11 +135,15 @@ export function ReteachConcept({
         return;
       }
       if (attempts >= POLL_ATTEMPTS) {
+        // Announced, not just shown. Giving up is a terminal state like any other,
+        // and the button silently re-enabling is not something a screen reader user
+        // can see happen.
+        const gaveUp =
+          "That explanation did not arrive. The request writing it has run out of " +
+          "time, so ask again when you are ready.";
         setAwaiting(false);
-        setNotice(
-          "That explanation is taking longer than usual. Try Re-teach again in a moment.",
-        );
-        setAnnouncement("");
+        setNotice(gaveUp);
+        setAnnouncement(gaveUp);
       }
     }, POLL_INTERVAL_MS);
     return () => {
@@ -148,48 +170,64 @@ export function ReteachConcept({
       const outcome = await requestRemediation(entry.card_id);
       if (outcome.kind === "note") {
         setNote(outcome.note);
-        setAvailableFrom(null);
         wantsFocus.current = true;
         setOpen(true);
         setAnnouncement(`An explanation of ${entry.concept_label} is ready.`);
         return;
       }
-      const { error: code, note: existing } = outcome.conflict;
-      if (code === "generation_in_progress") {
-        // Matched on the code, never on whether a note arrived, and checked before
-        // the branches below. This refusal and not_flagged both come back with a null
-        // note and mean opposite things: an explanation is being written, versus none
-        // is wanted. Falling through would tell a learner whose explanation is
-        // mid-flight that they are no longer missing the concept.
-        setAwaiting(true);
-        setAnnouncement(`An explanation of ${entry.concept_label} is already being written.`);
-        return;
+      const conflict = outcome.conflict;
+      // Read before the switch narrows `conflict` away, for the unreachable default.
+      const serverMessage = conflict.message;
+      // Switched on the code, exhaustively, never on whether a note arrived.
+      // generation_in_progress and not_flagged are indistinguishable by payload and
+      // opposite in meaning, so a shape test would eventually tell a learner whose
+      // explanation is mid-flight that they no longer need one.
+      switch (conflict.error) {
+        case "note_active":
+        case "cooldown_active":
+          // Narrowing has proved there is a note here, so this branch cannot be
+          // reached by an absent one however the union grows.
+          setNote(conflict.note);
+          wantsFocus.current = true;
+          setOpen(true);
+          setAnnouncement(`Showing the explanation of ${entry.concept_label} you already have.`);
+          break;
+        case "generation_in_progress":
+          setAwaiting(true);
+          setAnnouncement(`An explanation of ${entry.concept_label} is already being written.`);
+          break;
+        case "not_flagged": {
+          // Reachable when the list was drawn before the concept recovered. It is
+          // good news, so it reads as good news rather than as a refusal.
+          const recovered =
+            `${entry.concept_label} is no longer one of the concepts you keep missing, ` +
+            "so there is nothing to re-teach. It stays in your review queue on its usual schedule.";
+          setNotice(recovered);
+          setAnnouncement(recovered);
+          break;
+        }
+        default: {
+          // Unreachable while the union is exhaustive, and that is the point: a fifth
+          // code becomes a compile error here rather than silently landing on one of
+          // the branches above. The runtime arm still matters, because the server can
+          // ship a new code before this file knows about it, and every one of them
+          // carries a human message worth showing.
+          const unhandled: never = conflict;
+          void unhandled;
+          setNotice(serverMessage);
+          setAnnouncement(serverMessage);
+        }
       }
-      if (existing) {
-        // note_active and cooldown_active both mean "you already have one of these".
-        // Only the cooldown needs to say when another could be written; an active note
-        // is simply the current one.
-        setNote(existing);
-        setAvailableFrom(code === "cooldown_active" ? existing.cooldown_until : null);
-        wantsFocus.current = true;
-        setOpen(true);
-        setAnnouncement(`Showing the explanation of ${entry.concept_label} you already have.`);
-        return;
-      }
-      // not_flagged, reachable when the list was drawn before the concept recovered.
-      // It is good news, so it reads as good news rather than as a refusal.
-      const recovered =
-        `${entry.concept_label} is no longer one of the concepts you keep missing, ` +
-        "so there is nothing to re-teach. It stays in your review queue on its usual schedule.";
-      setNotice(recovered);
-      setAnnouncement(recovered);
     } catch (err) {
-      setError(
+      const message =
         err instanceof ApiError
           ? err.message
-          : "Could not reach the server. Is the backend running?",
-      );
-      setAnnouncement("");
+          : "Could not reach the server. Is the backend running?";
+      setError(message);
+      // Routed through the mounted live region rather than left to a role="alert"
+      // that appears with its own text, which is the announcement this project has
+      // already watched go missing once.
+      setAnnouncement(message);
     } finally {
       setPending(false);
     }
@@ -253,8 +291,10 @@ export function ReteachConcept({
       {/* Mounted unconditionally and empty until there is something to say. A live
           region has to be in the accessibility tree BEFORE its content arrives: if the
           attribute and the text appear in the same render, screen readers routinely
-          miss the announcement. The explanation itself is too long to announce, so
-          this says it has arrived and focus moves to it. */}
+          miss the announcement. Every terminal state routes through here, including
+          the ones that only change what a sighted reader can see. The explanation
+          itself is too long to announce, so this says it has arrived and focus moves
+          to it. */}
       <div aria-live="polite" className="sr-only">
         {announcement}
       </div>
@@ -284,11 +324,10 @@ export function ReteachConcept({
         </p>
       )}
 
+      {/* No role="alert" here: the text is announced through the live region above,
+          and carrying it in both places makes a screen reader say it twice. */}
       {error && (
-        <p
-          role="alert"
-          className="mt-3 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-[13px] text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-        >
+        <p className="mt-3 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-[13px] text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300">
           {error}
         </p>
       )}
