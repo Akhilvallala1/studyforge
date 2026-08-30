@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -306,7 +307,10 @@ class RemediationNote(Base):
     explanation and time to use it, not five near-identical ones stacking up.
 
     status goes to "cleared" rather than the row being deleted, so the history of what
-    was hard, and when it stopped being hard, survives.
+    was hard, and when it stopped being hard, survives. The exception is a "pending"
+    row whose generation failed or was abandoned, which is deleted outright: an
+    explanation that was never written records nothing worth keeping, and leaving it
+    would hold the card's slot and its cooldown for a week over a failed call.
 
     model and run_id record which model wrote it and which generation run it belongs
     to, matching llm_calls, so a note can be tied back to its cost and to the prompt
@@ -314,7 +318,20 @@ class RemediationNote(Base):
     """
 
     __tablename__ = "remediation_notes"
-    __table_args__ = (Index("ix_remediation_notes_card_created", "card_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_remediation_notes_card_created", "card_id", "created_at"),
+        # One open note per card, enforced by the database rather than by a read in
+        # the endpoint. A check-then-act guard loses to two simultaneous requests,
+        # and a double-clicked Re-teach button produces exactly that pair: both
+        # would find no note, both would pay for a model call. Partial, so the
+        # cleared history a card accumulates does not collide with itself.
+        Index(
+            "uq_remediation_notes_open_card",
+            "card_id",
+            unique=True,
+            sqlite_where=text("status IN ('active', 'pending')"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     card_id: Mapped[int] = mapped_column(ForeignKey("review_cards.id"))
@@ -325,7 +342,9 @@ class RemediationNote(Base):
     model: Mapped[str] = mapped_column(String(100), default="")
     run_id: Mapped[str] = mapped_column(String(32), default="")
     triggered_by: Mapped[list] = mapped_column(JSON, default=list)  # review_logs ids
-    # "active" | "cleared"
+    # "pending" | "active" | "cleared". "pending" is a reservation written before
+    # the model is called, so the slot and the cooldown are claimed before any
+    # money is spent; see remediation.reserve.
     status: Mapped[str] = mapped_column(String(12), default="active")
     cleared_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cooldown_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
