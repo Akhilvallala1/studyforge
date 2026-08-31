@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { ConceptPractice } from "@/components/ConceptPractice";
+import { ConceptTutor } from "@/components/ConceptTutor";
 import { LessonMarkdown } from "@/components/LessonMarkdown";
 import { ApiError, getRemediation, requestRemediation } from "@/lib/api";
 import { formatDay, noLongerMissed, SCHEDULE_PROMISE } from "@/lib/copy";
@@ -496,10 +497,25 @@ export function ReteachConcept({
             onRecovered={() => setRecovered(true)}
           />
 
+          {/* The tutor sits inside this panel for the same reason practice does, and
+              AFTER practice on purpose: practice is the bounded thing with a hard stop,
+              and open-ended questions are what a learner reaches for once a run has
+              shown them they still do not have it.
+
+              It shares the row's one live region through `onAnnounce` and mounts none of
+              its own, and it is keyed on the concept rather than on the card, because a
+              conversation outlives the card that happened to flag it. */}
+          <ConceptTutor
+            conceptKey={entry.concept_key}
+            conceptLabel={entry.concept_label}
+            open={open}
+            onAnnounce={setAnnouncement}
+          />
+
           {/* The whole panel's promise, made once and covering everything inside it.
-              The practice panel above deliberately carries no wording of its own: it
-              renders directly against this paragraph, and two statements of one fact
-              two lines apart is worse than one that names both. */}
+              Practice and the tutor above deliberately carry no wording of their own:
+              they render directly against this paragraph, and three statements of one
+              fact a few lines apart is worse than one that names all of them. */}
           <p className="mt-4 border-t border-amber-200 pt-3 text-[13px] text-amber-900/80 dark:border-amber-900 dark:text-amber-200/80">
             {SCHEDULE_PROMISE}
             {availableFrom && ` A new explanation can be written from ${formatDay(availableFrom)}.`}

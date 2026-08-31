@@ -39,17 +39,23 @@ export function noLongerMissed(conceptLabel: string): string {
 }
 
 /**
- * What nothing inside the re-teach panel does, practice included. Said ONCE.
+ * What nothing inside the re-teach panel does, practice and the tutor included. Said ONCE.
  *
- * The one thing a learner might reasonably assume, from asking for an explanation or
- * from getting practice questions right, is that they have moved the needle. They have
- * not: re-teaching writes a note and practice writes an attempt row, and neither
- * touches the schedule, the mastery buckets, the attention flag, or the retention
- * figure. That promise is the panel's, not any one control's, which is why it is one
- * sentence at the bottom of the panel rather than one per control: practice used to
- * carry its own wording of it, two lines above this one, and every learner who opened
- * practice read the same fact twice.
+ * The one thing a learner might reasonably assume, from asking for an explanation, from
+ * getting practice questions right, or from talking a concept through with the tutor, is
+ * that they have moved the needle. They have not: re-teaching writes a note, practice
+ * writes an attempt row, the tutor writes two message rows, and none of them touches the
+ * schedule, the mastery buckets, the attention flag, or the retention figure. That
+ * promise is the panel's, not any one control's, which is why it is one sentence at the
+ * bottom of the panel rather than one per control: practice used to carry its own
+ * wording of it, two lines above this one, and every learner who opened practice read
+ * the same fact twice.
+ *
+ * The tutor was added by WIDENING the clause below rather than by adding a second
+ * sentence beside it, for exactly that reason. Two near-identical paragraphs one rule
+ * apart is what this constant exists to prevent, and at 390px it costs seven lines to
+ * say one thing twice.
  */
 export const SCHEDULE_PROMISE =
   "This concept stays in your review queue on its usual schedule. Nothing here, " +
-  "practice included, reschedules it or marks it learned.";
+  "practice and the tutor included, reschedules it or marks it learned.";
