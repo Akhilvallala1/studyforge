@@ -35,7 +35,7 @@ export STUDYFORGE_COST_LIMIT_USD=3.00       # hard cap, enforced in app/metering
 export STUDYFORGE_COST_ALERT_USD=1.00
 
 python -m evals.run_eval --dry-run          # ingest + cost projection, no model calls
-python -m evals.run_eval --label baseline   # the real thing
+python -m evals.run_eval --label my-run     # the real thing
 ```
 
 Note that `generate_course` re-sends the entire document with every lesson call,
@@ -50,7 +50,11 @@ Outputs land in `evals/output/`:
 - `results-<label>.json`: machine-readable bundle, the input to `--compare`.
 - `usage-<label>.json`: the app's own `GET /usage` totals.
 
-Rerunning a label replaces all four: a label is the run's name.
+Rerunning a label replaces all four: a label is the run's name. Naming one is how
+you say that is what you meant, so `--label` has no default you can fall into: with
+no `--label`, a run that would overwrite existing files refuses to start and tells
+you what it was about to destroy. Pass `--force` if you meant it. `--dry-run` never
+writes anything, so it is never refused.
 
 The three older `course-<source>.md` files, with no label in the name, predate
 that. Course files used to be named by source alone while everything else carried

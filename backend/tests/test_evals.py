@@ -1142,3 +1142,161 @@ def test_free_run_without_a_cap_still_refuses_the_real_database(monkeypatch):
     monkeypatch.setattr(run_eval, "get_provider", lambda: _Free())
     with pytest.raises(SystemExit):
         run_eval.preflight()
+
+
+# --- typing nothing must not destroy the reference run ---------------------
+#
+# --label defaults to "baseline" and --out defaults to the committed evals/output,
+# where the reference run's report-baseline.md, results-baseline.json and
+# usage-baseline.json already live. So `python -m evals.run_eval` with no flags
+# overwrote four committed files without a word. It is the course-filename bug
+# reached through a different door, and nastier: "baseline" reads like a name
+# reserved for the reference, which makes clobbering it feel safe.
+
+
+def _occupy(out_dir, label="baseline"):
+    """Leave one artifact of every type a run writes under `label`."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    names = [
+        f"results-{label}.json",
+        f"report-{label}.md",
+        f"usage-{label}.json",
+        f"compare-{label}.md",
+        f"course-{label}-demo.md",
+    ]
+    for name in names:
+        (out_dir / name).write_text("reference run, do not destroy", encoding="utf-8")
+    return sorted(names)
+
+
+def test_a_defaulted_label_refuses_to_overwrite(monkeypatch, tmp_path, capsys):
+    """The bug: no --label, occupied slot, four committed files gone."""
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Free())
+    _occupy(tmp_path)
+
+    with pytest.raises(SystemExit) as excinfo:
+        run_eval.main(["--out", str(tmp_path)])
+    assert excinfo.value.code == 2
+
+    err = capsys.readouterr().err
+    assert "REFUSING TO RUN" in err
+    # It must say what it was about to destroy, not just that it declined.
+    assert "results-baseline.json" in err
+    assert "course-baseline-demo.md" in err
+    assert "--force" in err
+    # And it must decline before writing anything.
+    assert (tmp_path / "results-baseline.json").read_text(encoding="utf-8").startswith("reference")
+
+
+def test_a_defaulted_label_runs_when_nothing_is_there(monkeypatch, tmp_path):
+    """An empty output directory is not a hazard, and must not be treated as one."""
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Free())
+    assert run_eval.main(["--out", str(tmp_path)]) == 0
+    assert (tmp_path / "results-baseline.json").exists()
+
+
+def test_an_explicit_label_still_overwrites_without_asking(monkeypatch, tmp_path):
+    """Deliberately not guarded. Rerunning a label you named is the documented
+    behaviour and the ordinary loop while iterating on a prompt; warning on every
+    iteration of the common case is the crying-wolf failure."""
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Free())
+    _occupy(tmp_path, "mine")
+
+    assert run_eval.main(["--label", "mine", "--out", str(tmp_path)]) == 0
+    assert "reference run" not in (tmp_path / "results-mine.json").read_text(encoding="utf-8")
+
+
+def test_an_explicit_label_matching_the_default_is_still_the_users_choice(
+    monkeypatch, tmp_path
+):
+    """Typing --label baseline is saying what you mean. The guard keys on whether
+    the label was CHOSEN, not on what it happens to equal."""
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Free())
+    _occupy(tmp_path)
+
+    assert run_eval.main(["--label", "baseline", "--out", str(tmp_path)]) == 0
+
+
+def test_force_overwrites_a_defaulted_label(monkeypatch, tmp_path):
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Free())
+    _occupy(tmp_path)
+
+    assert run_eval.main(["--force", "--out", str(tmp_path)]) == 0
+    assert "reference run" not in (tmp_path / "results-baseline.json").read_text(encoding="utf-8")
+
+
+def test_dry_run_is_never_refused(monkeypatch, tmp_path):
+    """--dry-run makes no calls and writes nothing, so refusing it over an occupied
+    name would be a false alarm on the one command that is always safe."""
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Free())
+    _occupy(tmp_path)
+
+    assert run_eval.main(["--dry-run", "--out", str(tmp_path)]) == 0
+    assert (tmp_path / "results-baseline.json").read_text(encoding="utf-8").startswith("reference")
+
+
+def test_rescore_under_a_defaulted_label_is_guarded_too(monkeypatch, tmp_path):
+    """--rescore reads a bundle and writes under --label, so with no --label it
+    would overwrite the very file it just read."""
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Free())
+    _occupy(tmp_path)
+    bundle = tmp_path / "results-baseline.json"
+
+    with pytest.raises(SystemExit):
+        run_eval.main(["--rescore", str(bundle), "--out", str(tmp_path)])
+    assert bundle.read_text(encoding="utf-8").startswith("reference")
+
+
+def test_compare_under_a_defaulted_label_is_guarded_too(monkeypatch, tmp_path):
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Free())
+    _occupy(tmp_path)
+    bundle = tmp_path / "bundle.json"
+    bundle.write_text(json.dumps({"label": "x", "runs": []}), encoding="utf-8")
+
+    with pytest.raises(SystemExit):
+        run_eval.main(["--compare", str(bundle), str(bundle), "--out", str(tmp_path)])
+
+
+def test_the_guard_sees_every_artifact_a_run_writes(monkeypatch, tmp_path):
+    """The drift test, and the reason existing_outputs can be a list of patterns.
+
+    A real run writes into an empty directory; then the guard is asked what a
+    second run under that label would overwrite. Anything the run produced that the
+    guard cannot see is a file it would let the next run destroy in silence, so a
+    new artifact type added to write_outputs without updating existing_outputs
+    fails here rather than in someone's evals/output.
+    """
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Free())
+    assert run_eval.main(["--label", "probe", "--out", str(tmp_path)]) == 0
+
+    written = {p.name for p in tmp_path.iterdir() if p.is_file()}
+    seen = {p.name for p in run_eval.existing_outputs(tmp_path, "probe")}
+    assert written, "the stubbed run has to actually write something"
+    assert written <= seen, f"the guard cannot see {sorted(written - seen)}"
+
+
+def test_existing_outputs_ignores_a_different_label(tmp_path):
+    """Another run's files must not make the guard fire."""
+    from evals import run_eval
+
+    _occupy(tmp_path, "other")
+    assert run_eval.existing_outputs(tmp_path, "baseline") == []
+
+
+def test_existing_outputs_over_matches_a_hyphenated_label_on_purpose(tmp_path):
+    """A recorded wart, not an oversight.
+
+    course-<label>-<source>.md cannot be split by filename alone once either half
+    contains a hyphen, so "baseline" also matches a course file belonging to
+    "baseline-rescored". Erring wide is the deliberate direction, because the two
+    errors are not symmetric: over-matching costs a --label or a --force,
+    under-matching costs a committed file. The refusal is worded to match, saying
+    these files match the label rather than that they would all be overwritten.
+
+    Only the course pattern is ambiguous. The other four are pinned by extension.
+    """
+    from evals import run_eval
+
+    _occupy(tmp_path, "baseline-rescored")
+    matched = [p.name for p in run_eval.existing_outputs(tmp_path, "baseline")]
+    assert matched == ["course-baseline-rescored-demo.md"]

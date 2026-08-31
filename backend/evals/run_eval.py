@@ -6,7 +6,7 @@ spends real money, and it is run by hand, never from pytest.
     export STUDYFORGE_COST_LIMIT_USD=3.00
     export STUDYFORGE_COST_ALERT_USD=1.00
     python -m evals.run_eval --dry-run          # ingest + cost projection, no LLM call
-    python -m evals.run_eval --label baseline   # the real thing
+    python -m evals.run_eval --label my-run     # the real thing
 
 The preflight refuses to start against the developer's own database, or with a
 paid provider and no hard cap configured, because the failure mode of getting
@@ -212,9 +212,83 @@ def rescore(bundle_path: Path, out_dir: Path, label: str) -> Path:
     return written["results"]
 
 
+# What --label falls back to, and an OCCUPIED name: evals/output holds the
+# reference run's committed report-baseline.md, results-baseline.json and
+# usage-baseline.json. See check_overwrite for why that matters.
+DEFAULT_LABEL = "baseline"
+
+
+def existing_outputs(out_dir: Path, label: str) -> list[Path]:
+    """Files a run under `label` would overwrite, found before anything is written.
+
+    These patterns have to stay in step with what is actually written, here and in
+    report.write_outputs, and an artifact type this misses is a file the guard would
+    let a run destroy in silence. So the drift is tested rather than trusted:
+    test_the_guard_sees_every_artifact_a_run_writes performs a real run and asserts
+    this function finds every file it produced.
+
+    The course pattern over-matches, and deliberately. course-<label>-<source>.md
+    cannot be split by filename alone once either half contains a hyphen, so
+    "baseline" also matches course-baseline-rescored-demo.md, which belongs to the
+    label "baseline-rescored". The two errors are not symmetric: over-matching costs
+    a --label or a --force, under-matching costs a committed file. So this errs
+    wide, and the refusal below says these files MATCH the label rather than
+    claiming a run would certainly overwrite each one.
+    """
+    patterns = (
+        f"results-{label}.json",
+        f"report-{label}.md",
+        f"usage-{label}.json",
+        f"compare-{label}.md",
+        f"course-{label}-*.md",
+    )
+    found: set[Path] = set()
+    for pattern in patterns:
+        found.update(out_dir.glob(pattern))
+    return sorted(found)
+
+
+def check_overwrite(out_dir: Path, label: str, explicit: bool, force: bool) -> None:
+    """Refuse to destroy a previous run's output that nobody asked to replace.
+
+    The trap is the default, not reusing a label. --label falls back to "baseline"
+    and --out falls back to the committed evals/output, and "baseline" is where the
+    reference run's artifacts already live, so the command you get by typing nothing
+    overwrites four committed files. "baseline" also READS like a name reserved for
+    that reference, which makes overwriting it feel safe when it is the opposite.
+
+    An explicitly passed --label is left alone, and not merely warned about either.
+    Rerunning a label you named is the documented behaviour (evals/README: a label
+    is the run's name) and it is the ordinary loop while iterating on a prompt.
+    Warning on every iteration of the common case is the crying-wolf failure, and
+    the cost of it is that people stop reading the line that does matter.
+    """
+    if explicit or force:
+        return
+    clashes = existing_outputs(out_dir, label)
+    if not clashes:
+        return
+    print(
+        f"REFUSING TO RUN: no --label was given, so it defaults to {label!r}, and "
+        f"{out_dir} already holds {len(clashes)} file(s) whose names match it:",
+        file=sys.stderr,
+    )
+    for path in clashes:
+        print(f"  {path.name}", file=sys.stderr)
+    print(
+        "Pass --label <name> to write a new run, or --force to overwrite these.",
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--label", default="baseline", help="names the output files")
+    parser.add_argument(
+        "--label",
+        default=None,
+        help=f"names the output files (default: {DEFAULT_LABEL})",
+    )
     parser.add_argument(
         "--source",
         action="append",
@@ -233,6 +307,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--yes", action="store_true", help="skip the spend confirmation prompt")
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="overwrite existing output written under the default label",
+    )
+    parser.add_argument(
         "--compare",
         nargs=2,
         metavar=("BEFORE.json", "AFTER.json"),
@@ -248,9 +327,15 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     args = parser.parse_args(argv)
+    label = DEFAULT_LABEL if args.label is None else args.label
+    # Every path below this writes under `label` except --dry-run, which makes no
+    # calls and writes nothing, so refusing it over an occupied name would be a
+    # false alarm on the one command that is always safe to run.
+    if not args.dry_run:
+        check_overwrite(args.out, label, explicit=args.label is not None, force=args.force)
 
     if args.rescore:
-        path = rescore(args.rescore, args.out, args.label)
+        path = rescore(args.rescore, args.out, label)
         print(f"Wrote {path}")
         return 0
 
@@ -258,7 +343,7 @@ def main(argv: list[str] | None = None) -> int:
         before = json.loads(Path(args.compare[0]).read_text(encoding="utf-8"))
         after = json.loads(Path(args.compare[1]).read_text(encoding="utf-8"))
         text = report.compare_markdown(before, after)
-        out_path = args.out / f"compare-{args.label}.md"
+        out_path = args.out / f"compare-{label}.md"
         args.out.mkdir(parents=True, exist_ok=True)
         out_path.write_text(text, encoding="utf-8")
         print(text)
@@ -364,10 +449,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         # Persist after every course: a later failure must not throw away the
         # measurements a completed course already paid for.
-        written = report.write_outputs(args.out, args.label, results)
+        written = report.write_outputs(args.out, label, results)
 
     usage = usage_snapshot()
-    usage_path = args.out / f"usage-{args.label}.json"
+    usage_path = args.out / f"usage-{label}.json"
     usage_path.write_text(json.dumps(usage, indent=2), encoding="utf-8")
 
     print("\nWrote:")
