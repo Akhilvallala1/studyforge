@@ -35,12 +35,13 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from conftest import clear_todays_tutor_turns
 from sqlalchemy import func, select
 from sqlalchemy import inspect as sa_inspect
 
 from app import days, fsrs, main, metering, models, review, tutor
 from app.concepts import normalize_concept
-from app.db import Base, SessionLocal, init_db
+from app.db import Base, SessionLocal
 from app.llm.base import LLMResult
 from app.llm.fake_provider import FakeProvider
 
@@ -52,27 +53,13 @@ LESSON_CONTENT = (
 
 @pytest.fixture(autouse=True)
 def _clear_todays_turns():
-    """Delete this study day's tutor messages before each test in this file.
+    """Every test in this file is about the tutor, so the day clears before each of them.
 
-    The day-wide cap counts every learner row written today across every concept, and the
-    whole suite shares one SQLite file. Without this, each successful turn in this file
-    would push the next test closer to a cap it never asked to be near, and the file would
-    start failing on nothing but its own length.
-
-    Scoped to today's window rather than to the whole table, because test_tutor_context.py
-    seeds rows at fixed dates in order to prove where the day boundary falls, and those are
-    exactly the rows a blanket delete would take.
+    Autouse is right HERE and wrong in test_usage_attribution.py: see
+    clear_todays_tutor_turns in conftest.py for the rule and for why its two callers couple
+    it differently.
     """
-    init_db()
-    day_start, day_end = days.day_bounds()
-    session = SessionLocal()
-    try:
-        session.query(models.TutorMessage).filter(
-            models.TutorMessage.created_at >= day_start
-        ).filter(models.TutorMessage.created_at < day_end).delete()
-        session.commit()
-    finally:
-        session.close()
+    clear_todays_tutor_turns()
 
 
 # --------------------------------------------------------------------------

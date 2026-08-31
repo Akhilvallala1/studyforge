@@ -14,44 +14,15 @@ import json
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-import pytest
+from conftest import clear_todays_tutor_turns
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
-from app import days, fsrs, generation, main, models, remediation, review, tutor
+from app import fsrs, generation, main, models, remediation, review, tutor
 from app.concepts import normalize_concept
-from app.db import Base, SessionLocal, init_db
+from app.db import Base, SessionLocal
 from app.llm.base import LLMCallError, LLMResult
 from app.llm.fake_provider import FakeProvider
-
-
-@pytest.fixture(autouse=True)
-def _clear_todays_turns():
-    """Delete this study day's tutor messages before each test in this file.
-
-    Autouse rather than folded into _ask_tutor, so a future test that posts to
-    /tutor/messages directly is covered too. Every POST goes through the helper today, so
-    this is insurance rather than a fix, and it is worth having because the failure it
-    prevents is a test that starts failing on nothing but the suite's length: the day-wide
-    cap counts every learner turn written today across every concept, the suite shares one
-    SQLite file, and test_tutor_endpoints.py deliberately seeds runs of them. That failure
-    points at the wrong file and at a change that did not cause it.
-
-    Scoped to today's window rather than the whole table, because test_tutor_context.py
-    seeds rows at fixed dates to prove where the day boundary falls, and a blanket delete
-    would take exactly those.
-    """
-    init_db()
-    day_start, day_end = days.day_bounds()
-    session = SessionLocal()
-    try:
-        session.query(models.TutorMessage).filter(
-            models.TutorMessage.created_at >= day_start
-        ).filter(models.TutorMessage.created_at < day_end).delete()
-        session.commit()
-    finally:
-        session.close()
-
 
 # --------------------------------------------------------------------------
 # Stub providers
@@ -298,7 +269,13 @@ def _seed_taught_concept(
 
 
 def _ask_tutor(client, concept_key: str):
-    """One tutor turn. The day's cap is already clear: see _clear_todays_turns above."""
+    """One tutor turn, with today's cap cleared first so it cannot be refused for length.
+
+    The clearing is coupled to this helper rather than to the file, because only these six
+    tests touch the tutor and the other thirty-odd are about generation and re-teaching
+    attribution. See clear_todays_tutor_turns in conftest.py.
+    """
+    clear_todays_tutor_turns()
     return client.post(
         "/tutor/messages",
         json={"concept_key": concept_key, "message": "I do not follow this part"},
