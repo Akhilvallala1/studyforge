@@ -88,9 +88,17 @@ export function ReteachConcept({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
+  // Set once the server has said this concept is no longer one the learner keeps
+  // missing. That answer is newer than the numbers this row was drawn from, so the row
+  // stops repeating them rather than contradicting the notice printed underneath it.
+  const [recovered, setRecovered] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const wantsFocus = useRef(false);
+  // Kept in step with `note` so a request that resolves second can see what the first
+  // already put on screen. The state variable cannot answer that question: two clicks
+  // landing in one task both close over the render where there was no note.
+  const noteRef = useRef<RemediationNote | null>(initialNote);
 
   const panelId = `reteach-panel-${entry.card_id}`;
   const hasNote = note !== null;
@@ -98,6 +106,22 @@ export function ReteachConcept({
   // Our own call and someone else's look the same from here: work is happening and
   // the button must not start a second one.
   const busy = pending || awaiting;
+
+  /**
+   * Put an explanation on screen, from wherever it came.
+   *
+   * Clearing `awaiting` is part of showing one: whatever produced this note, the
+   * generation that was being waited for has finished. Without that, a click that lost
+   * the race and was told `generation_in_progress` keeps its spinner, which then sits
+   * above the finished explanation insisting it is still being written.
+   */
+  function showNote(next: RemediationNote) {
+    noteRef.current = next;
+    setNote(next);
+    setAwaiting(false);
+    wantsFocus.current = true;
+    setOpen(true);
+  }
 
   // The call is one model round trip that reports no progress, so the honest signal
   // is that time is passing. Same choice GenerateForm makes, and for the same reason:
@@ -127,6 +151,9 @@ export function ReteachConcept({
       }
       if (cancelled) return;
       if (found) {
+        // Written out rather than routed through showNote, which is defined in the
+        // component body and would have to become a dependency of this effect.
+        noteRef.current = found;
         setNote(found);
         setAwaiting(false);
         wantsFocus.current = true;
@@ -169,9 +196,7 @@ export function ReteachConcept({
     try {
       const outcome = await requestRemediation(entry.card_id);
       if (outcome.kind === "note") {
-        setNote(outcome.note);
-        wantsFocus.current = true;
-        setOpen(true);
+        showNote(outcome.note);
         setAnnouncement(`An explanation of ${entry.concept_label} is ready.`);
         return;
       }
@@ -187,23 +212,36 @@ export function ReteachConcept({
         case "cooldown_active":
           // Narrowing has proved there is a note here, so this branch cannot be
           // reached by an absent one however the union grows.
-          setNote(conflict.note);
-          wantsFocus.current = true;
-          setOpen(true);
+          showNote(conflict.note);
           setAnnouncement(`Showing the explanation of ${entry.concept_label} you already have.`);
           break;
         case "generation_in_progress":
+          // A click that lost the race by a hair comes back to find the winner's
+          // explanation already on the page. There is nothing left to wait for, so it
+          // opens what is there rather than raising a spinner above it. Saying nothing
+          // is what keeps the live region honest too: the winner has just announced the
+          // explanation is ready, and announcing that it is being written and then that
+          // it is ready again describes a sequence that did not happen.
+          if (noteRef.current) {
+            wantsFocus.current = true;
+            setOpen(true);
+            break;
+          }
           setAwaiting(true);
           setAnnouncement(`An explanation of ${entry.concept_label} is already being written.`);
           break;
         case "not_flagged": {
-          // Reachable when the list was drawn before the concept recovered. It is
-          // good news, so it reads as good news rather than as a refusal.
-          const recovered =
+          // Reachable when the list was drawn before the concept recovered. It is good
+          // news, so it reads as good news rather than as a refusal, and the row drops
+          // the miss counts it was drawn with: the server has just said they are out of
+          // date, and a stale count beside this notice reads as the page disagreeing
+          // with itself. Nothing replaces them, because nothing here knows the new ones.
+          const message =
             `${entry.concept_label} is no longer one of the concepts you keep missing, ` +
             "so there is nothing to re-teach. It stays in your review queue on its usual schedule.";
-          setNotice(recovered);
-          setAnnouncement(recovered);
+          setRecovered(true);
+          setNotice(message);
+          setAnnouncement(message);
           break;
         }
         default: {
@@ -248,28 +286,37 @@ export function ReteachConcept({
 
   const label = busy
     ? "Writing…"
-    : hasNote
-      ? open
-        ? "Hide explanation"
-        : "Show explanation"
-      : "Re-teach";
+    : recovered
+      ? "Not needed"
+      : hasNote
+        ? open
+          ? "Hide explanation"
+          : "Show explanation"
+        : "Re-teach";
   const accessibleName = busy
     ? `Writing an explanation of ${entry.concept_label}`
-    : hasNote
-      ? open
-        ? `Hide the explanation of ${entry.concept_label}`
-        : `Show the explanation of ${entry.concept_label}`
-      : `Re-teach ${entry.concept_label}`;
+    : recovered
+      ? `${entry.concept_label} no longer needs re-teaching`
+      : hasNote
+        ? open
+          ? `Hide the explanation of ${entry.concept_label}`
+          : `Show the explanation of ${entry.concept_label}`
+        : `Re-teach ${entry.concept_label}`;
 
   return (
     <li className="flex flex-col rounded-lg border border-zinc-200 px-[18px] py-3.5 dark:border-zinc-800">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="text-[15px] font-medium">{entry.concept_label}</div>
-          <div className="mt-0.5 text-[13px] text-zinc-500 dark:text-zinc-400">
-            Missed {entry.missed} of {entry.of} times
-            {entry.is_due && " · due now"}
-          </div>
+          {/* Dropped once the concept has recovered. These counts came from the page
+              load, and the click that set `recovered` came back with something newer
+              saying they no longer describe this concept. */}
+          {!recovered && (
+            <div className="mt-0.5 text-[13px] text-zinc-500 dark:text-zinc-400">
+              Missed {entry.missed} of {entry.of} times
+              {entry.is_due && " · due now"}
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-3">
           <RecallBar retrievability={entry.retrievability} />
@@ -277,11 +324,13 @@ export function ReteachConcept({
             type="button"
             ref={buttonRef}
             onClick={handleClick}
-            disabled={busy}
+            disabled={busy || recovered}
             aria-label={accessibleName}
             aria-expanded={hasNote ? open : undefined}
             aria-controls={hasNote && open ? panelId : undefined}
-            className="rounded-lg border border-zinc-300 px-3.5 py-1.5 text-[13px] font-medium transition-colors hover:border-zinc-500 disabled:cursor-progress disabled:opacity-60 dark:border-zinc-700 dark:hover:border-zinc-500"
+            className={`rounded-lg border border-zinc-300 px-3.5 py-1.5 text-[13px] font-medium transition-colors hover:border-zinc-500 disabled:opacity-60 dark:border-zinc-700 dark:hover:border-zinc-500 ${
+              busy ? "disabled:cursor-progress" : "disabled:cursor-not-allowed"
+            }`}
           >
             {label}
           </button>

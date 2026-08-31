@@ -37,6 +37,11 @@
   --concept-muted-text: #52525b;
   --concept-column-label: #52525b;
   --concept-column-sublabel: #52525b;
+  /* The card surface, opaque. It is the exact colour the contrast figures above were
+     measured against (zinc-50 at 60% over white); the scroll hint needs it as a solid
+     value because it paints the map's own background over its shadows. */
+  --concept-surface: #fcfcfc;
+  --concept-scroll-shadow: rgba(24, 24, 27, 0.18);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -51,7 +56,40 @@
     --concept-muted-text: #a1a1aa;
     --concept-column-label: #a1a1aa;
     --concept-column-sublabel: #a1a1aa;
+    --concept-surface: #101011;
+    --concept-scroll-shadow: rgba(0, 0, 0, 0.6);
   }
+}
+
+/*
+ * A horizontal scroll affordance that appears only when there is somewhere to scroll.
+ *
+ * A clipped concept map reads as broken rather than as scrollable, and the map is wide
+ * enough to clip on a laptop. The two `local` gradients are painted in the element's own
+ * surface colour and travel with the content, so each one covers the shadow at the end
+ * that is already fully in view; the two `scroll` shadows are fixed to the box. When the
+ * content fits, both covers sit over both shadows and nothing is drawn. No measuring, no
+ * script, and nothing to keep in sync with the map's width.
+ */
+.scroll-hint-x {
+  background-color: var(--concept-surface);
+  background-image:
+    linear-gradient(to right, var(--concept-surface) 45%, rgba(255, 255, 255, 0)),
+    linear-gradient(to left, var(--concept-surface) 45%, rgba(255, 255, 255, 0)),
+    radial-gradient(farthest-side at 0 50%, var(--concept-scroll-shadow), rgba(255, 255, 255, 0)),
+    radial-gradient(farthest-side at 100% 50%, var(--concept-scroll-shadow), rgba(255, 255, 255, 0));
+  background-position:
+    0 0,
+    100% 0,
+    0 0,
+    100% 0;
+  background-repeat: no-repeat;
+  background-size:
+    48px 100%,
+    48px 100%,
+    18px 100%,
+    18px 100%;
+  background-attachment: local, local, scroll, scroll;
 }
 
 body {
