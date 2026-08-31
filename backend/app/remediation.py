@@ -310,6 +310,84 @@ def build_prompt(
 
 
 # --------------------------------------------------------------------------
+# Backfilling the calls recorded before attribution existed
+# --------------------------------------------------------------------------
+
+# Marks the one-time backfill as done, in app_settings alongside the acked cost alert.
+BACKFILL_SETTING = "remediation_course_backfill_v1"
+
+
+def backfill_course_ids(session: Session) -> int:
+    """Attribute re-teaching calls made before anything attributed them. Returns how many.
+
+    Every remediation row written before this feature carries course_id NULL, because
+    metering never set one and the generation backfill only ever touches its own run.
+    Leaving them would put a NEW false sentence on the EXACT rows the learner already
+    complained about: they would group under "no single course accounts for this" while
+    sole_course_id, on the very same request that renders that sentence, names the one
+    course that teaches the concept. Same rows, same page, a different wrong answer.
+
+    A row is only reached through the note it paid for. models.RemediationNote carries
+    the same run_id as llm_calls and the card, and the card carries the concept. A call
+    that FAILED wrote no note (see generate_note), so nothing records what concept it
+    was for and nothing here can attribute it; those rows stay NULL, and the /usage copy
+    for that group names both reasons a row can be in it.
+
+    Runs once, recorded in app_settings, and deliberately not on every startup. After
+    this feature a NULL course id means "no single course owned this when it was
+    charged", which is a decision taken at call time. Re-deriving it later from a
+    database that has since gained or lost a course would quietly overwrite that
+    decision with a different day's answer, which is the same class of invention this
+    whole change exists to remove.
+
+    Safe on an existing database: it only ever fills a NULL, never rewrites a course id
+    that is already set, and it writes nothing at all when there is nothing to fix.
+
+    Does not commit; the caller owns the transaction.
+    """
+    if session.get(models.AppSetting, BACKFILL_SETTING) is not None:
+        return 0
+
+    rows = (
+        session.query(models.LlmCall)
+        .filter(models.LlmCall.stage == REMEDIATION_STAGE)
+        .filter(models.LlmCall.course_id.is_(None))
+        .all()
+    )
+    concept_by_run: dict[str, str] = {}
+    if rows:
+        notes = (
+            session.query(models.RemediationNote)
+            .filter(models.RemediationNote.run_id.in_({row.run_id for row in rows}))
+            .all()
+        )
+        concept_by_run = {note.run_id: note.concept_key for note in notes if note.run_id}
+
+    # Resolved once per concept rather than once per row: teaching_lessons reads every
+    # lesson in the database, and a concept re-taught several times would otherwise
+    # read them all again for each of its calls.
+    course_by_concept: dict[str, int | None] = {}
+    attributed = 0
+    for row in rows:
+        concept_key = concept_by_run.get(row.run_id)
+        if not concept_key:
+            continue
+        if concept_key not in course_by_concept:
+            course_by_concept[concept_key] = sole_course_id(
+                session, teaching_lessons(session, concept_key)
+            )
+        course_id = course_by_concept[concept_key]
+        if course_id is None:
+            continue
+        row.course_id = course_id
+        attributed += 1
+
+    session.add(models.AppSetting(key=BACKFILL_SETTING, value=str(attributed)))
+    session.flush()
+    return attributed
+
+
+# --------------------------------------------------------------------------
 # Parsing
 # --------------------------------------------------------------------------
 

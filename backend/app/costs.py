@@ -33,6 +33,16 @@ def _lookup_pricing(model: str) -> tuple[float, float, bool]:
     return default_in, default_out, True
 
 
+def is_priced(model: str) -> bool:
+    """Whether PRICING knows this model, rather than the env fallback standing in.
+
+    Exists so /usage can say which half of a call's cost was the estimate: an unknown
+    model id means the PRICE was guessed, which is a different sentence to the learner
+    than a missing token count, and the two share one flag on the row.
+    """
+    return not _lookup_pricing(model)[2]
+
+
 def estimate_cost(model: str, in_toks: int | None, out_toks: int | None) -> tuple[float, bool]:
     """Estimate the USD cost of a call. Returns (cost_usd, approximate).
 

@@ -8,7 +8,7 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import days, fsrs, generation, ingest, models, remediation, review
@@ -22,7 +22,8 @@ from app.attempts import (
     iso_utc,
 )
 from app.concepts import normalize_concept
-from app.db import get_session, init_db
+from app.costs import is_priced
+from app.db import SessionLocal, get_session, init_db
 from app.llm import get_provider
 from app.llm.base import LLMCallError
 from app.metering import CostLimitExceeded, MeteredLLM, acknowledge_alert, alert_state
@@ -50,6 +51,19 @@ def startup() -> None:
         handler.setLevel(logging.INFO)
         usage_logger.addHandler(handler)
         usage_logger.setLevel(logging.INFO)
+
+    # One-time repair of re-teaching calls recorded before they were attributed to a
+    # course. On the first boot after upgrading; a no-op on every boot after that.
+    session = SessionLocal()
+    try:
+        attributed = remediation.backfill_course_ids(session)
+        session.commit()
+    finally:
+        session.close()
+    if attributed:
+        logger.info(
+            "Attributed %s re-teaching call(s) recorded before attribution existed", attributed
+        )
 
 
 class GenerateRequest(BaseModel):
@@ -771,12 +785,14 @@ GROUP_LABELS = {
 }
 
 GROUP_NOTES = {
-    # Says nothing about whether these calls succeeded. A re-teaching call that failed
-    # still records the tokens it spent, and lands in this group like any other.
+    # Both causes are named because both really occur, and the group would otherwise
+    # assert the first one about rows where the second is true. Says nothing about
+    # whether these calls succeeded, either: a re-teaching call that failed still
+    # records the tokens it spent, and lands in this group like any other.
     GROUP_REMEDIATION: (
-        "Re-teaching a concept is charged to the course that teaches it. These calls "
-        "re-taught a concept that no single course accounts for, usually because more than "
-        "one course teaches it, so there is no one course to charge them to."
+        "Re-teaching a concept is charged to the course that teaches it. These calls could "
+        "not be charged to one course: either more than one course teaches the concept, or "
+        "the call failed before anything recorded which concept it was for."
     ),
     # "or from one still running" is not padding. Generation is synchronous and can take
     # minutes, and its rows carry no course until it finishes, so a learner who opens
@@ -809,23 +825,39 @@ APPROXIMATE_NOTES = {
 def _approximation_causes(session: Session) -> tuple[bool, bool]:
     """(a token count was estimated, a price was estimated), across all recorded calls.
 
-    llm_calls stores one boolean for two different causes, and the page named only
-    the first of them. A self-hosted model whose id is not in costs.PRICING reports
-    exact token counts and gets an estimated PRICE, and was told its token counts
-    were the estimate.
+    llm_calls stores one boolean for two different causes, and the page named only the
+    first of them. A model whose id is not in costs.PRICING reports exact token counts
+    and gets an estimated PRICE, and was told its token counts were the estimate.
 
-    The two stay separable from what is already recorded, with no new column:
-    metering sets the flag for a missing token count or for an unpriced model, so an
-    approximate row with both counts present can only be the unpriced case.
+    The two stay separable from what is already recorded, with no new column. A row
+    with both counts present is flagged only when the model had no price, so it is the
+    price case outright. A row missing a count is the token case, and is ALSO the price
+    case when an unpriced model still charged for the count that was present: cost above
+    zero is what proves a price was applied at all, since an unpaid provider always
+    records zero and a paid one with no counts at all prices zero tokens at any rate.
     """
-    approximate = session.query(models.LlmCall.id).filter(models.LlmCall.approximate.is_(True))
-    estimated_tokens = approximate.filter(
-        or_(models.LlmCall.input_tokens.is_(None), models.LlmCall.output_tokens.is_(None))
+    rows = (
+        session.query(
+            models.LlmCall.model,
+            models.LlmCall.input_tokens,
+            models.LlmCall.output_tokens,
+            models.LlmCall.estimated_cost_usd,
+        )
+        .filter(models.LlmCall.approximate.is_(True))
+        .all()
     )
-    estimated_price = approximate.filter(
-        models.LlmCall.input_tokens.is_not(None), models.LlmCall.output_tokens.is_not(None)
-    )
-    return estimated_tokens.first() is not None, estimated_price.first() is not None
+    estimated_tokens = False
+    estimated_price = False
+    for model, input_tokens, output_tokens, cost in rows:
+        if input_tokens is None or output_tokens is None:
+            estimated_tokens = True
+            if cost and cost > 0 and not is_priced(model):
+                estimated_price = True
+        else:
+            estimated_price = True
+        if estimated_tokens and estimated_price:
+            break
+    return estimated_tokens, estimated_price
 
 
 def _unattributed_group(stage: str) -> str:

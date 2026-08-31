@@ -21,6 +21,7 @@ from app import fsrs, generation, main, models, remediation, review
 from app.concepts import normalize_concept
 from app.db import Base, SessionLocal
 from app.llm.base import LLMCallError, LLMResult
+from app.llm.fake_provider import FakeProvider
 
 # --------------------------------------------------------------------------
 # Stub providers
@@ -125,37 +126,50 @@ class UnpricedPaidProvider:
 # --------------------------------------------------------------------------
 
 
-def _seed_struggling_concept(course_count: int) -> tuple[int, list[int]]:
+def _lesson_teaching(label: str, position: int) -> models.Lesson:
+    lesson = models.Lesson(
+        title=f"Lesson {position} on {label}",
+        position=position,
+        content=f"{label} is the idea under test, explained at some length.",
+        concepts=[label],
+    )
+    lesson.quiz_items.append(
+        models.QuizItem(
+            question=f"What is {label}? (lesson {position})",
+            kind="short",
+            options=[],
+            answer="the idea under test",
+            concept=label,
+        )
+    )
+    return lesson
+
+
+def _seed_struggling_concept(
+    course_count: int, lessons_per_course: list[int] | None = None
+) -> tuple[int, str, list[int]]:
     """One concept taught by `course_count` courses, rated badly enough to be flagged.
+
+    lessons_per_course says how many lessons of each course teach it, defaulting to one
+    each. More than one matters because MAX_LESSONS trims what the prompt is grounded
+    in, and attribution must not be trimmed with it.
 
     The label is unique per call because concept keys are global and the test database
     is shared across the suite: a fixed label would let one test's courses decide
     whether another test's concept can be traced to exactly one course.
     """
+    counts = lessons_per_course or [1] * course_count
+    assert len(counts) == course_count
     label = f"Concept {uuid4().hex[:8]}"
     key = normalize_concept(label)
     course_ids: list[int] = []
     session = SessionLocal()
     try:
-        for index in range(course_count):
+        for index, lesson_count in enumerate(counts):
             course = models.Course(title=f"Course {index} teaching {label}", description="")
             module = models.Module(title="Module 1", position=0)
-            lesson = models.Lesson(
-                title=f"Lesson {index} on {label}",
-                position=0,
-                content=f"{label} is the idea under test, explained at some length.",
-                concepts=[label],
-            )
-            lesson.quiz_items.append(
-                models.QuizItem(
-                    question=f"What is {label}?",
-                    kind="short",
-                    options=[],
-                    answer="the idea under test",
-                    concept=label,
-                )
-            )
-            module.lessons.append(lesson)
+            for position in range(lesson_count):
+                module.lessons.append(_lesson_teaching(label, position))
             course.modules.append(module)
             session.add(course)
             session.commit()
@@ -168,7 +182,17 @@ def _seed_struggling_concept(course_count: int) -> tuple[int, list[int]]:
             review.record_review(session, key, label, rating, now=moment)
             moment += timedelta(days=1)
         session.commit()
-        return review.get_card(session, key).id, course_ids
+        card = review.get_card(session, key)
+        # SQLite hands a deleted row's id to the next insert, and some tests in this
+        # suite delete review cards, so a brand new card can arrive already carrying
+        # another test's remedial notes and answer the endpoint with their cooldown.
+        # The app itself never deletes a card, so this is test hygiene, not a guard
+        # against anything production does.
+        session.query(models.RemediationNote).filter(
+            models.RemediationNote.card_id == card.id
+        ).delete()
+        session.commit()
+        return card.id, key, course_ids
     finally:
         session.close()
 
@@ -186,12 +210,20 @@ def _newest_remediation_call() -> models.LlmCall:
         session.close()
 
 
+def _group_of(groups: list[dict], group: str) -> dict | None:
+    return next((row for row in groups if row["group"] == group), None)
+
+
+def _course_group_of(groups: list[dict], course_id: int) -> dict | None:
+    return next((row for row in groups if row["course_id"] == course_id), None)
+
+
 def _group(usage: dict, group: str) -> dict | None:
-    return next((row for row in usage["per_course"] if row["group"] == group), None)
+    return _group_of(usage["per_course"], group)
 
 
 def _course_group(usage: dict, course_id: int) -> dict | None:
-    return next((row for row in usage["per_course"] if row["course_id"] == course_id), None)
+    return _course_group_of(usage["per_course"], course_id)
 
 
 def _calls_in(row: dict | None) -> int:
@@ -235,7 +267,7 @@ def test_reteach_is_charged_to_the_one_course_that_teaches_the_concept(client, m
     """The learner looks for re-teaching spend under the course they were re-taught."""
     provider = ReteachProvider()
     monkeypatch.setattr(main, "get_provider", lambda: provider)
-    card_id, (course_id,) = _seed_struggling_concept(1)
+    card_id, _, (course_id,) = _seed_struggling_concept(1)
 
     assert client.post(f"/review/cards/{card_id}/remediation").status_code == 200
     assert provider.calls == 1
@@ -263,7 +295,7 @@ def test_reteach_across_two_courses_stays_unattributed_and_is_not_called_a_failu
     """
     provider = ReteachProvider()
     monkeypatch.setattr(main, "get_provider", lambda: provider)
-    card_id, course_ids = _seed_struggling_concept(2)
+    card_id, _, course_ids = _seed_struggling_concept(2)
 
     failed_before = _calls_in(_group(client.get("/usage").json(), "failed_run"))
 
@@ -276,14 +308,45 @@ def test_reteach_across_two_courses_stays_unattributed_and_is_not_called_a_failu
     assert reteach["course_id"] is None
     assert reteach["label"] == "Re-teaching (no single course)"
     assert reteach["note"] == main.GROUP_NOTES[main.GROUP_REMEDIATION]
-    # The whole point: this spend is not described as a failure of any kind.
-    assert "fail" not in reteach["note"].lower()
-    assert "no one course to charge them to" in reteach["note"]
+    # The whole point: this call is not described as a generation that failed.
+    assert "generation run" not in reteach["note"]
+    assert "could not be charged to one course" in reteach["note"]
 
     # It did not leak into the failed-run bucket, and neither course was charged.
     assert _calls_in(_group(usage, "failed_run")) == failed_before
     for course_id in course_ids:
         assert _course_group(usage, course_id) is None
+
+
+def test_attribution_ignores_the_prompts_lesson_budget(client, monkeypatch):
+    """Trimming attribution to MAX_LESSONS would charge one course for shared spend.
+
+    Course A teaches the concept in MAX_LESSONS lessons and course B in one more, so
+    the trimmed set sees only A and names it, while the whole set sees both and
+    correctly names neither. This is what the teaching_lessons/trim_material split is
+    for, and without this case every test still passes when attribution is trimmed.
+    """
+    provider = ReteachProvider()
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    card_id, key, (course_a, _course_b) = _seed_struggling_concept(
+        2, lessons_per_course=[remediation.MAX_LESSONS, 1]
+    )
+
+    session = SessionLocal()
+    try:
+        matches = remediation.teaching_lessons(session, key)
+        assert len(matches) == remediation.MAX_LESSONS + 1
+        # The trimmed set names a single course. That is the wrong answer, and it is
+        # the answer attribution would give if it shared the prompt's budget.
+        assert remediation.sole_course_id(session, matches[: remediation.MAX_LESSONS]) is not None
+        assert remediation.sole_course_id(session, matches) is None
+    finally:
+        session.close()
+
+    reteach = client.post(f"/review/cards/{card_id}/remediation")
+    assert reteach.status_code == 200, reteach.json()
+    assert _newest_remediation_call().course_id is None
+    assert _course_group(client.get("/usage").json(), course_a) is None
 
 
 def test_a_generation_run_that_really_failed_is_still_unattributed_because_it_failed(
@@ -322,6 +385,171 @@ def test_only_generation_stages_are_covered_by_the_failed_run_sentence():
     for stage in generation.STAGES:
         assert main._unattributed_group(stage) == main.GROUP_FAILED_RUN
     assert main._unattributed_group(remediation.REMEDIATION_STAGE) == main.GROUP_REMEDIATION
+
+
+def test_every_stage_actually_recorded_is_one_the_page_can_explain(client, monkeypatch):
+    """The constant above can be honoured and still be wrong about what gets written.
+
+    Pinning STAGES only fires if someone edits STAGES. A stage passed straight to
+    meter.generate() would never touch it, and would land in a group whose sentence
+    was written about something else. So this reads the stages the app ACTUALLY
+    recorded, after driving both the paths that record any.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: FakeProvider())
+    assert client.post("/courses/generate", json={"text": "Whales breathe air."}).status_code == 200
+
+    monkeypatch.setattr(main, "get_provider", lambda: ReteachProvider())
+    card_id, _, _ = _seed_struggling_concept(1)
+    assert client.post(f"/review/cards/{card_id}/remediation").status_code == 200
+
+    session = SessionLocal()
+    try:
+        recorded = {stage for (stage,) in session.query(models.LlmCall.stage).distinct()}
+    finally:
+        session.close()
+
+    explained = set(generation.STAGES) | {remediation.REMEDIATION_STAGE}
+    assert explained <= recorded, "the scenario above should exercise every known stage"
+    assert recorded <= explained, f"stage with no /usage copy: {sorted(recorded - explained)}"
+
+
+# --------------------------------------------------------------------------
+# The calls recorded before anything attributed them
+# --------------------------------------------------------------------------
+
+
+def _legacy_reteach(session, label: str, course_count: int, wrote_a_note: bool) -> str:
+    """A re-teaching call shaped the way one looked before attribution existed.
+
+    course_id NULL on the llm_calls row, and a RemediationNote sharing its run_id,
+    unless the call failed: a failed call wrote no note, which is what leaves its
+    concept unrecoverable. Returns the run_id.
+    """
+    key = normalize_concept(label)
+    for index in range(course_count):
+        course = models.Course(title=f"Course {index} teaching {label}", description="")
+        module = models.Module(title="Module 1", position=0)
+        module.lessons.append(_lesson_teaching(label, 0))
+        course.modules.append(module)
+        session.add(course)
+    session.commit()
+
+    card = review.get_card(session, key)
+    if card is None:
+        card = models.ReviewCard(concept_key=key, concept_label=label)
+        session.add(card)
+        session.commit()
+
+    run_id = uuid4().hex
+    if wrote_a_note:
+        session.add(
+            models.RemediationNote(
+                card_id=card.id,
+                concept_key=key,
+                concept_label=label,
+                content="## In simpler terms\n\nx\n\n## Worked example\n\ny",
+                run_id=run_id,
+            )
+        )
+    _record_call(session, run_id=run_id, stage=remediation.REMEDIATION_STAGE, course_id=None)
+    session.commit()
+    return run_id
+
+
+def _call_for_run(session, run_id: str) -> models.LlmCall:
+    return session.query(models.LlmCall).filter(models.LlmCall.run_id == run_id).one()
+
+
+def test_backfill_attributes_legacy_reteaches_that_one_course_explains():
+    """QA's seven rows, given a second false sentence by the fix meant to help them.
+
+    Before the backfill these group under "could not be charged to one course" while
+    sole_course_id, on the same request, names the course. The page must not be able to
+    contradict itself like that, and the data is what has to change.
+    """
+    session = _isolated_session()
+    try:
+        run_id = _legacy_reteach(session, "Bayes rule", course_count=1, wrote_a_note=True)
+        course_id = session.query(models.Course).one().id
+
+        # The state the reviewer found: attributable, and not attributed.
+        assert _call_for_run(session, run_id).course_id is None
+        assert _group_of(main._spend_groups(session), "remediation") is not None
+
+        assert remediation.backfill_course_ids(session) == 1
+        session.commit()
+
+        assert _call_for_run(session, run_id).course_id == course_id
+        groups = main._spend_groups(session)
+        assert _group_of(groups, "remediation") is None
+        assert _course_group_of(groups, course_id)["calls"] == 1
+    finally:
+        session.close()
+
+
+def test_backfill_leaves_alone_what_it_cannot_honestly_name():
+    """Two courses is ambiguous; a failed call recorded no concept at all.
+
+    Both stay NULL, and the group's sentence has to cover both, since neither is the
+    "more than one course teaches it" case on its own.
+    """
+    session = _isolated_session()
+    try:
+        ambiguous = _legacy_reteach(session, "Gradient descent", 2, wrote_a_note=True)
+        no_note = _legacy_reteach(session, "Chain rule", 1, wrote_a_note=False)
+
+        assert remediation.backfill_course_ids(session) == 0
+        session.commit()
+
+        assert _call_for_run(session, ambiguous).course_id is None
+        assert _call_for_run(session, no_note).course_id is None
+        assert _group_of(main._spend_groups(session), "remediation")["calls"] == 2
+
+        note = main.GROUP_NOTES[main.GROUP_REMEDIATION]
+        assert "more than one course teaches the concept" in note
+        assert "failed before anything recorded which concept it was for" in note
+    finally:
+        session.close()
+
+
+def test_backfill_runs_once_and_never_rewrites_an_attribution():
+    """A NULL course id after this feature is a decision taken at call time.
+
+    Re-deriving it later, from a database that has since gained or lost a course, would
+    overwrite that decision with a different day's answer. So the backfill records that
+    it ran, and a second call does nothing at all.
+    """
+    session = _isolated_session()
+    try:
+        run_id = _legacy_reteach(session, "Entropy", course_count=1, wrote_a_note=True)
+        assert remediation.backfill_course_ids(session) == 1
+        session.commit()
+        attributed = _call_for_run(session, run_id).course_id
+        assert attributed is not None
+        assert session.get(models.AppSetting, remediation.BACKFILL_SETTING) is not None
+
+        # A second course starts teaching the concept, which would make it ambiguous.
+        _legacy_reteach(session, "Entropy", course_count=1, wrote_a_note=False)
+
+        assert remediation.backfill_course_ids(session) == 0
+        session.commit()
+        assert _call_for_run(session, run_id).course_id == attributed
+    finally:
+        session.close()
+
+
+def test_backfill_already_ran_against_the_shared_database(client):
+    """Safe on an existing database, including the ordinary case of nothing to fix.
+
+    The client fixture boots the app against the shared test database, so startup has
+    already run the backfill there: it must have left its marker and no damage.
+    """
+    session = SessionLocal()
+    try:
+        assert session.get(models.AppSetting, remediation.BACKFILL_SETTING) is not None
+        assert remediation.backfill_course_ids(session) == 0
+    finally:
+        session.close()
 
 
 # --------------------------------------------------------------------------
@@ -367,6 +595,36 @@ def test_approximate_notice_names_both_causes_when_both_happened():
         note = main.APPROXIMATE_NOTES[(True, True)]
         assert "pricing table" in note
         assert "missing an exact token count" in note
+    finally:
+        session.close()
+
+
+def test_one_call_can_carry_both_causes_at_once():
+    """A single unpriced call that lost one of its two counts is both, not just tokens.
+
+    The count it kept was still priced at a guessed rate, and a non-zero cost is what
+    proves a rate was applied: an unpaid provider always records zero, and a paid call
+    that lost BOTH counts prices zero tokens, so no rate reached the page either way.
+    """
+    session = _isolated_session()
+    try:
+        _record_call(session, model="fake", output_tokens=None, approximate=True)
+        assert main._approximation_causes(session) == (True, True)
+    finally:
+        session.close()
+
+    session = _isolated_session()
+    try:
+        # Both counts gone: the cost is zero whatever the rate, so no price is claimed.
+        _record_call(
+            session,
+            model="fake",
+            input_tokens=None,
+            output_tokens=None,
+            estimated_cost_usd=0.0,
+            approximate=True,
+        )
+        assert main._approximation_causes(session) == (True, False)
     finally:
         session.close()
 
