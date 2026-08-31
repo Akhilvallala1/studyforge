@@ -141,10 +141,18 @@ def test_the_second_lesson_grades_the_shared_concept(client, shared):
 def test_a_miss_in_the_second_lesson_reaches_the_card(client, shared):
     """The recovered answer has to move the card, not merely show up in a log.
 
-    A correct repeat on the same day leaves stability exactly where it is, because
-    FSRS clamps the short-term increase to 1.0, so the schedule is asserted on the
-    case where the discarded evidence provably changed it: a miss in the second
-    lesson drops the card into relearning and counts the lapse the bug hid.
+    Which effect there is to assert on depends on the first rating, so this takes
+    the case where it is unambiguous. Had both lessons been answered correctly,
+    stability would have come out flat, but only from that starting point: the
+    same-day Good increase is clamped up to 1.0 once stability is above 2.121, and
+    initial_stability(GOOD) is 2.3065, just past that line. From a first rating of
+    Hard (1.293) or Again (0.212) the same correct repeat does raise stability, by
+    about 3% and 16%. Only `due` moves in every case, forward by the wall-clock gap
+    between the two completions, which here is a fraction of a second.
+
+    A miss is asserted on instead because its effect does not depend on where the
+    card started: it drops into relearning, stability falls, and the lapse the bug
+    used to hide is counted.
     """
     (a_lesson, a_item, a_answer), (b_lesson, b_item, _) = shared
     _answer(client, a_item, a_answer)

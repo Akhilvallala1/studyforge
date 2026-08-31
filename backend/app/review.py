@@ -207,6 +207,10 @@ def record_review(
         weights_hash=fsrs.WEIGHTS_HASH,
     )
     session.add(log)
+    # Load-bearing for idempotence, not only for assigning log.id. SessionLocal sets
+    # autoflush=False, so without this the row stays invisible to the attempt_ids
+    # query in _graded_attempt_ids, and two grade_lesson calls inside one uncommitted
+    # session would rate the same attempt twice.
     session.flush()
     return log
 
