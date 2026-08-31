@@ -2,9 +2,15 @@
 
 import json
 
-from app import generation, remediation
+from app import generation, remediation, tutor
 from app.llm import get_provider
-from app.llm.fake_provider import HOSTILE_LESSON_TITLE, FakeProvider
+from app.llm.fake_provider import (
+    HOSTILE_LESSON_TITLE,
+    OUTLINE_MARKER,
+    REMEDIATION_MARKER,
+    TUTOR_MARKER,
+    FakeProvider,
+)
 
 
 def test_get_provider_selects_fake(monkeypatch):
@@ -41,6 +47,23 @@ def _remediation_prompt(concept="Gradient Descent", lesson="Optimization Basics"
     )
 
 
+def _tutor_prompt(question="explain this", concept="Gradient Descent"):
+    """Built through the real build_prompt, so the fake is fed what production sends."""
+    return tutor.build_prompt(
+        tutor.TutorContext(
+            concept_label=concept,
+            lessons=[
+                tutor.TutorLesson(title="Optimization Basics", content="Some lesson text.")
+            ],
+            # Question-only, which is the common case: answer keys are withheld under
+            # an open retrieval.
+            items=[tutor.TutorItem(question="What does it minimize?")],
+        ),
+        [],
+        question,
+    )
+
+
 def test_fake_provider_answers_every_live_system_prompt():
     """The drift guard. Dispatch is by phrase, so the phrases are fed in for real.
 
@@ -67,6 +90,41 @@ def test_fake_provider_answers_every_live_system_prompt():
     )
     assert "In simpler terms" in content
     assert "Worked example" in content
+
+    # parse_reply raises unless `answer` is present and non-empty.
+    reply = tutor.parse_reply(
+        provider.generate(tutor.TUTOR_SYSTEM, _tutor_prompt()).text
+    )
+    assert reply.answer
+
+
+def test_the_stage_markers_are_mutually_exclusive():
+    """Dispatch is first-match on a chain, so one prompt must match exactly one marker.
+
+    TUTOR_SYSTEM containing "curriculum designer" or "re-teaching one concept" would
+    route the tutor to a branch whose JSON parse_reply cannot read, and the symptom
+    would be a 502 that looks like the network. Checked against the live prompts so
+    that rewording any of them fails here.
+    """
+    systems = {
+        "outline": generation.outline_system(4),
+        "lesson": generation.LESSON_SYSTEM,
+        "remediation": remediation.REMEDIATION_SYSTEM,
+        "tutor": tutor.TUTOR_SYSTEM,
+    }
+    matched = {
+        name: [
+            marker
+            for marker in (OUTLINE_MARKER, REMEDIATION_MARKER, TUTOR_MARKER)
+            if marker in system
+        ]
+        for name, system in systems.items()
+    }
+    assert matched["outline"] == [OUTLINE_MARKER]
+    assert matched["remediation"] == [REMEDIATION_MARKER]
+    assert matched["tutor"] == [TUTOR_MARKER]
+    # The lesson stage is the fall-through and deliberately matches nothing.
+    assert matched["lesson"] == []
 
 
 def test_fake_remediation_is_deterministic_and_concept_sensitive():
@@ -98,6 +156,60 @@ def test_fake_remediation_carries_hostile_markdown_for_the_hostile_concept():
         provider.generate(remediation.REMEDIATION_SYSTEM, _remediation_prompt("Recursion")).text
     )
     assert "<script>" not in benign["worked_example"]
+
+
+def _reply(provider, question, concept="Gradient Descent"):
+    return tutor.parse_reply(
+        provider.generate(tutor.TUTOR_SYSTEM, _tutor_prompt(question, concept)).text
+    )
+
+
+def test_fake_tutor_produces_every_shape_the_reply_schema_allows():
+    """`beyond` and `check` are both optional, so all four combinations need fixtures.
+
+    A fake that only ever produced one shape would leave the other rendering paths
+    unreachable offline, which is how the frontend ends up with a branch nobody has
+    ever seen. See the module docstring for the phrases that drive each shape.
+    """
+    provider = FakeProvider()
+
+    plain = _reply(provider, "how does this work?")
+    assert plain.answer and plain.check and not plain.beyond
+
+    with_beyond = _reply(provider, "what is beyond this?")
+    assert with_beyond.answer and with_beyond.beyond and with_beyond.check
+
+    answer_only = _reply(provider, "just tell me how it works")
+    assert answer_only.answer and not answer_only.beyond and not answer_only.check
+
+    beyond_no_check = _reply(provider, "just tell me what is beyond this")
+    assert beyond_no_check.answer and beyond_no_check.beyond and not beyond_no_check.check
+
+
+def test_fake_tutor_beyond_survives_the_cap_intact():
+    """The fixture is written to sit inside the cap, so QA sees a whole aside."""
+    reply = _reply(FakeProvider(), "what is beyond this?")
+    assert reply.beyond == tutor.truncate_beyond(reply.beyond)
+    assert len(reply.beyond) <= tutor.MAX_BEYOND_CHARS
+
+
+def test_fake_tutor_is_deterministic_and_concept_sensitive():
+    provider = FakeProvider()
+    first = _reply(provider, "explain", "Backpropagation")
+    again = _reply(provider, "explain", "Backpropagation")
+    other = _reply(provider, "explain", "Quorum Reads")
+
+    assert first == again
+    assert first != other
+    assert "Backpropagation" in first.answer
+    assert "Quorum Reads" in other.answer
+
+
+def test_fake_tutor_carries_hostile_markdown_for_the_hostile_concept():
+    """A tutor answer is model-written markdown in the browser, like a lesson is."""
+    provider = FakeProvider()
+    assert "<script>alert(1)</script>" in _reply(provider, "explain", HOSTILE_LESSON_TITLE).answer
+    assert "<script>" not in _reply(provider, "explain", "Recursion").answer
 
 
 def test_generate_endpoint_with_fake_provider(client, monkeypatch):

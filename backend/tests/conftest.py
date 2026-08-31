@@ -31,6 +31,12 @@ class StubPaidProvider:
     Produces a minimal but valid outline/lesson JSON pair (one module, one lesson)
     so it can drive the full generate_course pipeline like the fake provider, while
     reporting fixed, non-zero token counts so cost accrues predictably.
+
+    It dispatches by system-prompt phrase and falls through to the lesson shape, the
+    same way FakeProvider does, and it carries the same hazard: a stage with no
+    branch here answers with lesson JSON, the caller fails to parse it, and a cost
+    test for that stage exercises the FAILURE path while still passing, because a
+    failed call is metered too. The tutor branch below exists for that reason.
     """
 
     name = "anthropic"
@@ -58,6 +64,14 @@ class StubPaidProvider:
                     "modules": [
                         {"title": "Module 1", "lessons": [{"title": "Lesson A", "summary": "s"}]}
                     ],
+                }
+            )
+        elif "answering a learner's question" in system:
+            text = json.dumps(
+                {
+                    "answer": "Stub tutor answer, grounded in your course.",
+                    "beyond": "Stub aside your course does not cover.",
+                    "check": "What does it take in?",
                 }
             )
         else:
