@@ -17,7 +17,7 @@ from uuid import uuid4
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
-from app import fsrs, generation, main, models, remediation, review
+from app import days, fsrs, generation, main, models, remediation, review, tutor
 from app.concepts import normalize_concept
 from app.db import Base, SessionLocal
 from app.llm.base import LLMCallError, LLMResult
@@ -47,6 +47,42 @@ class ReteachProvider:
             }
         )
         return LLMResult(text=text, input_tokens=120, output_tokens=60)
+
+
+class TutorTurnProvider:
+    """Returns a well-formed tutor reply, with exact token counts and no price."""
+
+    name = "fake"
+    model = "tutor-model"
+    is_paid = False
+
+    def __init__(self):
+        self.calls = 0
+
+    def generate(self, system: str, prompt: str, max_tokens: int = 64000):
+        self.calls += 1
+        text = json.dumps(
+            {
+                "answer": "The idea again, grounded in your course.",
+                "check": "What does it take in, and what does it give back?",
+            }
+        )
+        return LLMResult(text=text, input_tokens=110, output_tokens=55)
+
+
+class FailingTutorProvider:
+    """A tutor call that dies in transport, after the meter has already been built."""
+
+    name = "fake"
+    model = "tutor-model"
+    is_paid = False
+
+    def __init__(self):
+        self.calls = 0
+
+    def generate(self, system: str, prompt: str, max_tokens: int = 64000):
+        self.calls += 1
+        raise LLMCallError("simulated tutor failure", input_tokens=30, output_tokens=0)
 
 
 class OutlineThenFails:
@@ -193,6 +229,76 @@ def _seed_struggling_concept(
         ).delete()
         session.commit()
         return card.id, key, course_ids
+    finally:
+        session.close()
+
+
+def _seed_taught_concept(
+    course_count: int, lessons_per_course: list[int] | None = None
+) -> tuple[str, list[int]]:
+    """One concept taught by `course_count` courses, with no review card at all.
+
+    No card on purpose, unlike _seed_struggling_concept. The tutor neither looks one up
+    nor needs one, so seeding a card here would quietly make these tests depend on
+    something the endpoint never reads.
+
+    The label is unique per call because concept keys are global and the test database is
+    shared across the suite: a fixed label would let one test's courses decide whether
+    another test's concept can be traced to exactly one course.
+    """
+    counts = lessons_per_course or [1] * course_count
+    assert len(counts) == course_count
+    label = f"Concept {uuid4().hex[:8]}"
+    key = normalize_concept(label)
+    course_ids: list[int] = []
+    session = SessionLocal()
+    try:
+        for index, lesson_count in enumerate(counts):
+            course = models.Course(title=f"Course {index} teaching {label}", description="")
+            module = models.Module(title="Module 1", position=0)
+            for position in range(lesson_count):
+                module.lessons.append(_lesson_teaching(label, position))
+            course.modules.append(module)
+            session.add(course)
+            session.commit()
+            course_ids.append(course.id)
+        return key, course_ids
+    finally:
+        session.close()
+
+
+def _ask_tutor(client, concept_key: str):
+    """One tutor turn, with the day's cap cleared out of the way first.
+
+    Clearing is test hygiene against a shared database, not a guard against anything the
+    app does. The cap counts every learner turn written today across every concept, and
+    test_tutor_endpoints.py deliberately seeds runs of them, so a turn here could
+    otherwise be refused for a reason that has nothing to do with attribution.
+    """
+    day_start, day_end = days.day_bounds()
+    session = SessionLocal()
+    try:
+        session.query(models.TutorMessage).filter(
+            models.TutorMessage.created_at >= day_start
+        ).filter(models.TutorMessage.created_at < day_end).delete()
+        session.commit()
+    finally:
+        session.close()
+    return client.post(
+        "/tutor/messages",
+        json={"concept_key": concept_key, "message": "I do not follow this part"},
+    )
+
+
+def _newest_tutor_call() -> models.LlmCall:
+    session = SessionLocal()
+    try:
+        return (
+            session.query(models.LlmCall)
+            .filter(models.LlmCall.stage == tutor.TUTOR_STAGE)
+            .order_by(models.LlmCall.id.desc())
+            .first()
+        )
     finally:
         session.close()
 
@@ -378,7 +484,7 @@ def test_a_generation_run_that_really_failed_is_still_unattributed_because_it_fa
 
 
 def test_only_generation_stages_are_covered_by_the_failed_run_sentence():
-    """The failed-run sentence speaks for every stage that is not re-teaching.
+    """The failed-run sentence speaks for every stage that is not re-teaching or the tutor.
 
     True today because the generation pipeline writes the only other stages, and that
     is the assumption the whole grouping rests on. A stage recorded from somewhere new
@@ -387,9 +493,12 @@ def test_only_generation_stages_are_covered_by_the_failed_run_sentence():
     """
     assert set(generation.STAGES) == {"outline", "lesson"}
     assert remediation.REMEDIATION_STAGE not in generation.STAGES
+    assert tutor.TUTOR_STAGE not in generation.STAGES
+    assert tutor.TUTOR_STAGE != remediation.REMEDIATION_STAGE
     for stage in generation.STAGES:
         assert main._unattributed_group(stage) == main.GROUP_FAILED_RUN
     assert main._unattributed_group(remediation.REMEDIATION_STAGE) == main.GROUP_REMEDIATION
+    assert main._unattributed_group(tutor.TUTOR_STAGE) == main.GROUP_TUTOR
 
 
 def test_every_stage_actually_recorded_is_one_the_page_can_explain(client, monkeypatch):
@@ -407,13 +516,17 @@ def test_every_stage_actually_recorded_is_one_the_page_can_explain(client, monke
     card_id, _, _ = _seed_struggling_concept(1)
     assert client.post(f"/review/cards/{card_id}/remediation").status_code == 200
 
+    monkeypatch.setattr(main, "get_provider", lambda: TutorTurnProvider())
+    key, _ = _seed_taught_concept(1)
+    assert _ask_tutor(client, key).status_code == 200
+
     session = SessionLocal()
     try:
         recorded = {stage for (stage,) in session.query(models.LlmCall.stage).distinct()}
     finally:
         session.close()
 
-    explained = set(generation.STAGES) | {remediation.REMEDIATION_STAGE}
+    explained = set(generation.STAGES) | {remediation.REMEDIATION_STAGE, tutor.TUTOR_STAGE}
     assert explained <= recorded, "the scenario above should exercise every known stage"
     assert recorded <= explained, f"stage with no /usage copy: {sorted(recorded - explained)}"
 
@@ -792,3 +905,168 @@ def test_usage_blames_the_pricing_table_not_the_token_counts(client, monkeypatch
     # depends on rows other tests wrote, so that half is not this test's to assert; the
     # exact note for each combination of causes is pinned on isolated sessions above.
     assert "pricing table" in totals["approximate_note"]
+
+
+# --------------------------------------------------------------------------
+# Where a tutor turn's spend lands
+# --------------------------------------------------------------------------
+#
+# The tutor arrives on a page that already had this bug once. _unattributed_group sends
+# every stage it does not recognize to the failed-run group, whose sentence tells the
+# learner the spend came from a generation run that failed before its course could be
+# saved. A tutor call that cannot be tied to one course has no course id, so without a
+# branch of its own it lands there wearing that sentence: the identical defect that took
+# four review rounds to fix for re-teaching, on the identical surface.
+#
+# Mutation-checked rather than read for plausibility. Deleting the tutor branch from
+# main._unattributed_group turns the two tests below red, and the failure they print is
+# the sentence itself.
+
+
+def test_a_tutor_turn_is_charged_to_the_one_course_that_teaches_the_concept(client, monkeypatch):
+    """The learner looks for tutor spend under the course they were asking about."""
+    provider = TutorTurnProvider()
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, (course_id,) = _seed_taught_concept(1)
+
+    # Counted before, because the group is a total over the whole database and other
+    # tests legitimately put their own turns in it. What this test claims is that ITS
+    # call did not land there, which is a delta, not an absence.
+    unattributed_before = _calls_in(_group(client.get("/usage").json(), "tutor"))
+
+    answered = _ask_tutor(client, key)
+    assert answered.status_code == 200, answered.json()
+    assert provider.calls == 1
+
+    assert _newest_tutor_call().course_id == course_id
+
+    usage = client.get("/usage").json()
+    charged = _course_group(usage, course_id)
+    assert charged is not None, "the tutor turn was not charged to its course"
+    assert charged["group"] == "course"
+    assert charged["calls"] == 1  # this course was never generated, only asked about
+    assert charged["label"] == charged["title"]
+    assert charged["note"] is None  # a course row needs no explaining
+    assert _calls_in(_group(usage, "tutor")) == unattributed_before
+
+
+def test_a_tutor_turn_on_a_concept_two_courses_teach_is_charged_to_neither(client, monkeypatch):
+    """AC 23 from the other side: a concept two courses teach has no one owner.
+
+    Naming either would put a real dollar figure against a course that did not earn it,
+    so the call stays unattributed rather than being charged to a coin flip.
+    """
+    provider = TutorTurnProvider()
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, course_ids = _seed_taught_concept(2)
+
+    assert _ask_tutor(client, key).status_code == 200
+    assert _newest_tutor_call().course_id is None
+
+    usage = client.get("/usage").json()
+    for course_id in course_ids:
+        assert _course_group(usage, course_id) is None
+
+
+def test_tutor_attribution_ignores_the_prompts_lesson_budget(client, monkeypatch):
+    """Charging from the trimmed material would name one course for shared spend.
+
+    Course A teaches the concept in MAX_LESSONS lessons and course B in one more, so the
+    trimmed set sees only A and names it, while the whole set sees both and correctly
+    names neither. The endpoint reads teaching_lessons for attribution and tutor.context
+    for the prompt precisely so these two answers cannot be confused, and without this
+    case every other test still passes when they are.
+    """
+    provider = TutorTurnProvider()
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, (course_a, _course_b) = _seed_taught_concept(
+        2, lessons_per_course=[remediation.MAX_LESSONS, 1]
+    )
+
+    session = SessionLocal()
+    try:
+        matches = remediation.teaching_lessons(session, key)
+        assert len(matches) == remediation.MAX_LESSONS + 1
+        # The trimmed set names a single course. That is the wrong answer, and it is the
+        # answer attribution would give if it shared the prompt's grounding budget.
+        assert remediation.sole_course_id(session, matches[: remediation.MAX_LESSONS]) is not None
+        assert remediation.sole_course_id(session, matches) is None
+    finally:
+        session.close()
+
+    assert _ask_tutor(client, key).status_code == 200
+    assert _newest_tutor_call().course_id is None
+    assert _course_group(client.get("/usage").json(), course_a) is None
+
+
+def test_usage_gives_the_tutor_its_own_copy_and_never_calls_it_a_failed_run(client, monkeypatch):
+    """AC 24, and the reason this file exists.
+
+    Three claims, and the middle one is the whole bug: the group is rendered, its sentence
+    is about tutor calls rather than about failed generation runs, and no group anywhere
+    on the page is left for the learner to guess at.
+    """
+    provider = TutorTurnProvider()
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, _ = _seed_taught_concept(2)
+
+    failed_before = _calls_in(_group(client.get("/usage").json(), "failed_run"))
+
+    assert _ask_tutor(client, key).status_code == 200
+    assert _newest_tutor_call().course_id is None
+
+    usage = client.get("/usage").json()
+    chat = _group(usage, "tutor")
+    assert chat is not None, "the tutor turn was not given a group of its own"
+    assert chat["course_id"] is None
+    assert chat["title"] is None
+    assert chat["label"] == "Tutor chat (no single course)"
+    assert chat["note"] == main.GROUP_NOTES[main.GROUP_TUTOR]
+
+    # The sentence the group was invented to avoid inheriting.
+    assert "generation run" not in chat["note"]
+    assert chat["note"] != main.GROUP_NOTES[main.GROUP_FAILED_RUN]
+    assert chat["note"] != main.GROUP_NOTES[main.GROUP_REMEDIATION]
+    assert _calls_in(_group(usage, "failed_run")) == failed_before
+
+    # The two properties the re-teaching sentence took four rounds to arrive at, and the
+    # reason each is load bearing is in the comment above main.GROUP_NOTES[GROUP_TUTOR].
+    assert "at the time they were charged" in chat["note"]
+    assert "commonly because" in chat["note"]
+    # And it claims nothing about whether the call worked, because a failed tutor call
+    # records its tokens and is grouped by exactly the same rule as one that succeeded.
+    assert "Whether the call succeeded is a separate question" in chat["note"]
+
+    # No unlabeled group: every row has a name, and every row that is not a course has a
+    # sentence saying why it is not.
+    for row in usage["per_course"]:
+        assert row["label"], f"group with no label: {row}"
+        assert row["group"] == main.GROUP_COURSE or row["note"], f"group with no copy: {row}"
+
+
+def test_a_tutor_call_that_failed_is_still_charged_to_its_course(client, monkeypatch):
+    """Why the tutor's sentence must NOT borrow the re-teaching clause about failure.
+
+    A re-teaching call that failed wrote no note, so nothing recorded which concept it was
+    for and it could never be attributed. A tutor call knows its course before it is made,
+    so a failure is charged exactly like a success. Copying that clause across would have
+    put a false sentence on this page, and this is the row that proves it false.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: FailingTutorProvider())
+    key, (course_id,) = _seed_taught_concept(1)
+
+    unattributed_before = _calls_in(_group(client.get("/usage").json(), "tutor"))
+
+    assert _ask_tutor(client, key).status_code == 502
+
+    # The tokens were spent, so the row exists, and it carries the course it was asked
+    # about even though nothing came back.
+    assert _newest_tutor_call().course_id == course_id
+
+    usage = client.get("/usage").json()
+    charged = _course_group(usage, course_id)
+    assert charged is not None, "the failed tutor call was not charged to its course"
+    assert charged["calls"] == 1
+    # So it is NOT in the group whose sentence would have claimed it could not be tied to
+    # a course. That is what makes the borrowed failure clause false here.
+    assert _calls_in(_group(usage, "tutor")) == unattributed_before

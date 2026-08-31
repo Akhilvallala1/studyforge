@@ -4,7 +4,10 @@ This module is the reading half of the tutor. It answers three questions and wri
 nothing: what context may be put in front of the model for one concept, how many turns
 the learner has left today, and what the model is actually asked. The endpoints live
 elsewhere and are built on top of these; keeping the writing out is what makes the
-exclusion rules below testable without a model call.
+exclusion rules below testable without a model call. The shapes those endpoints render
+are here too, under "What the endpoints render", for the same reason: the POST and the
+GET both draw a message and both draw the daily limits, and one function each is what
+stops them describing the same conversation two ways.
 
 The prompt is at the bottom, under "The prompt" and "Parsing". It is here rather than
 in a module of its own because it is the one reader of the exclusions above, and the
@@ -39,7 +42,7 @@ from typing import NamedTuple
 from sqlalchemy.orm import Session
 
 from app import days, generation, models, remediation, review
-from app.attempts import LESSON_QUIZ_SOURCE
+from app.attempts import LESSON_QUIZ_SOURCE, iso_utc
 from app.concepts import normalize_concept
 from app.untrusted import as_data
 
@@ -399,6 +402,62 @@ def history(
         .all()
     )
     return list(reversed(rows))
+
+
+# --------------------------------------------------------------------------
+# What the endpoints render
+# --------------------------------------------------------------------------
+
+
+def message_payload(row: models.TutorMessage) -> dict:
+    """One message, in the single shape both roles use, discriminated on `role`.
+
+    ONE shape rather than two, and every key present on every row. The POST hands back
+    the two rows it just wrote and the client appends them to the list the GET returned,
+    so the two endpoints render into the same array; a second shape would let a reader
+    that has only ever seen a POST reply forget that `beyond` exists, and a tutor message
+    rendered without its register split is the one failure in this feature that nothing
+    downstream can detect.
+
+    The text is under `content` on a learner row and `answer` on a tutor row, and never
+    under both. They are the same column, and a payload carrying it twice is a second
+    copy that can disagree; the unused one is null, exactly as `beyond`, `check` and
+    `model` are null on a learner row.
+
+    Empty strings become null. The columns default to "" and the UI draws a heading above
+    `beyond` and `check`, so an empty string there would put a "Not in your course"
+    heading over nothing, which says the tutor had something to add and then shows none
+    of it.
+    """
+    is_tutor = row.role == TUTOR_ROLE
+    return {
+        "id": row.id,
+        "role": row.role,
+        "content": None if is_tutor else row.content,
+        "answer": row.content if is_tutor else None,
+        "beyond": (row.beyond or None) if is_tutor else None,
+        "check": (row.check_question or None) if is_tutor else None,
+        "model": (row.model or None) if is_tutor else None,
+        "created_at": iso_utc(row.created_at),
+    }
+
+
+def limits_payload(counts: TurnCounts) -> dict:
+    """Both caps, what they have taken, and when they lift.
+
+    Rendered from TurnCounts and from the two constants, so the number the client draws
+    a progress bar against is the number the endpoint refuses on. The POST recomputes
+    counts after its insert and passes the result through here; the 409s and the GET pass
+    theirs through the same function, which is what keeps "you have 3 left" and "you have
+    none left" from being two different arithmetics.
+    """
+    return {
+        "concept_used": counts.concept_used,
+        "concept_limit": CONCEPT_TURNS_PER_DAY,
+        "day_used": counts.day_used,
+        "day_limit": DAY_TURNS,
+        "resets_at": iso_utc(counts.day_end),
+    }
 
 
 # --------------------------------------------------------------------------

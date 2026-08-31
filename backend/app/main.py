@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app import days, fsrs, generation, ingest, models, remediation, review
+from app import days, fsrs, generation, ingest, models, remediation, review, tutor
 from app.attempts import (
     _attempt_state,
     _attempts_by_item,
@@ -88,6 +88,14 @@ NO_MATERIAL_MESSAGE = (
     "There is no lesson text for this concept to explain from. It may have come from a "
     "course that has since been deleted."
 )
+TUTOR_FAILURE_MESSAGE = (
+    "The tutor could not answer that just now. Nothing was saved, so try asking again."
+)
+MESSAGE_EMPTY_MESSAGE = "Type a question before sending it."
+MESSAGE_TOO_LONG_MESSAGE = (
+    f"That message is longer than {tutor.MAX_MESSAGE_CHARS} characters. The tutor answers "
+    "questions about one concept; material that long belongs in a course of its own."
+)
 
 # Parse failures (ValueError, including json.JSONDecodeError), refusals, missing
 # keys in a provider response, and transport errors are all "the provider did not
@@ -128,6 +136,24 @@ def generation_failure(exc: Exception, stage: str) -> HTTPException:
     return HTTPException(502, GENERIC_GENERATION_MESSAGE)
 
 
+def _cost_limit_exceeded(exc: CostLimitExceeded) -> HTTPException:
+    """The 402 every metered surface answers a reached spend cap with.
+
+    One function rather than the same dict written out at each call site. The client
+    branches on `error` and reads `limit_usd` and `spent_usd`, and each extra copy of
+    that shape is another chance for one surface to spell it differently from the rest.
+    """
+    return HTTPException(
+        402,
+        detail={
+            "error": "cost_limit_exceeded",
+            "message": "LLM spend limit reached",
+            "limit_usd": exc.limit_usd,
+            "spent_usd": exc.spent_usd,
+        },
+    )
+
+
 def _save_course(session: Session, course: dict) -> models.Course:
     row = models.Course(title=course["title"], description=course["description"])
     for m_pos, module in enumerate(course["modules"]):
@@ -165,15 +191,7 @@ def _run_generation(session: Session, chunks: list[str]) -> dict:
     try:
         course = generation.generate_course(meter, chunks)
     except CostLimitExceeded as exc:
-        raise HTTPException(
-            402,
-            detail={
-                "error": "cost_limit_exceeded",
-                "message": "LLM spend limit reached",
-                "limit_usd": exc.limit_usd,
-                "spent_usd": exc.spent_usd,
-            },
-        ) from exc
+        raise _cost_limit_exceeded(exc) from exc
     except Exception as exc:
         raise generation_failure(exc, "generate") from exc
 
@@ -678,15 +696,7 @@ def create_remediation(card_id: int, session: Session = Depends(get_session)):
         logger.warning("remediation refused for card %s: %s", card_id, exc)
         raise HTTPException(422, NO_MATERIAL_MESSAGE) from exc
     except CostLimitExceeded as exc:
-        raise HTTPException(
-            402,
-            detail={
-                "error": "cost_limit_exceeded",
-                "message": "LLM spend limit reached",
-                "limit_usd": exc.limit_usd,
-                "spent_usd": exc.spent_usd,
-            },
-        ) from exc
+        raise _cost_limit_exceeded(exc) from exc
     except ValueError as exc:
         # The provider answered and the answer did not match the schema. Logged
         # apart from a transport failure because the two need opposite fixes, and
@@ -938,6 +948,263 @@ def get_course_concepts(course_id: int, session: Session = Depends(get_session))
 
 
 # --------------------------------------------------------------------------
+# The tutor
+# --------------------------------------------------------------------------
+
+# What each refusal says. The two cap messages differ in one load-bearing way: the day
+# message names the whole day so the learner does not go looking for another concept to
+# ask on, and the concept message says the opposite, because there really are others.
+DAILY_TURN_LIMIT_MESSAGE = (
+    f"You have asked the tutor {tutor.DAY_TURNS} questions today, which is the limit "
+    "across every concept. They come back at the start of your next study day."
+)
+CONCEPT_TURN_LIMIT_MESSAGE = (
+    f"You have asked the tutor {tutor.CONCEPT_TURNS_PER_DAY} questions about this "
+    "concept today. Other concepts still have questions left, and this one opens again "
+    "at the start of your next study day."
+)
+
+
+class TutorQuestion(BaseModel):
+    """One question about one concept.
+
+    concept_key travels in the BODY rather than in the path, and that is not a taste.
+    normalize_concept preserves slashes, spaces and parentheses, so "o(n log n)" and
+    "big-o / complexity" are ordinary keys, and Starlette will not match a path segment
+    containing "/": the concept most in need of explaining would be the one URL the
+    learner could not reach.
+    """
+
+    concept_key: str
+    message: str
+
+
+def _tutor_invalid(code: str, message: str) -> HTTPException:
+    """422 for a request the tutor cannot act on, whatever the conversation looks like."""
+    return HTTPException(422, detail={"error": code, "message": message})
+
+
+def _tutor_conflict(code: str, message: str, counts: tutor.TurnCounts) -> HTTPException:
+    """409 that carries the daily limits, and nothing else.
+
+    Deliberately unlike _remediation_conflict, which carries the note, and
+    _practice_conflict, which carries the session. Those refusals hand back what the UI
+    has to redraw. Here the conversation is already on screen and this refusal did not
+    change it, so sending it back would be a second copy of something the client already
+    holds, and two copies can disagree. What the refusal is actually about is the limits.
+    """
+    return HTTPException(
+        409,
+        detail={"error": code, "message": message, "limits": tutor.limits_payload(counts)},
+    )
+
+
+def _conversation_label(
+    session: Session, concept_key: str, rows: list[models.TutorMessage]
+) -> str:
+    """The name to show above a conversation, taken from what is already stored.
+
+    The conversation's own rows first. TutorMessage.concept_label exists precisely so a
+    transcript can still name its concept after the card, the lesson, and the course that
+    named it are gone, and reading it here is what makes that promise true.
+
+    Then the review card, which is the name the Today screen prints, then the key itself.
+    Deliberately NOT tutor.context(), which would name the concept from the courseware:
+    that reads every lesson in the database, and this is the request a panel makes on
+    open. The read would buy a better name in exactly one case, a concept with no
+    messages and no card, and the POST stamps the courseware name onto the first row it
+    writes, so that case ends as soon as anyone asks anything.
+    """
+    for row in reversed(rows):
+        if row.concept_label:
+            return row.concept_label
+    card = review.get_card(session, concept_key)
+    if card is not None and card.concept_label:
+        return card.concept_label
+    return concept_key
+
+
+@app.post("/tutor/messages")
+def post_tutor_message(body: TutorQuestion, session: Session = Depends(get_session)):
+    """Ask the tutor one question about one concept: one metered call, two rows, one commit.
+
+    Hands back the learner's message and the reply, not the whole conversation. The
+    client already drew what it had and appends these two. `limits` is recomputed AFTER
+    the insert, the way answer_remedial_practice recomputes its state, so what the
+    learner is shown is what the next request will be measured against.
+
+    PRECEDENCE IS FIXED HERE AND NOWHERE ELSE, in this order:
+      1. an empty message                  422 message_empty
+      2. a message over the character cap   422 message_too_long, decided before any
+         material is read and before any model call, because past that length it is a
+         document, and a document belongs in course generation where it is chunked and
+         paid for deliberately
+      3. no material for the concept        422 no_material
+      4. the day's turns are gone           409 daily_turn_limit
+      5. this concept's turns are gone      409 concept_turn_limit
+      6. the spend cap is reached           402 cost_limit_exceeded
+    The day cap is checked BEFORE the concept cap because it is the wider fact. Telling
+    someone they are out of turns on this concept while they are out for the whole day
+    sends them to another concept to be refused there as well.
+
+    THERE IS NO 404. This looks up no ReviewCard and needs none: mastery_bucket(None)
+    answers not_started, and the material comes from the lessons rather than from a card.
+    A concept with no card is one the learner met on the concept map and was never
+    quizzed on, and refusing to explain it would be a 404 for something that exists.
+
+    THERE IS NO GENERATION SLOT, unlike create_remediation. That lock is there because a
+    double-clicked button bought two model calls against a WEEKLY budget, where the
+    second one costs a week of re-teaching. Here a lost race costs one turn out of twelve
+    that come back tomorrow, and the send button is disabled while a question is in
+    flight, so the guard would buy an ordering nobody can observe.
+
+    A REPLY THAT WILL NOT PARSE WRITES NOTHING, the learner's own message included. Both
+    rows are built after the reply parses, added together, and committed once, so there
+    is no window in which the transcript holds a question with nothing under it. The
+    llm_calls row is still written by the meter, because those tokens were spent, exactly
+    as in remediation.generate_note.
+
+    Nothing here rates, schedules, or grades. The only rows this can produce are two
+    tutor_messages: a conversation is not a retrieval test, and folding one into the
+    schedule would let a learner talk their way to a longer interval.
+    """
+    concept_key = normalize_concept(body.concept_key)
+    message = body.message.strip()
+    if not message:
+        raise _tutor_invalid("message_empty", MESSAGE_EMPTY_MESSAGE)
+    # Measured on the stripped message, which is what gets stored and what gets sent. A
+    # question at the cap followed by trailing newlines is not a longer question.
+    if len(message) > tutor.MAX_MESSAGE_CHARS:
+        raise _tutor_invalid("message_too_long", MESSAGE_TOO_LONG_MESSAGE)
+
+    now = review.now_utc()
+    context = tutor.context(session, concept_key, now=now)
+    if not context.lessons and not context.items:
+        raise _tutor_invalid("no_material", NO_MATERIAL_MESSAGE)
+
+    counts = tutor.turn_counts(session, concept_key, now)
+    if counts.day_used >= tutor.DAY_TURNS:
+        raise _tutor_conflict("daily_turn_limit", DAILY_TURN_LIMIT_MESSAGE, counts)
+    if counts.concept_used >= tutor.CONCEPT_TURNS_PER_DAY:
+        raise _tutor_conflict("concept_turn_limit", CONCEPT_TURN_LIMIT_MESSAGE, counts)
+
+    provider = get_provider()
+    run_id = uuid.uuid4().hex
+    # Which course this call is charged to, decided here at call time and from the
+    # UNTRIMMED matches: sole_course_id is answering which courses teach the concept, and
+    # an answer that changed with how many lessons happened to fit in a prompt would not
+    # be an answer about courses at all. Read after the caps, so a refused turn does not
+    # pay for it, and never backfilled afterwards, because unlike a generation run there
+    # is no course saved later to backfill from.
+    matches = remediation.teaching_lessons(session, concept_key)
+    meter = MeteredLLM(provider, run_id, course_id=remediation.sole_course_id(session, matches))
+    prompt = tutor.build_prompt(context, tutor.history(session, concept_key), message)
+
+    # Nothing has been added to the session at this point, and nothing is until the reply
+    # has parsed, which is what makes every failure below leave zero rows behind.
+    try:
+        reply = tutor.parse_reply(
+            meter.generate(tutor.TUTOR_STAGE, tutor.TUTOR_SYSTEM, prompt, tutor.MAX_TOKENS)
+        )
+    except CostLimitExceeded as exc:
+        raise _cost_limit_exceeded(exc) from exc
+    except ValueError as exc:
+        # The provider answered and the answer did not match the schema. Logged apart
+        # from a transport failure for the reason create_remediation gives: the two need
+        # opposite fixes, and reporting a schema mismatch as "the model could not be
+        # reached" is what hid the fake provider having no remediation branch at all.
+        logger.error(
+            "Tutor reply for concept %r: the model replied but the reply did not match "
+            "the schema (%s)",
+            concept_key,
+            exc,
+        )
+        raise HTTPException(502, TUTOR_FAILURE_MESSAGE) from exc
+    except Exception as exc:
+        logger.exception("Tutor call failed for concept %r: the provider call failed", concept_key)
+        raise HTTPException(502, TUTOR_FAILURE_MESSAGE) from exc
+
+    # Both rows carry the moment the turn was ACCEPTED rather than the moment the reply
+    # came back, so a turn is counted in the same study day whose cap let it through: a
+    # question asked at 03:59 and answered at 04:00 spent yesterday's turn, which is the
+    # day it was checked against.
+    learner_row = models.TutorMessage(
+        concept_key=concept_key,
+        concept_label=context.concept_label,
+        role=tutor.LEARNER_ROLE,
+        content=message,
+        beyond="",
+        check_question="",
+        run_id="",
+        model="",
+        created_at=now,
+    )
+    reply_row = models.TutorMessage(
+        concept_key=concept_key,
+        concept_label=context.concept_label,
+        role=tutor.TUTOR_ROLE,
+        content=reply.answer,
+        beyond=reply.beyond,
+        check_question=reply.check,
+        run_id=run_id,
+        model=getattr(provider, "model", ""),
+        created_at=now,
+    )
+    # One commit for the pair. Saving the question first and the reply after the call is
+    # the natural implementation and it is precisely the one this must not be: a reply
+    # that will not parse would leave the learner's message standing in the transcript
+    # with nothing under it. The two share created_at, and conversation() breaks that tie
+    # on id, which add_all assigns in the order given.
+    session.add_all([learner_row, reply_row])
+    session.commit()
+    logger.info(
+        "tutor turn %s answered for concept=%r run=%s", reply_row.id, concept_key, run_id
+    )
+
+    return {
+        "concept_key": concept_key,
+        "concept_label": context.concept_label,
+        "learner": tutor.message_payload(learner_row),
+        "reply": tutor.message_payload(reply_row),
+        "limits": tutor.limits_payload(tutor.turn_counts(session, concept_key, now)),
+    }
+
+
+@app.get("/tutor/conversation")
+def get_tutor_conversation(concept_key: str, session: Session = Depends(get_session)):
+    """One concept's whole conversation, oldest first. It describes; it never refuses.
+
+    Any concept_key gets a 200, like get_remedial_practice. A concept nobody has asked
+    about is an empty conversation, which is a fact about it rather than an error, and
+    there is no card lookup here for the same reason the POST has none.
+
+    Every message goes through tutor.message_payload, the same function the POST hands
+    its two rows back through, so the rows a client appends and the rows it reloads are
+    the same shape. Both roles use that one shape, discriminated on `role`, with `beyond`
+    and `check` always null on a learner row: a reader that only ever met one shape could
+    render a tutor message without its register split, which is the one mistake in this
+    feature that nothing downstream can detect.
+
+    `last_message_at` is the newest row's timestamp, null on an empty conversation, so a
+    panel can tell "we have never spoken about this" from "we spoke last week" without
+    reading the array.
+
+    Writes nothing, deliberately, like get_remedial_practice: this is the read the panel
+    makes on open, and a GET that could change what it describes would let one tab move
+    another tab's conversation between drawing it and answering in it.
+    """
+    key = normalize_concept(concept_key)
+    rows = tutor.conversation(session, key)
+    return {
+        "concept_key": key,
+        "concept_label": _conversation_label(session, key, rows),
+        "messages": [tutor.message_payload(row) for row in rows],
+        "last_message_at": iso_utc(rows[-1].created_at) if rows else None,
+        "limits": tutor.limits_payload(tutor.turn_counts(session, key, review.now_utc())),
+    }
+
+
+# --------------------------------------------------------------------------
 # Usage reporting
 # --------------------------------------------------------------------------
 
@@ -948,10 +1215,12 @@ def get_course_concepts(course_id: int, session: Session = Depends(get_session))
 # note told the learner that seven successful re-teaches were failed generation runs.
 GROUP_COURSE = "course"
 GROUP_REMEDIATION = "remediation"
+GROUP_TUTOR = "tutor"
 GROUP_FAILED_RUN = "failed_run"
 
 GROUP_LABELS = {
     GROUP_REMEDIATION: "Re-teaching (no single course)",
+    GROUP_TUTOR: "Tutor chat (no single course)",
     GROUP_FAILED_RUN: "Unattributed",
 }
 
@@ -972,6 +1241,27 @@ GROUP_NOTES = {
         "charged, commonly because several courses teach the concept, because the lessons "
         "that taught it are gone, or because the call failed before anything recorded which "
         "concept it was for."
+    ),
+    # Written on the same principle as the re-teaching sentence above, and NOT by copying
+    # it: three of its clauses are false here. A tutor call knows its course before it is
+    # made, so a call that failed is still attributed, which rules out "the call failed
+    # before anything recorded which concept it was for". And the tutor refuses outright
+    # when a concept has no material, so "the lessons that taught it are gone" cannot
+    # describe a tutor row either; what is left is lessons that exist and belong to no
+    # course. The two properties that DO carry over are the ones that took four review
+    # rounds to arrive at: the claim is scoped to when the row was charged, because the
+    # course id is decided once and later edits to the courseware would falsify any
+    # present-tense version of it, and the reasons are offered as examples rather than as
+    # a closed set. The last sentence exists so the group is never read as a list of
+    # failures, which is the mistake the whole /usage grouping was rebuilt to stop.
+    GROUP_TUTOR: (
+        "A tutor question is charged to the course that teaches the concept it was asked "
+        "about, when exactly one does. These calls could not be tied to a single course "
+        "at the time they were charged, commonly because several courses teach that "
+        "concept, or because the lessons teaching it belong to no course. Whether the "
+        "call succeeded is a separate question this group does not answer: a tutor call "
+        "that failed still records the tokens it spent, and is grouped by the same rule "
+        "as one that worked."
     ),
     # "or from one still running" is not padding. Generation is synchronous and can take
     # minutes, and its rows carry no course until it finishes, so a learner who opens
@@ -1051,18 +1341,28 @@ def _approximation_causes(session: Session) -> tuple[bool, bool]:
 def _unattributed_group(stage: str) -> str:
     """Why a call carrying no course id has none, read from the stage that wrote it.
 
-    Every stage that is not re-teaching belongs to the generation pipeline
-    (generation.STAGES), and those rows have their course id backfilled the moment
-    the course is saved, so one still missing means the run never got that far.
+    Every stage that is neither re-teaching nor the tutor belongs to the generation
+    pipeline (generation.STAGES), and those rows have their course id backfilled the
+    moment the course is saved, so one still missing means the run never got that far.
+
+    A NEW STAGE MUST BE ADDED HERE, and the cost of forgetting is not a missing row: it
+    is the row landing in the failed-run group wearing a sentence about a generation run
+    that failed before its course could be saved. That is exactly the defect this
+    grouping was rebuilt to remove, and the tutor would have shipped with it on day one.
+    test_every_stage_actually_recorded_is_one_the_page_can_explain is what catches the
+    next one.
     """
     if stage == remediation.REMEDIATION_STAGE:
         return GROUP_REMEDIATION
+    if stage == tutor.TUTOR_STAGE:
+        return GROUP_TUTOR
     return GROUP_FAILED_RUN
 
 
 def _spend_groups(session: Session) -> list[dict]:
     """Spend for the /usage table: one row per course, then one row per reason a call
-    has no course. Courses first in id order, then re-teaching, then the failed runs."""
+    has no course. Courses first in id order, then re-teaching, then the tutor, then
+    the failed runs."""
     rows = (
         session.query(
             models.LlmCall.course_id,
@@ -1087,7 +1387,7 @@ def _spend_groups(session: Session) -> list[dict]:
         bucket["output_tokens"] += stage_out or 0
         bucket["estimated_cost_usd"] += stage_cost or 0.0
 
-    rank = {GROUP_COURSE: 0, GROUP_REMEDIATION: 1, GROUP_FAILED_RUN: 2}
+    rank = {GROUP_COURSE: 0, GROUP_REMEDIATION: 1, GROUP_TUTOR: 2, GROUP_FAILED_RUN: 3}
     groups = []
     for (group, course_id), bucket in sorted(
         buckets.items(), key=lambda item: (rank[item[0][0]], item[0][1] or 0)
