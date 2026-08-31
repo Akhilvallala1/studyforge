@@ -45,6 +45,7 @@ import logging
 import re
 import threading
 import uuid
+from collections import defaultdict
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
@@ -269,7 +270,18 @@ def sole_course_id(
         .filter(models.Module.id.in_(module_ids))
         .distinct()
     }
-    return course_ids.pop() if len(course_ids) == 1 else None
+    return _sole(course_ids)
+
+
+def _sole(course_ids: set[int]) -> int | None:
+    """Exactly one course, or None. The single definition of "unambiguous".
+
+    Note that it answers None for NO courses as well as for several, and the two are
+    not the same story: several means the spend is genuinely shared, none means the
+    concept's lessons are gone. Nothing here can tell them apart afterwards, so the
+    /usage copy for the group names both rather than asserting either.
+    """
+    return next(iter(course_ids)) if len(course_ids) == 1 else None
 
 
 def _as_data(text: str) -> str:
@@ -331,7 +343,7 @@ def backfill_course_ids(session: Session) -> int:
     the same run_id as llm_calls and the card, and the card carries the concept. A call
     that FAILED wrote no note (see generate_note), so nothing records what concept it
     was for and nothing here can attribute it; those rows stay NULL, and the /usage copy
-    for that group names both reasons a row can be in it.
+    for that group names every reason a row can be in it.
 
     Runs once, recorded in app_settings, and deliberately not on every startup. After
     this feature a NULL course id means "no single course owned this when it was
@@ -342,6 +354,12 @@ def backfill_course_ids(session: Session) -> int:
 
     Safe on an existing database: it only ever fills a NULL, never rewrites a course id
     that is already set, and it writes nothing at all when there is nothing to fix.
+
+    Reads the whole courseware ONCE. The obvious shape, sole_course_id(teaching_lessons())
+    per concept, is quadratic: teaching_lessons reads every lesson each time it is called,
+    so the cost is concepts times lessons. It ran for twenty seconds at 200 concepts over
+    4000 lessons, and it is the learner with the most re-teaching, the one this exists
+    for, who waits longest, on a boot that is serving nobody yet.
 
     Does not commit; the caller owns the transaction.
     """
@@ -354,37 +372,63 @@ def backfill_course_ids(session: Session) -> int:
         .filter(models.LlmCall.course_id.is_(None))
         .all()
     )
-    concept_by_run: dict[str, str] = {}
-    if rows:
-        notes = (
-            session.query(models.RemediationNote)
-            .filter(models.RemediationNote.run_id.in_({row.run_id for row in rows}))
-            .all()
-        )
-        concept_by_run = {note.run_id: note.concept_key for note in notes if note.run_id}
-
-    # Resolved once per concept rather than once per row: teaching_lessons reads every
-    # lesson in the database, and a concept re-taught several times would otherwise
-    # read them all again for each of its calls.
-    course_by_concept: dict[str, int | None] = {}
     attributed = 0
-    for row in rows:
-        concept_key = concept_by_run.get(row.run_id)
-        if not concept_key:
-            continue
-        if concept_key not in course_by_concept:
-            course_by_concept[concept_key] = sole_course_id(
-                session, teaching_lessons(session, concept_key)
+    if rows:
+        # Every note, rather than the run ids of these rows: an IN list of one bind
+        # parameter per row hits SQLITE_LIMIT_VARIABLE_NUMBER at about 32k re-teaches
+        # and raises inside a startup handler that has no except, so the app would
+        # simply not boot. Two columns of a table already bounded by the rows above.
+        concept_by_run = {
+            run_id: concept_key
+            for run_id, concept_key in session.query(
+                models.RemediationNote.run_id, models.RemediationNote.concept_key
             )
-        course_id = course_by_concept[concept_key]
-        if course_id is None:
-            continue
-        row.course_id = course_id
-        attributed += 1
+            if run_id
+        }
+        courses_by_concept = course_ids_by_concept(session)
+        for row in rows:
+            concept_key = concept_by_run.get(row.run_id)
+            if not concept_key:
+                continue
+            course_id = _sole(courses_by_concept.get(concept_key, set()))
+            if course_id is None:
+                continue
+            row.course_id = course_id
+            attributed += 1
 
     session.add(models.AppSetting(key=BACKFILL_SETTING, value=str(attributed)))
     session.flush()
     return attributed
+
+
+def course_ids_by_concept(session: Session) -> dict[str, set[int]]:
+    """Every concept in the courseware, mapped to the courses that teach it.
+
+    The same rule teaching_lessons applies, in bulk and in two queries: a course teaches
+    a concept if one of its lessons lists it or if one of its quiz items tests it. Built
+    for the backfill, which needs the answer for every concept at once and cannot afford
+    to re-read the lessons per concept.
+
+    Matched in Python rather than in SQL for the reason review.py gives: the grouping key
+    is normalize_concept() of a stored label, which SQLite can neither compute nor index.
+    """
+    course_by_lesson: dict[int, int] = {}
+    courses: dict[str, set[int]] = defaultdict(set)
+    lessons = session.query(
+        models.Lesson.id, models.Lesson.concepts, models.Module.course_id
+    ).join(models.Module, models.Lesson.module_id == models.Module.id)
+    for lesson_id, concepts, course_id in lessons:
+        course_by_lesson[lesson_id] = course_id
+        for raw in concepts or []:
+            if isinstance(raw, str) and raw:
+                courses[normalize_concept(raw)].add(course_id)
+
+    items = session.query(models.QuizItem.lesson_id, models.QuizItem.concept)
+    for lesson_id, concept in items:
+        course_id = course_by_lesson.get(lesson_id)
+        if course_id is not None and concept:
+            courses[normalize_concept(concept)].add(course_id)
+    return dict(courses)
 
 
 # --------------------------------------------------------------------------

@@ -785,14 +785,17 @@ GROUP_LABELS = {
 }
 
 GROUP_NOTES = {
-    # Both causes are named because both really occur, and the group would otherwise
-    # assert the first one about rows where the second is true. Says nothing about
-    # whether these calls succeeded, either: a re-teaching call that failed still
-    # records the tokens it spent, and lands in this group like any other.
+    # Three causes, because there are three, and a shorter list asserts something false
+    # about the rows it leaves out. A concept taught by NO course is not the same story
+    # as one taught by several: remediation._sole answers None to both, and by the time
+    # this renders nothing can tell them apart, so both are named. Says nothing about
+    # whether these calls succeeded, either: a re-teaching call that failed still records
+    # the tokens it spent, and lands in this group like any other.
     GROUP_REMEDIATION: (
         "Re-teaching a concept is charged to the course that teaches it. These calls could "
-        "not be charged to one course: either more than one course teaches the concept, or "
-        "the call failed before anything recorded which concept it was for."
+        "not be charged to one course: the concept is taught by several courses, or by none "
+        "of them any more, or the call failed before anything recorded which concept it "
+        "was for."
     ),
     # "or from one still running" is not padding. Generation is synchronous and can take
     # minutes, and its rows carry no course until it finishes, so a learner who opens
@@ -835,6 +838,13 @@ def _approximation_causes(session: Session) -> tuple[bool, bool]:
     case when an unpriced model still charged for the count that was present: cost above
     zero is what proves a price was applied at all, since an unpaid provider always
     records zero and a paid one with no counts at all prices zero tokens at any rate.
+
+    One gap, left open knowingly. If the count that survived is itself 0, the cost is 0
+    too (costs.estimate_cost treats a missing count as zero), so nothing proves a rate
+    was applied and the row reports the token cause alone. The sentence stays true and
+    is merely less complete, and a call that really consumed zero input tokens does not
+    happen; closing it properly would mean recording whether the provider was paid,
+    which is a column this change is not entitled to add.
     """
     rows = (
         session.query(

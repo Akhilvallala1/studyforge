@@ -14,7 +14,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import create_engine, or_
+from sqlalchemy import create_engine, event, or_
 from sqlalchemy.orm import sessionmaker
 
 from app import fsrs, generation, main, models, remediation, review
@@ -488,26 +488,89 @@ def test_backfill_attributes_legacy_reteaches_that_one_course_explains():
 
 
 def test_backfill_leaves_alone_what_it_cannot_honestly_name():
-    """Two courses is ambiguous; a failed call recorded no concept at all.
+    """Three ways a re-teach ends up with no course, and the sentence has to cover all.
 
-    Both stay NULL, and the group's sentence has to cover both, since neither is the
-    "more than one course teaches it" case on its own.
+    Several courses teach it; no course teaches it any more, its lessons having gone;
+    or the call failed and so recorded no concept at all. remediation._sole answers None
+    to the first two alike and nothing downstream can separate them, so a sentence
+    naming fewer than three asserts something false about the rows it left out.
     """
     session = _isolated_session()
     try:
         ambiguous = _legacy_reteach(session, "Gradient descent", 2, wrote_a_note=True)
+        no_course = _legacy_reteach(session, "Bayes factor", 0, wrote_a_note=True)
         no_note = _legacy_reteach(session, "Chain rule", 1, wrote_a_note=False)
 
         assert remediation.backfill_course_ids(session) == 0
         session.commit()
 
         assert _call_for_run(session, ambiguous).course_id is None
+        assert _call_for_run(session, no_course).course_id is None
         assert _call_for_run(session, no_note).course_id is None
-        assert _group_of(main._spend_groups(session), "remediation")["calls"] == 2
+        assert _group_of(main._spend_groups(session), "remediation")["calls"] == 3
 
         note = main.GROUP_NOTES[main.GROUP_REMEDIATION]
-        assert "more than one course teaches the concept" in note
+        assert "taught by several courses" in note
+        assert "by none of them any more" in note
         assert "failed before anything recorded which concept it was for" in note
+    finally:
+        session.close()
+
+
+def test_the_no_course_reteach_is_a_succeeding_call_with_a_recorded_concept():
+    """Pins what makes the third cause a third cause, rather than a shade of the others.
+
+    Its note exists, so the call succeeded and the concept IS recorded, which rules out
+    the failed-call clause. And no course teaches it, which rules out the several-courses
+    clause. Only the middle clause is true of it, so removing that clause would leave the
+    page asserting two things that are both false about this row.
+    """
+    session = _isolated_session()
+    try:
+        run_id = _legacy_reteach(session, "Bayes rule", course_count=0, wrote_a_note=True)
+
+        note = (
+            session.query(models.RemediationNote)
+            .filter(models.RemediationNote.run_id == run_id)
+            .one()
+        )
+        assert note.concept_key  # the call succeeded and recorded what it taught
+        assert remediation.course_ids_by_concept(session).get(note.concept_key) is None
+        matches = remediation.teaching_lessons(session, note.concept_key)
+        assert remediation.sole_course_id(session, matches) is None
+
+        assert remediation.backfill_course_ids(session) == 0
+        session.commit()
+        assert _call_for_run(session, run_id).course_id is None
+    finally:
+        session.close()
+
+
+def test_backfill_never_rewrites_a_course_id_already_recorded():
+    """The NULL filter is load-bearing on the real upgrade path, not a nicety.
+
+    Anyone who ran the previous commit has rows attributed at call time. This runs a
+    FIRST backfill, the only one that reaches the query at all, against a database
+    holding one such row, and the recorded attribution has to survive it: re-deriving it
+    from today's courseware is exactly what the docstring argues against. The earlier
+    once-only test could never catch this, because its second call returns at the
+    app_settings guard without running the query.
+    """
+    session = _isolated_session()
+    try:
+        settled = _legacy_reteach(session, "Prior odds", course_count=1, wrote_a_note=True)
+        pending = _legacy_reteach(session, "Posterior odds", course_count=1, wrote_a_note=True)
+
+        # Attributed already, and to a course that does not teach it, so any re-derivation
+        # from the current courseware is visible rather than coincidentally identical.
+        _call_for_run(session, settled).course_id = 999
+        session.commit()
+
+        assert remediation.backfill_course_ids(session) == 1
+        session.commit()
+
+        assert _call_for_run(session, settled).course_id == 999
+        assert _call_for_run(session, pending).course_id is not None
     finally:
         session.close()
 
@@ -536,6 +599,44 @@ def test_backfill_runs_once_and_never_rewrites_an_attribution():
         assert _call_for_run(session, run_id).course_id == attributed
     finally:
         session.close()
+
+
+def _backfill_query_count(concepts: int) -> int:
+    """Statements issued by one backfill over `concepts` distinct re-taught concepts."""
+    session = _isolated_session()
+    try:
+        for index in range(concepts):
+            _legacy_reteach(session, f"Concept {index}", course_count=1, wrote_a_note=True)
+
+        statements = 0
+
+        def count(conn, cursor, statement, parameters, context, executemany):
+            nonlocal statements
+            statements += 1
+
+        engine = session.get_bind()
+        event.listen(engine, "before_cursor_execute", count)
+        try:
+            assert remediation.backfill_course_ids(session) == concepts
+            session.commit()
+        finally:
+            event.remove(engine, "before_cursor_execute", count)
+        return statements
+    finally:
+        session.close()
+
+
+def test_backfill_reads_the_courseware_once_however_many_concepts():
+    """The shape, not the clock: statements must not grow with the number of concepts.
+
+    sole_course_id(teaching_lessons()) per concept reads every lesson once per concept,
+    which is quadratic and measured at twenty seconds for 200 concepts over 4000 lessons,
+    on a boot that is serving nobody. A timing assertion would be flaky on a loaded
+    machine; the query count is the property that actually went wrong.
+    """
+    few = _backfill_query_count(2)
+    many = _backfill_query_count(20)
+    assert few == many, f"{many - few} extra statements for 18 more concepts"
 
 
 def test_backfill_already_ran_against_the_shared_database(client):
