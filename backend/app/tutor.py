@@ -57,11 +57,21 @@ MAX_TOKENS = 1000
 # for deliberately.
 MAX_MESSAGE_CHARS = 2000
 
-# How many previous messages travel with a new question, and this number is load
-# bearing rather than a taste. 12,000 characters of material plus six history messages
-# plus a 2,000-character question fits Ollama's 8192-token window ONLY because history
-# is capped here. Raise it and _reject_if_window_filled starts refusing tutor calls on
-# local models, which is the configuration this project defaults to.
+# How many previous messages travel with a new question, and this number is load bearing
+# rather than a taste: it is the only bound on how far a tutor prompt can grow.
+#
+# NOT a verified fit against Ollama's 8192-token window, and the earlier wording here
+# claimed more than the evidence supports. The worst case is three tutor rows written
+# near the 1000-token output cap plus three learner messages at MAX_MESSAGE_CHARS, which
+# is roughly 6,000 tokens of history on its own, and that does NOT fit 8192 alongside
+# 12,000 characters of material. Ordinary conversations are far smaller, so this is a
+# tail rather than the common case, but it is a reachable tail.
+#
+# Treat 8192 as a starting point the runtime checks correct, exactly as
+# ollama_provider.py does: _reject_if_window_filled judges the window from Ollama's
+# reported counts and never from arithmetic like this. Raising this number moves more
+# conversations into that refusal, on the configuration this project defaults to. The
+# endpoint task will meet the real behaviour; nothing here has been measured.
 HISTORY_MESSAGES = 6
 
 # Two daily bounds, both counted in learner turns, because a learner turn is what buys
@@ -176,6 +186,14 @@ def open_answer_item_ids(
     teaches from the lesson text alone. That is the common case rather than the
     exception, and it is the right trade: the under-inclusive version of this function
     leaks an answer key, and the damage it does is silent.
+
+    Closure is scoped to those two sources only, so remedial practice can later re-ask an
+    item whose answer the tutor was already given. That is not a hole in the guarantee
+    above, which is about the SCHEDULE: remedial practice writes an Attempt and never
+    calls record_review, and rating derivation reads only the lesson-quiz and
+    review-session sources, so a remembered answer there cannot reach a card. It does
+    mean a practice run can be easier than it looks, which is a pedagogical cost and not
+    a correctness one.
 
     Two queries, not one per item. The obvious loop calling
     review.already_answered_this_exposure per item is N queries on a page render, and
@@ -424,6 +442,34 @@ LEARNER_LABEL = "Learner:"
 GROUNDED_LABEL = "Tutor (from your course):"
 BEYOND_LABEL = "Tutor (not in your course):"
 
+# Code points that can sit in front of a label without a reader seeing anything there.
+# Written as numeric ranges and assembled at import rather than pasted as literals: an
+# invisible character sitting in this source file would be unreviewable, which is the
+# same problem the pattern below exists to solve.
+#
+# Line and paragraph separators are deliberately NOT here. U+2028 and U+2029 fall in the
+# gaps between these ranges, as do \n, \r, \v and \f, because a prefix class that can
+# match a line break lets the anchor slide down the block and match a label many lines
+# below the position it appeared to be testing. That is the same reason the class is an
+# explicit set rather than \s, which under re.MULTILINE would swallow newlines.
+_INVISIBLE_PREFIX = (
+    (0x00A0, 0x00A0),  # no-break space
+    (0x1680, 0x1680),  # ogham space mark
+    (0x180E, 0x180E),  # mongolian vowel separator
+    (0x2000, 0x200F),  # en and em spaces, zero-width space, ZWNJ, ZWJ, LRM, RLM
+    (0x202A, 0x202F),  # bidi embedding controls, narrow no-break space
+    (0x205F, 0x205F),  # medium mathematical space
+    (0x2060, 0x2064),  # word joiner and the invisible operators
+    (0x206A, 0x206F),  # deprecated format characters
+    (0x3000, 0x3000),  # ideographic space
+    (0xFEFF, 0xFEFF),  # zero-width no-break space, which is also the BOM
+)
+# Visible spacing, markdown list and quote markers, numeric list prefixes, then the
+# invisible set above.
+_LABEL_PREFIX = r" \t>*_#.)\-0-9" + "".join(
+    chr(low) if low == high else f"{chr(low)}-{chr(high)}" for low, high in _INVISIBLE_PREFIX
+)
+
 # Anything that could pass for one of the labels above, at the start of a line. Applied
 # to the learner's message and to replayed turns, never to the labels this module writes
 # itself, which are added after the scrub runs.
@@ -436,9 +482,10 @@ BEYOND_LABEL = "Tutor (not in your course):"
 # absent: the alternatives are followed by either "(" or ":", so "Tutoring in general
 # is:" cannot match, and neither can "Learner autonomy matters for one reason: X".
 #
-# WHAT STILL GETS THROUGH, so a reviewer knows the shape of the hole rather than only
-# that one exists. Two classes, both strictly less convincing than the real thing
-# because neither reproduces the label the model was told to read:
+# WHAT STILL GETS THROUGH. This is the boundary as audited in review, found by testing
+# the pattern rather than by reading it, and it is not a proof that nothing else does.
+# Treat it as the list of shapes someone has actually tried.
+#
 #   1. A qualifier in different punctuation: "Tutor [from your course]:", "Tutor, from
 #      your course:", "Tutor - from your course:". Widening to those brackets and
 #      separators starts eating ordinary prose, which is a real cost against an attack
@@ -446,9 +493,22 @@ BEYOND_LABEL = "Tutor (not in your course):"
 #   2. A label that does not begin a line: "...as we said. Tutor: the answer is 4". The
 #      replay writes every genuine label at the start of a line, so a mid-line one is
 #      competing with the format rather than imitating it.
-# Neither is defence in depth. The register split has nothing below it.
+#   3. A qualifier containing a line break: "Tutor (from your\ncourse):". Left alone on
+#      purpose. Allowing \n inside the qualifier class lets one match span lines, which
+#      is the anchor-sliding hazard the _INVISIBLE_PREFIX note describes, and it buys
+#      protection only against a forgery that no longer renders as a single label line.
+#   4. Any OTHER visible leading character: "| Tutor (from your course):" in a markdown
+#      table, or a leading quotation mark. The prefix class enumerates the markers that
+#      ordinary pasted text puts in front of a line; it cannot enumerate every glyph.
+#      These stay visible to a reader, which is what separates them from the invisible
+#      prefixes, and those are in the class precisely because they are NOT.
+#
+# None of these is defence in depth. The register split has nothing below it, which is
+# why the invisible-prefix class was fixed rather than documented: it reproduced the
+# label byte for byte at what looks to a reader like column zero.
 _REGISTER_FORGERY = re.compile(
-    r"^[ \t>*_#-]*(?:Learner|Tutor)(?:\s*\([^)\n]*\))?\s*:", re.MULTILINE | re.IGNORECASE
+    rf"^[{_LABEL_PREFIX}]*(?:Learner|Tutor)(?:\s*\([^)\n]*\))?\s*:",
+    re.MULTILINE | re.IGNORECASE,
 )
 
 
@@ -588,9 +648,19 @@ def _material_block(context: TutorContext) -> str:
     selected, which is MAX_LESSONS lessons and MAX_ITEMS items, and recent_incorrect is
     capped at RECENT_INCORRECT. Re-trimming to a second set of numbers would make the
     prompt narrower than the context module says it is, silently. The one budget applied
-    here is the per-lesson character cap, borrowed from remediation for the same reason:
-    HISTORY_MESSAGES is sized against roughly 12,000 characters of material, which is
-    MAX_LESSONS lessons at MAX_LESSON_CHARS each.
+    here is the per-lesson character cap, borrowed from remediation so that the 12,000
+    character figure HISTORY_MESSAGES reasons about has exactly one definition.
+
+    WHAT THAT COST, recorded because the change is invisible otherwise. An earlier draft
+    of this renderer capped grounding at 2 lessons of 3,000 characters, and deferring to
+    the context module roughly DOUBLES it, to 3 lessons of 4,000. The tighter numbers had
+    a real argument behind them: unlike re-teaching, which pays for its grounding once,
+    the tutor resends the whole material block on every turn of the conversation, so this
+    is a per-turn input cost multiplied by CONCEPT_TURNS_PER_DAY. It was still the right
+    trade, because a prompt quietly narrower than the module documenting it is a bug that
+    nothing can see, whereas this is a number two people can argue about. If tutor spend
+    turns out to dominate /usage, this is the first place to look, and the fix belongs in
+    remediation's constants where both callers will feel it.
     """
     parts = [f"Concept: {_scrub(context.concept_label)}", _standing(context)]
 
