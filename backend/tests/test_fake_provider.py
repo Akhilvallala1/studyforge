@@ -137,3 +137,43 @@ def test_generate_endpoint_with_fake_provider(client, monkeypatch):
     short = next(item for item in first_lesson["quiz"] if item["kind"] == "short")
     graded = client.post(f"/quiz/{short['id']}/answer", json={"answer": "forge"}).json()
     assert graded["correct"] is True
+
+
+def test_the_hostile_concept_is_reachable_by_playing(client, monkeypatch):
+    """The hostile note has to be reachable by using the app, not by seeding a card.
+
+    Review cards are created from quiz attempts and nothing else. While this concept
+    was carried only by the lesson's concept list, no attempt could ever name it, so
+    it could never have a card and the note that the markdown escaping check exists
+    for could never be generated offline at all: QA had to insert a card by hand.
+    This walks the real path instead, from the quiz item through to the note.
+    """
+    monkeypatch.setenv("STUDYFORGE_LLM_PROVIDER", "fake")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    generated = client.post(
+        "/courses/generate",
+        json={"text": "Untrusted input reaches every parser eventually."},
+    ).json()
+    course = client.get(f"/courses/{generated['id']}").json()
+    lessons = [
+        client.get(f"/lessons/{stub['id']}").json()
+        for module in course["modules"]
+        for stub in module["lessons"]
+    ]
+    hostile = next(lesson for lesson in lessons if lesson["title"] == HOSTILE_LESSON_TITLE)
+    item = next(q for q in hostile["quiz"] if q["concept"] == HOSTILE_LESSON_TITLE)
+
+    # Two misses, because that is the trigger the re-teach button is drawn from. The
+    # wrong answers differ so the double-submit guard reads them as two answers.
+    for wrong in ("first wrong answer", "second wrong answer"):
+        client.post(f"/quiz/{item['id']}/answer", json={"answer": wrong})
+        client.post(f"/lessons/{hostile['id']}/complete")
+        client.delete(f"/lessons/{hostile['id']}/complete")
+
+    flagged = client.get("/review/today").json()["needs_attention"]
+    entry = next(row for row in flagged if row["concept_label"] == HOSTILE_LESSON_TITLE)
+
+    note = client.post(f"/review/cards/{entry['card_id']}/remediation")
+    assert note.status_code == 200
+    assert "<script>alert(1)</script>" in note.json()["content"]

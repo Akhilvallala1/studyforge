@@ -207,6 +207,10 @@ def record_review(
         weights_hash=fsrs.WEIGHTS_HASH,
     )
     session.add(log)
+    # Load-bearing for idempotence, not only for assigning log.id. SessionLocal sets
+    # autoflush=False, so without this the row stays invisible to the attempt_ids
+    # query in _graded_attempt_ids, and two grade_lesson calls inside one uncommitted
+    # session would rate the same attempt twice.
     session.flush()
     return log
 
@@ -216,24 +220,51 @@ def record_review(
 # --------------------------------------------------------------------------
 
 
-def _exposure_attempts(
-    session: Session, lesson_id: int, since: datetime | None
-) -> list[models.Attempt]:
-    """Lesson-quiz attempts for this lesson that the card has not been rated on yet.
+def _lesson_quiz_attempts(session: Session, lesson_id: int) -> list[models.Attempt]:
+    """Every lesson-quiz attempt for this lesson, oldest first.
 
-    `since` is the card's last_review, which is what makes grading idempotent without
-    a session id on the attempt row: work already folded into the card is older than
-    that timestamp and is skipped. Completing a lesson twice therefore rates nothing
-    the second time, and reopening a lesson to redo it rates only the new answers.
+    Review-session attempts are excluded: the review endpoint rates those as they are
+    answered, so folding them in here would rate one answer twice.
     """
-    query = (
+    return (
         session.query(models.Attempt)
         .filter(models.Attempt.lesson_id == lesson_id)
         .filter(models.Attempt.source == LESSON_QUIZ_SOURCE)
+        .order_by(models.Attempt.attempt_no)
+        .all()
     )
-    if since is not None:
-        query = query.filter(models.Attempt.created_at > since)
-    return query.order_by(models.Attempt.attempt_no).all()
+
+
+def _graded_attempt_ids(session: Session, card_ids: list[int]) -> set[int]:
+    """The attempt ids these cards have already been rated on.
+
+    This is what keeps grading idempotent, and it replaces an earlier rule that
+    skipped any attempt older than the card's last_review. That rule answered the
+    wrong question. "Already counted" and "older than something else that was
+    counted" are different claims, and they come apart the moment two lessons share
+    a concept: grading the first lesson stamped last_review with the current time,
+    which disqualified the second lesson's already-submitted answer and discarded it
+    with no trace. Reading the ids back off review_logs.attempt_ids asks the exact
+    question instead, so an attempt is skipped only when it is genuinely inside a
+    rating already, whenever it happened to be made.
+
+    Deliberately no schema change: record_review has always written the evidence it
+    rated onto the log row, so an existing database already answers this correctly
+    for every rating it has ever recorded, with nothing to migrate.
+    """
+    if not card_ids:
+        return set()
+    graded: set[int] = set()
+    rows = (
+        session.query(models.ReviewLog.attempt_ids)
+        .filter(models.ReviewLog.card_id.in_(card_ids))
+        .all()
+    )
+    for (attempt_ids,) in rows:
+        for attempt_id in attempt_ids or []:
+            if isinstance(attempt_id, int):
+                graded.add(attempt_id)
+    return graded
 
 
 def grade_lesson(
@@ -249,6 +280,14 @@ def grade_lesson(
     Called on lesson completion rather than on each answer. Completion is a boundary
     the learner chose, and grading mid-quiz would schedule a concept off a half-
     finished attempt.
+
+    A concept two lessons both teach is rated once per lesson completed, not once in
+    total. That is a choice, and the alternative (folding the second lesson's answer
+    into the rating the first one produced) was rejected: review_logs is append-only
+    by design, and the second answer is a genuinely separate retrieval of the same
+    concept, which fsrs.review already has a defined same-day-repeat path for. What
+    is not defensible is discarding it, which is what an earlier last_review filter
+    did whenever the sibling lesson was completed first.
     """
     moment = now_utc() if now is None else _naive_utc(now)
     items = {item.id: item for item in lesson.quiz_items}
@@ -269,18 +308,20 @@ def grade_lesson(
         .filter(models.ReviewCard.concept_key.in_(list(by_concept)))
         .all()
     }
-    all_attempts = _exposure_attempts(session, lesson.id, None)
+    all_attempts = _lesson_quiz_attempts(session, lesson.id)
     by_key: dict[str, list[models.Attempt]] = defaultdict(list)
     for attempt in all_attempts:
         by_key[attempt.concept_key].append(attempt)
+    # One more query, not one per concept: every rating these cards already carry,
+    # read once and asked about in Python.
+    already_graded = _graded_attempt_ids(session, [row.id for row in cards.values()])
 
     logs: list[models.ReviewLog] = []
     for concept_key, concept_label in by_concept.items():
-        card_row = cards.get(concept_key)
-        # The exposure window is per card: a concept already reviewed is graded only
-        # on attempts made since, so recompleting a lesson cannot re-grade old answers.
-        since = card_row.last_review if card_row is not None else None
-        scoped = [a for a in by_key[concept_key] if since is None or a.created_at > since]
+        # Every answer is counted exactly once. An attempt already inside a rating is
+        # skipped; one that is merely older than some other rated attempt is not, and
+        # that distinction is the whole reason this reads ids rather than timestamps.
+        scoped = [a for a in by_key[concept_key] if a.id not in already_graded]
         if not scoped:
             continue
 
