@@ -1,17 +1,17 @@
 # StudyForge
 
-**Open-source adaptive learning platform.** Turn any material - PDFs, slides, links, notes - into a personalized course with quizzes, spaced review, and an AI tutor. Self-hosted, your data stays yours.
+**Open-source adaptive learning platform.** Turn any material - PDFs, slides, links, notes - into a personalized course with quizzes and spaced review. Self-hosted, your data stays yours. An AI tutor is on the roadmap, not built.
 
-> Inspired by platforms like paradigm.study, but open: bring your own API key or run a local model, export everything, own your learning data.
+> Inspired by platforms like paradigm.study, but open: bring your own API key or run a local model, own your learning data.
 
 ## Why open source?
 
 Closed adaptive-learning platforms lock in your content, your progress history, and your study data. StudyForge takes the opposite approach:
 
-- **Self-hosted** - run it on your own machine or server; nothing leaves your control
+- **Self-hosted** - run it on your own machine or server; your courses and progress never leave it
 - **Bring your own model** - Claude, or any local model via Ollama
-- **No lock-in** - export courses and progress as Markdown, JSON, or Anki decks
-- **Community courses** - share course templates as plain files in git, not a walled garden
+- **No lock-in** - your courses and progress live in a SQLite file you own, not behind anyone's account. Export to Markdown, JSON, or Anki decks is on the roadmap, not built
+- **Community courses** (planned) - course templates as plain files in git, not a walled garden
 
 ## Core features (roadmap)
 
@@ -42,6 +42,7 @@ Two of these are narrower than they sound, deliberately, so you know before you 
 - [ ] Study planning: deadlines, session scheduling, reminders
 
 ### Phase 4 - Community
+- [ ] Export courses and progress as Markdown, JSON, or Anki decks
 - [ ] Course template format (portable, git-friendly)
 - [ ] Public course registry
 - [ ] Multi-user / classroom mode
@@ -113,7 +114,7 @@ Or upload a PDF to `POST /courses/generate/pdf`. Run tests with `pytest backend/
 
 ## Cost control
 
-One course is dozens of LLM calls, so a careless PDF upload can be a surprising bill. StudyForge meters its own API usage and shows you the running total instead of letting you find out later. Every call is recorded with its provider, model, stage (outline or lesson), token counts, and estimated cost, and the same line is logged to the backend console as it happens.
+One course is dozens of LLM calls, so a careless PDF upload can be a surprising bill. StudyForge meters its own API usage and shows you the running total instead of letting you find out later. Every call is recorded with its provider, model, stage (outline, lesson, or remediation), token counts, and estimated cost, and the same line is logged to the backend console as it happens.
 
 - **Every page** in the web UI shows total estimated spend. **`/usage`** breaks it down by course and lists the recent calls.
 - **Generating a course** reports what that run cost when it finishes.
