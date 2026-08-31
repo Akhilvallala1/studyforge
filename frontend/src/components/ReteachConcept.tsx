@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { ConceptPractice } from "@/components/ConceptPractice";
 import { LessonMarkdown } from "@/components/LessonMarkdown";
 import { ApiError, getRemediation, requestRemediation } from "@/lib/api";
-import { formatDay, noLongerMissed } from "@/lib/copy";
+import { formatDay, noLongerMissed, SCHEDULE_PROMISE } from "@/lib/copy";
 import type { NeedsAttentionEntry, RemediationNote } from "@/lib/types";
 
 /* How a request that lost the race waits for the winner. The refusal carries no
@@ -466,9 +466,12 @@ export function ReteachConcept({
             onAnnounce={setAnnouncement}
           />
 
+          {/* The whole panel's promise, made once and covering everything inside it.
+              The practice panel above deliberately carries no wording of its own: it
+              renders directly against this paragraph, and two statements of one fact
+              two lines apart is worse than one that names both. */}
           <p className="mt-4 border-t border-amber-200 pt-3 text-[13px] text-amber-900/80 dark:border-amber-900 dark:text-amber-200/80">
-            This concept stays in your review queue on its usual schedule. Nothing here
-            reschedules it or marks it learned.
+            {SCHEDULE_PROMISE}
             {availableFrom && ` A new explanation can be written from ${formatDay(availableFrom)}.`}
           </p>
         </div>

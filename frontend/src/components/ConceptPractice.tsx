@@ -24,18 +24,33 @@ interface Feedback {
 type FocusTarget = "answer" | "next" | "terminal" | "submit";
 
 /**
- * What practising cannot do, said out loud.
+ * How one graded answer is announced.
  *
- * The one thing a learner might reasonably assume from getting questions right here is
- * that they have moved the needle, and they have not: this writes an attempt row and
- * nothing else. No review log, no rescheduling, no mastery bucket, no attention flag,
- * no retention figure. Saying so is not a disclaimer bolted on afterwards, it is the
- * feature's actual promise, and the learner is entitled to it before they draw a
- * conclusion from two right answers.
+ * This is the only channel a screen reader user has for the result: focus moves to a
+ * control that does not carry the grade, so whatever is not said here is not said at
+ * all. That is why it mirrors the visible copy exactly rather than approximating it,
+ * including the split between a wording mismatch and a wrong option, and why the
+ * exact-match caveat is never attached to a multiple-choice miss.
+ *
+ * The "Answer N of M" prefix is load-bearing, not decoration. A live region whose text
+ * is byte-identical to what it already held does not re-announce, and `expected` alone
+ * does not distinguish two consecutive misses on different items that happen to share
+ * an answer string, which generated quizzes produce constantly (true/false, yes/no, a
+ * shared one-word answer). `answered` increments on every answer, right or wrong, so
+ * no two announcements in a run can collide.
  */
-const SCHEDULE_NOTE =
-  "Practising here changes nothing about your schedule. This concept comes back on " +
-  "its usual date, and how you do then is what counts.";
+function gradeAnnouncement(
+  correct: boolean,
+  expected: string,
+  kind: "mcq" | "short",
+  answered: number,
+  maxAnswers: number,
+): string {
+  const position = `Answer ${answered} of ${maxAnswers}.`;
+  if (correct) return `${position} Correct.`;
+  const verdict = kind === "short" ? "Not an exact match." : "Not the right option.";
+  return `${position} ${verdict} The reference answer is: ${expected}`;
+}
 
 function errorMessage(err: unknown): string {
   return err instanceof ApiError
@@ -177,7 +192,18 @@ export function ConceptPractice({
    * render to clear it; same shape as ReteachConcept's `wantsFocus`.
    */
   const pendingFocus = useRef<FocusTarget | null>(null);
+  /**
+   * The text field, when the question has one. A multiple-choice question has no single
+   * control to land on, so this stays null for those and `questionRef` catches it.
+   */
   const answerRef = useRef<HTMLInputElement>(null);
+  /**
+   * The block holding the question and its controls, focusable so that "put the learner
+   * back on the question" always resolves to something mounted. Without it, `answer`
+   * named an element that does not exist for a multiple-choice item and focus was left
+   * on the body. Same pattern TerminalPanel uses for the same reason.
+   */
+  const questionRef = useRef<HTMLDivElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
   const submitRef = useRef<HTMLButtonElement>(null);
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -237,29 +263,44 @@ export function ConceptPractice({
         ? nextRef.current
         : wanted === "terminal"
           ? terminalRef.current
-          : answerRef.current;
+          : // "answer" means the question, whatever shape it takes: the text field when
+            // there is one, and the block around it for a multiple-choice item, which
+            // has no single control and whose question text needs reading anyway.
+            (answerRef.current ?? questionRef.current);
     target?.focus();
     // The three pieces of state a response can move. Whichever of them changed, the
     // tree carrying the new control is on screen by the time this runs.
   }, [run, feedback, busy]);
 
-  /** Take the run the server just described and land the learner in the right place. */
-  function adopt(next: PracticeState) {
+  /**
+   * Take the run the server just described and land the learner in the right place.
+   *
+   * `whenActive` is the caller's, not this function's, because the same active state is
+   * reached with two different things on screen: an answer that was graded leaves the
+   * feedback block and its Next button up, while a refusal clears the feedback and puts
+   * the question back. Deciding here would name a control the caller had just unmounted,
+   * and focus would silently fall to the body.
+   */
+  function adopt(next: PracticeState, whenActive: FocusTarget) {
     setRun(next);
-    if (next.status === "done" || next.status === "unavailable") {
-      // The terminal state REPLACES the question. There is no dismissing it and no
-      // practising anyway, so the only thing left to do with it is read it.
-      pendingFocus.current = "terminal";
-    } else {
-      pendingFocus.current = "next";
-    }
+    // The terminal state REPLACES the question. There is no dismissing it and no
+    // practising anyway, so the only thing left to do with it is read it.
+    pendingFocus.current =
+      next.status === "done" || next.status === "unavailable" ? "terminal" : whenActive;
   }
 
   async function submit() {
     if (busy || !run || run.item === null) return;
     const item = run.item;
     if (!answer.trim()) {
-      setError("Enter an answer first.");
+      // Announced as well as shown. Focus never leaves the control here, so nothing
+      // else would reach a screen reader: the message is rendered below the field, but
+      // a paragraph appearing next to where you already are is not an event. The field
+      // carries aria-invalid rather than aria-describedby pointing at this same
+      // sentence, which would have it read twice in the one case where focus stays put.
+      const empty = "Enter an answer first.";
+      setError(empty);
+      onAnnounce(empty);
       return;
     }
     const elapsed = Date.now() - shownAt.current;
@@ -276,17 +317,19 @@ export function ConceptPractice({
       if (outcome.kind === "answer") {
         const result = outcome.answer;
         setAnswer("");
-        // Announced because focus is about to move to a control that does not carry
-        // the grading result, and the result is the point of having answered.
-        //
-        // Both branches carry something that changes between answers, the tally or the
-        // reference answer, and that is load-bearing rather than decorative: a live
-        // region whose text is byte-identical to what it already held does not
-        // re-announce, so a bare "Correct." twice running would be read once.
+        // Announced because focus is about to move to a control that does not carry the
+        // grading result, and the result is the point of having answered. This fires on
+        // a terminal arrival too: the learner earned a grade on that answer, and the
+        // terminal panel reports the run rather than the answer, so the two do not
+        // repeat each other.
         onAnnounce(
-          result.correct
-            ? `Correct. That is ${result.state.correct} of ${result.state.target_correct} right.`
-            : `Not an exact match. The reference answer is: ${result.expected}`,
+          gradeAnnouncement(
+            result.correct,
+            result.expected,
+            item.kind,
+            result.state.answered,
+            result.state.max_answers,
+          ),
         );
         // Read from state.status, never from the 200 itself. A note retired underneath
         // this panel ends the run on a SUCCESSFUL response: the answer already in the
@@ -304,7 +347,9 @@ export function ConceptPractice({
                 kind: item.kind,
               },
         );
-        adopt(result.state);
+        // The feedback block above is what is on screen for a run that continues, so
+        // Next is the control to land on.
+        adopt(result.state, "next");
         return;
       }
 
@@ -346,7 +391,12 @@ export function ConceptPractice({
           onAnnounce(serverMessage);
         }
       }
-      adopt(conflict.state);
+      // The feedback was just cleared, so there is no Next button to land on: a refusal
+      // puts the question back, and that is where the learner goes. The one code that
+      // announces here is also the one that leaves an active run behind, and it arrived
+      // from a submit button that had been disabled, so focus is already on the body and
+      // has to be placed rather than left.
+      adopt(conflict.state, "answer");
     } catch (err) {
       const message = errorMessage(err);
       setError(message);
@@ -401,13 +451,28 @@ export function ConceptPractice({
           onSubmit={() => void submit()}
           onNext={showNextQuestion}
           answerRef={answerRef}
+          questionRef={questionRef}
           nextRef={nextRef}
           submitRef={submitRef}
         />
       )}
 
       {run !== null && (run.status === "done" || run.status === "unavailable") && (
-        <TerminalPanel run={run} baseId={baseId} conceptLabel={conceptLabel} panelRef={terminalRef} />
+        <>
+          {/* Only the unreachable default arm of the conflict switch can set an error
+              alongside a terminal run, and TerminalPanel has no business taking an error
+              prop for it. Rendered here so that if a future server code ever lands on
+              that arm, the message it announces is also one the learner can see. */}
+          {error && (
+            <p className="mb-3 text-[13px] text-red-800 dark:text-red-300">{error}</p>
+          )}
+          <TerminalPanel
+            run={run}
+            baseId={baseId}
+            conceptLabel={conceptLabel}
+            panelRef={terminalRef}
+          />
+        </>
       )}
     </section>
   );
@@ -425,6 +490,7 @@ function ActivePanel({
   onSubmit,
   onNext,
   answerRef,
+  questionRef,
   nextRef,
   submitRef,
 }: {
@@ -438,6 +504,7 @@ function ActivePanel({
   onSubmit: () => void;
   onNext: () => void;
   answerRef: React.RefObject<HTMLInputElement | null>;
+  questionRef: React.RefObject<HTMLDivElement | null>;
   nextRef: React.RefObject<HTMLButtonElement | null>;
   submitRef: React.RefObject<HTMLButtonElement | null>;
 }) {
@@ -503,7 +570,11 @@ function ActivePanel({
           </button>
         </div>
       ) : (
-        <div className="mt-3 rounded-lg border border-amber-200 bg-white/70 px-4 py-3 dark:border-amber-900 dark:bg-zinc-900/40">
+        <div
+          ref={questionRef}
+          tabIndex={-1}
+          className="mt-3 rounded-lg border border-amber-200 bg-white/70 px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-900 dark:bg-zinc-900/40"
+        >
           <p className="text-[14px] font-medium leading-[1.45]">{item.question}</p>
 
           {/* Neither the input nor the radios are ever disabled, even mid-request.
@@ -536,6 +607,7 @@ function ActivePanel({
                   ref={answerRef}
                   type="text"
                   value={answer}
+                  aria-invalid={error ? true : undefined}
                   onChange={(e) => setAnswer(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -563,8 +635,9 @@ function ActivePanel({
           </button>
         </div>
       )}
-
-      <p className="mt-3 text-[12px] text-amber-900/70 dark:text-amber-200/70">{SCHEDULE_NOTE}</p>
+      {/* No schedule promise here. The note panel this is mounted inside carries it,
+          extended to name practice, and it renders immediately below: a second wording
+          of the same fact two lines apart is the failure lib/copy exists to prevent. */}
     </>
   );
 }
@@ -615,13 +688,16 @@ function TerminalPanel({
         </ul>
       )}
 
+      {/* Only on a DONE run. The backend leaves resets_at null on an unavailable one,
+          which is right: "come back tomorrow" answers a question nobody asked when the
+          concept has stopped being flagged at all. */}
       {run.status === "done" && run.resets_at && (
         <p className="mt-3 text-[13px] text-amber-900/80 dark:text-amber-200/80">
           Practice opens again on {formatDay(run.resets_at)}.
         </p>
       )}
-
-      <p className="mt-3 text-[12px] text-amber-900/70 dark:text-amber-200/70">{SCHEDULE_NOTE}</p>
+      {/* The schedule promise is the note panel's, immediately below this one, and it
+          names practice. Repeating it here is the duplication lib/copy exists to stop. */}
     </div>
   );
 }
