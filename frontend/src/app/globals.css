@@ -37,6 +37,18 @@
   --concept-muted-text: #52525b;
   --concept-column-label: #52525b;
   --concept-column-sublabel: #52525b;
+  /* The card surface, opaque. It is the exact colour the contrast figures above were
+     measured against (zinc-50 at 60% over white); the scroll hint needs it as a solid
+     value because it paints the map's own background over its shadows. */
+  --concept-surface: #fcfcfc;
+  /*
+   * The edge hint, not a shadow in both themes. Darkening works against a near-white
+   * page and is invisible against a near-black one: black at 60% over #101011 moves
+   * the surface by nine levels out of 255, which measured as 3.5% and read as nothing.
+   * Dark mode lightens instead. Both directions are tuned to land in the same place,
+   * about 36 levels of separation from the surface.
+   */
+  --concept-scroll-edge: rgba(24, 24, 27, 0.18);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -51,7 +63,54 @@
     --concept-muted-text: #a1a1aa;
     --concept-column-label: #a1a1aa;
     --concept-column-sublabel: #a1a1aa;
+    --concept-surface: #101011;
+    --concept-scroll-edge: rgba(255, 255, 255, 0.16);
   }
+}
+
+/*
+ * A horizontal scroll affordance that appears only when there is somewhere to scroll.
+ *
+ * A clipped concept map reads as broken rather than as scrollable, and the map is wide
+ * enough to clip on a laptop. The two `local` layers are solid blocks of the element's
+ * own surface colour and travel with the content, so each one covers the shadow at the
+ * end that is already fully in view; the two `scroll` shadows are fixed to the box. When
+ * the content fits, both covers sit exactly over both shadows and nothing is drawn. No
+ * measuring, no script, and nothing to keep in sync with the map's width.
+ *
+ * All four layers are the SAME width, and that is the whole trick rather than a
+ * coincidence. A cover only has to be as wide as the shadow it hides, and every pixel
+ * wider is a pixel of overflow that scrolls the cover aside without yet revealing
+ * anything: a 48px cover over an 18px shadow left roughly 28px of overflow showing no
+ * hint at all. Equal widths shrink that band to the shadow's own width, and because the
+ * shadow is darkest at the box edge and fades inward, the part exposed first is its
+ * faint tail, so the hint grows in rather than snapping on. It also caps what a shadow
+ * can ever obscure at 12px, which is exactly the map's COLUMN_PADDING, so no label can
+ * sit under one.
+ *
+ * The direction of the remaining error is the one that matters: at zero overflow the
+ * covers coincide with the shadows exactly, so nothing is ever drawn claiming there is
+ * content past an edge when there is not.
+ */
+.scroll-hint-x {
+  background-color: var(--concept-surface);
+  background-image:
+    linear-gradient(var(--concept-surface), var(--concept-surface)),
+    linear-gradient(var(--concept-surface), var(--concept-surface)),
+    radial-gradient(farthest-side at 0 50%, var(--concept-scroll-edge), rgba(255, 255, 255, 0)),
+    radial-gradient(farthest-side at 100% 50%, var(--concept-scroll-edge), rgba(255, 255, 255, 0));
+  background-position:
+    0 0,
+    100% 0,
+    0 0,
+    100% 0;
+  background-repeat: no-repeat;
+  background-size:
+    12px 100%,
+    12px 100%,
+    12px 100%,
+    12px 100%;
+  background-attachment: local, local, scroll, scroll;
 }
 
 body {

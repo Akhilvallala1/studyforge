@@ -70,7 +70,18 @@ export default async function CourseConceptsPage(
         <ConceptsEmptyState />
       ) : (
         <>
-          <ConceptMap lessons={lessons} concepts={concepts} courseTitle={data.title} />
+          {/*
+            The map is a figure, not prose, so it is allowed out of the reading column.
+            A four-lesson course is 848px against a 768px column, which on a laptop cut
+            the last lesson off mid-word for no reason: there was room on either side of
+            the page the whole time. The step out is a fixed number of pixels rather than
+            anything viewport-derived, so it cannot overshoot into a horizontal page
+            scrollbar. Below lg it does not apply at all, which is what keeps a phone
+            scrolling the map inside its own box instead of scrolling the page sideways.
+          */}
+          <div className="lg:-mx-28 xl:-mx-40">
+            <ConceptMap lessons={lessons} concepts={concepts} courseTitle={data.title} />
+          </div>
           <MasteryLegend />
 
           {weakest ? (

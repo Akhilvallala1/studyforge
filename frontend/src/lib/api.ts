@@ -38,13 +38,30 @@ interface ObjectDetail {
   [key: string]: unknown;
 }
 
+/**
+ * What a spend-cap refusal stopped, in the words of the endpoint that was refused.
+ *
+ * The 402 body is identical whichever endpoint raised it, so the limit and the amounts
+ * are the only things this file can state on its own. What the refused call would have
+ * produced is not in the body, and only the caller knows it: generation loses a course,
+ * a re-teach loses an explanation, and a shared formatter asserting either one is wrong
+ * for every other caller. Omit it and the message stops at what is true everywhere.
+ */
+const COST_LIMIT_CONSEQUENCE = {
+  generate: "Generation was stopped, no course was saved for this run.",
+  // The cap is checked before the provider call and a re-teach is a single call, so
+  // nothing was written and nothing was spent on this attempt.
+  remediation: "No explanation was written, and this attempt spent nothing.",
+} as const;
+
 /** Returns null when the detail carries nothing useful, so the caller keeps its statusText fallback. */
-function messageFromObjectDetail(detail: ObjectDetail): string | null {
+function messageFromObjectDetail(detail: ObjectDetail, consequence?: string): string | null {
   if (detail.error === "cost_limit_exceeded") {
+    const tail = consequence ? ` ${consequence}` : "";
     if (typeof detail.limit_usd === "number" && typeof detail.spent_usd === "number") {
-      return `LLM spend limit reached: ${formatUsd(detail.spent_usd)} spent of a ${formatUsd(detail.limit_usd)} cap. Generation was stopped, no course was saved for this run.`;
+      return `LLM spend limit reached: ${formatUsd(detail.spent_usd)} spent of a ${formatUsd(detail.limit_usd)} cap.${tail}`;
     }
-    return "LLM spend limit reached. Generation was stopped, no course was saved for this run.";
+    return `LLM spend limit reached.${tail}`;
   }
   if (typeof detail.message === "string" && detail.message) {
     return detail.message;
@@ -61,7 +78,11 @@ function messageFromValidationDetail(detail: unknown[]): string | null {
   return null;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  costLimitConsequence?: string,
+): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, init);
   if (!res.ok) {
     let message = res.statusText || `Request failed with status ${res.status}`;
@@ -73,7 +94,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       } else if (Array.isArray(detail)) {
         message = messageFromValidationDetail(detail) ?? message;
       } else if (detail && typeof detail === "object") {
-        message = messageFromObjectDetail(detail as ObjectDetail) ?? message;
+        message = messageFromObjectDetail(detail as ObjectDetail, costLimitConsequence) ?? message;
       }
     } catch {
       // Non-JSON error body - keep the statusText fallback.
@@ -87,12 +108,16 @@ function get<T>(path: string): Promise<T> {
   return request<T>(path, { cache: "no-store" });
 }
 
-function postJson<T>(path: string, body: unknown): Promise<T> {
-  return request<T>(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+function postJson<T>(path: string, body: unknown, costLimitConsequence?: string): Promise<T> {
+  return request<T>(
+    path,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    costLimitConsequence,
+  );
 }
 
 export function listCourses(): Promise<CourseSummary[]> {
@@ -113,17 +138,21 @@ export function getCourseConcepts(id: number): Promise<CourseConcepts> {
 }
 
 export function generateFromText(text: string): Promise<GenerateResult> {
-  return postJson("/courses/generate", { text });
+  return postJson("/courses/generate", { text }, COST_LIMIT_CONSEQUENCE.generate);
 }
 
 export function generateFromUrl(url: string): Promise<GenerateResult> {
-  return postJson("/courses/generate", { url });
+  return postJson("/courses/generate", { url }, COST_LIMIT_CONSEQUENCE.generate);
 }
 
 export function generateFromPdf(file: File): Promise<GenerateResult> {
   const form = new FormData();
   form.append("file", file);
-  return request("/courses/generate/pdf", { method: "POST", body: form });
+  return request(
+    "/courses/generate/pdf",
+    { method: "POST", body: form },
+    COST_LIMIT_CONSEQUENCE.generate,
+  );
 }
 
 /** `elapsedMs` is a soft timing signal; omit it when the measurement is unavailable. */
@@ -214,12 +243,16 @@ export type RemediationOutcome =
   | { kind: "conflict"; conflict: RemediationConflict };
 
 /** The message logic `request` applies, over a body that has already been read. */
-function messageFromErrorBody(body: unknown, fallback: string): string {
+function messageFromErrorBody(
+  body: unknown,
+  fallback: string,
+  costLimitConsequence?: string,
+): string {
   const detail = (body as { detail?: unknown } | null)?.detail;
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) return messageFromValidationDetail(detail) ?? fallback;
   if (detail && typeof detail === "object") {
-    return messageFromObjectDetail(detail as ObjectDetail) ?? fallback;
+    return messageFromObjectDetail(detail as ObjectDetail, costLimitConsequence) ?? fallback;
   }
   return fallback;
 }
@@ -245,7 +278,10 @@ export async function requestRemediation(cardId: number): Promise<RemediationOut
     if (detail && typeof detail.error === "string") return { kind: "conflict", conflict: detail };
   }
   const fallback = res.statusText || `Request failed with status ${res.status}`;
-  throw new ApiError(res.status, messageFromErrorBody(body, fallback));
+  throw new ApiError(
+    res.status,
+    messageFromErrorBody(body, fallback, COST_LIMIT_CONSEQUENCE.remediation),
+  );
 }
 
 /** The concept's current explanation, or null when it has none. Costs nothing. */

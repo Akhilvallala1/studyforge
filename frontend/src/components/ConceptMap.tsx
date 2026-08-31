@@ -32,6 +32,17 @@ const COLUMN_SUBLABEL_Y = 48;
 const RULE_TOP = 44;
 const RULE_BOTTOM_INSET = 20;
 
+/**
+ * The lesson title under each column heading wraps the same way a concept label does,
+ * for the same reason: a single truncated line turned "Introduction to Spaced
+ * repetition" into "Introduction to Spaced repetiti..." and there was nowhere else on
+ * screen to read the rest. Two lines fit almost every real lesson title whole, and the
+ * heading also carries a tooltip for the ones they do not.
+ */
+const SUBLABEL_FONT = 10;
+const SUBLABEL_LINE_HEIGHT = 12;
+const MAX_SUBLABEL_LINES = 2;
+
 const MIN_RADIUS = 16;
 const MAX_RADIUS = 34;
 
@@ -55,7 +66,6 @@ const BLOCK_BELOW_CENTER =
 const ROW_GAP = 22;
 const ROW_PITCH = BLOCK_BELOW_CENTER + ROW_GAP + MAX_RADIUS;
 const HEADER_GAP = 20;
-const FIRST_ROW_Y = COLUMN_SUBLABEL_Y + HEADER_GAP + MAX_RADIUS;
 const BOTTOM_PADDING = 20;
 const MIN_HEIGHT = 200;
 
@@ -138,12 +148,12 @@ function truncate(text: string, maxChars: number): string {
 }
 
 /**
- * Greedy word wrap into at most two lines across the column's width. At 12px that is
- * roughly 28 characters a line, so ordinary concept names arrive intact. Anything still
- * too long is truncated visually only: the untruncated label is always in the node's
- * tooltip and in the text equivalent below.
+ * Greedy word wrap into at most `maxLines` lines across the column's width. At 12px that
+ * is roughly 28 characters a line, so ordinary concept names arrive intact. Anything
+ * still too long is truncated visually only: the untruncated text is always in the
+ * element's tooltip and in the text equivalent below.
  */
-function wrapLabel(label: string, fontSize: number): string[] {
+function wrapLabel(label: string, fontSize: number, maxLines: number): string[] {
   const maxChars = charBudget(LABEL_WIDTH, fontSize);
   const words = label.split(/\s+/).filter(Boolean);
   if (!words.length) return [];
@@ -161,9 +171,9 @@ function wrapLabel(label: string, fontSize: number): string[] {
   }
   lines.push(current);
 
-  if (lines.length > MAX_LABEL_LINES) {
-    const kept = lines.slice(0, MAX_LABEL_LINES);
-    kept[MAX_LABEL_LINES - 1] = truncate(`${kept[MAX_LABEL_LINES - 1]}...`, maxChars);
+  if (lines.length > maxLines) {
+    const kept = lines.slice(0, maxLines);
+    kept[maxLines - 1] = truncate(`${kept[maxLines - 1]}...`, maxChars);
     return kept;
   }
   return lines.map((line) => truncate(line, maxChars));
@@ -204,9 +214,19 @@ export function ConceptMap({
 
   const width = Math.max(columns.length, 1) * COLUMN_WIDTH;
   const rows = Math.max(1, ...columns.map((column) => column.concepts.length));
+  // Wrapped once here rather than inside the column loop, because the first row of
+  // nodes has to clear the TALLEST heading: a column whose title fits on one line
+  // still starts its circles level with the two-line ones beside it.
+  const sublabels = columns.map((column) =>
+    wrapLabel(column.lesson.title, SUBLABEL_FONT, MAX_SUBLABEL_LINES),
+  );
+  const headerLines = Math.max(1, ...sublabels.map((lines) => lines.length));
+  const firstRowY =
+    COLUMN_SUBLABEL_Y + (headerLines - 1) * SUBLABEL_LINE_HEIGHT + HEADER_GAP + MAX_RADIUS;
+
   const height = Math.max(
     MIN_HEIGHT,
-    FIRST_ROW_Y + (rows - 1) * ROW_PITCH + BLOCK_BELOW_CENTER + BOTTOM_PADDING,
+    firstRowY + (rows - 1) * ROW_PITCH + BLOCK_BELOW_CENTER + BOTTOM_PADDING,
   );
 
   const title = `Concept map for ${courseTitle}`;
@@ -221,12 +241,18 @@ export function ConceptMap({
         rather than scaling to the viewport, because a scaled-down 848px map puts 12px
         labels below legibility on a phone. Focusable so the scroll is reachable by
         keyboard, which a plain overflow container is not.
+
+        scroll-hint-x draws an edge shadow at whichever end has content past it, and
+        nothing at all when the map fits. Without it a map cut off by the viewport read
+        as a rendering fault rather than as something to drag. It also owns the surface
+        colour, which those shadows need as an opaque value; it is the same colour the
+        label contrast figures were measured against.
       */}
       <div
         role="group"
         aria-label={title}
         tabIndex={0}
-        className="mt-5 overflow-x-auto rounded-lg border border-zinc-200 bg-zinc-50/60 p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500 dark:border-zinc-800 dark:bg-zinc-900/40"
+        className="scroll-hint-x mx-auto mt-5 w-fit max-w-full overflow-x-auto rounded-lg border border-zinc-200 p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500 dark:border-zinc-800"
       >
         <svg
           role="img"
@@ -253,31 +279,42 @@ export function ConceptMap({
             const centerX = columnIndex * COLUMN_WIDTH + COLUMN_WIDTH / 2;
             return (
               <g key={column.lesson.id}>
-                <text
-                  x={centerX}
-                  y={COLUMN_LABEL_Y}
-                  textAnchor="middle"
-                  fontSize={11}
-                  fontWeight={600}
-                  fill="var(--concept-column-label)"
-                >
-                  {`Lesson ${columnIndex + 1}`}
-                </text>
-                <text
-                  x={centerX}
-                  y={COLUMN_SUBLABEL_Y}
-                  textAnchor="middle"
-                  fontSize={10}
-                  fill="var(--concept-column-sublabel)"
-                >
-                  {truncate(column.lesson.title, charBudget(LABEL_WIDTH, 10))}
-                </text>
+                {/* Hover text on the heading, the way every node has one, in a group of
+                    its own so it covers the heading and not the whole column. Without
+                    it a lesson title too long for the column was readable nowhere on
+                    screen: the untruncated title is in the sr-only list below, which a
+                    sighted reader never sees. */}
+                <g>
+                  <title>{`Lesson ${columnIndex + 1}: ${column.lesson.title}`}</title>
+                  <text
+                    x={centerX}
+                    y={COLUMN_LABEL_Y}
+                    textAnchor="middle"
+                    fontSize={11}
+                    fontWeight={600}
+                    fill="var(--concept-column-label)"
+                  >
+                    {`Lesson ${columnIndex + 1}`}
+                  </text>
+                  {sublabels[columnIndex].map((line, lineIndex) => (
+                    <text
+                      key={line + lineIndex}
+                      x={centerX}
+                      y={COLUMN_SUBLABEL_Y + lineIndex * SUBLABEL_LINE_HEIGHT}
+                      textAnchor="middle"
+                      fontSize={SUBLABEL_FONT}
+                      fill="var(--concept-column-sublabel)"
+                    >
+                      {line}
+                    </text>
+                  ))}
+                </g>
 
                 {column.concepts.map((concept, rowIndex) => {
                   const style = BUCKET_STYLES[bucketOf(concept.bucket)];
                   const radius = radiusOf(concept.occurrences);
-                  const centerY = FIRST_ROW_Y + rowIndex * ROW_PITCH;
-                  const lines = wrapLabel(concept.concept_label, LABEL_FONT);
+                  const centerY = firstRowY + rowIndex * ROW_PITCH;
+                  const lines = wrapLabel(concept.concept_label, LABEL_FONT, MAX_LABEL_LINES);
                   // Measured from the largest possible radius, not this node's own, so
                   // labels sit on one baseline across a row however the circles differ.
                   const textTop = centerY + MAX_RADIUS + LABEL_GAP;
