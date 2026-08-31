@@ -463,6 +463,7 @@ _INVISIBLE_PREFIX = (
     (0x00A0, 0x00A0),  # no-break space
     (0x00AD, 0x00AD),  # soft hyphen
     (0x034F, 0x034F),  # combining grapheme joiner
+    (0x061C, 0x061C),  # arabic letter mark, the script counterpart of U+200E LRM
     (0x1680, 0x1680),  # ogham space mark
     (0x180B, 0x180E),  # mongolian free variation selectors and vowel separator
     (0x2000, 0x200F),  # en and em spaces, zero-width space, ZWNJ, ZWJ, LRM, RLM
@@ -511,12 +512,20 @@ _LABEL_PREFIX = r" \t>*_#.)\-0-9" + "".join(
 #      of every Cf and Zs found 147 that defeated an earlier version of it, and the ones
 #      named in _INVISIBLE_PREFIX are the ones somebody has actually tried. This is an
 #      ENUMERATION, not a category test, and it is not closed. Python's re has no
-#      \p{Cf}, so a real category test needs the third-party regex module, and what is
-#      left after the fixes above is a tail nobody pastes by accident: Egyptian
-#      hieroglyph joiners, musical format controls, the astral tag block, U+3164 HANGUL
-#      FILLER. The line drawn here is the soft hyphen's: U+00AD is in the class because
-#      PDF and web text carry it constantly and it arrives on the clipboard by accident,
-#      which is the threat _scrub_turn names. Deliberate exotica is not chased.
+#      \p{Cf}, so a real category test needs the third-party regex module. What is left
+#      after the fixes above is 142 code points, swept and counted twice: 97 astral tag
+#      block, 16 Egyptian hieroglyph joiners, 11 Arabic and Syriac prefixed-format number
+#      and ayah marks, 8 musical format controls, 4 shorthand format, and a handful of
+#      others including U+3164 HANGUL FILLER. None is pasted by accident.
+#
+#      THE LINE IS THE SOFT HYPHEN'S, and it is a criterion rather than a list to append
+#      to: a code point belongs here when ordinary text carries it and it reaches the
+#      clipboard WITHOUT anyone intending it, which is the threat _scrub_turn names.
+#      U+00AD qualifies because PDF and web text are full of hyphenation hints. U+061C
+#      qualifies because editors insert it into mixed-direction text. U+3164 does not,
+#      because nothing produces it by accident. Applied cold by a second reader, this
+#      criterion selected the same set to within one code point, which is the evidence
+#      that it can be applied at all.
 #
 # None of these is defence in depth. The register split has nothing below it, which is
 # why the invisible prefixes that DO arrive by accident were fixed rather than

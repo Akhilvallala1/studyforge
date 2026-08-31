@@ -38,6 +38,7 @@ WORD_JOINER = chr(0x2060)
 LRM = chr(0x200E)  # left-to-right mark
 SOFT_HYPHEN = chr(0x00AD)  # a hyphenation hint PDF and web text carry constantly
 LRI = chr(0x2066)  # left-to-right isolate, in the range gap an earlier table left open
+ALM = chr(0x061C)  # arabic letter mark, editors insert it into mixed-direction text
 
 
 def _lesson(title="Optimization Basics", content="Gradient descent steps downhill.") -> models.Lesson:
@@ -298,6 +299,7 @@ def test_the_learners_pasted_text_cannot_forge_a_register_label():
         (0x00A0, "no-break space", True),
         (0x00AD, "soft hyphen", True),
         (0x034F, "combining grapheme joiner", True),
+        (0x061C, "arabic letter mark", True),
         (0x180B, "mongolian free variation selector one", True),
         (0x200B, "zero-width space", True),
         (0x200E, "left-to-right mark", True),
@@ -356,6 +358,7 @@ def test_the_prefix_class_membership_is_pinned_by_code_point(code_point, name, i
         # it is the likeliest of all of these to be met in the wild.
         pytest.param(SOFT_HYPHEN, id="soft-hyphen"),
         pytest.param(LRI, id="left-to-right-isolate"),
+        pytest.param(ALM, id="arabic-letter-mark"),
         pytest.param(NBSP + ZWSP + "  ", id="mixed-run"),
         pytest.param(SOFT_HYPHEN + LRI, id="mixed-invisible-run"),
     ],
@@ -401,6 +404,12 @@ def test_a_replayed_learner_turn_cannot_forge_a_register_label():
         NBSP + "Learner autonomy matters for one reason: motivation.",
         ZWSP + "Tutoring in general is something I ask about",
         BOM + "Tutors disagree about this: which is right?",
+        # Mirrors of the forgery suite's newer prefixes, so the two stay symmetric: every
+        # character the class accepts in front of a forgery has to be shown accepting
+        # ordinary prose in front of it too.
+        SOFT_HYPHEN + "Learner autonomy matters for one reason: motivation.",
+        LRI + "Tutoring in general is something I ask about",
+        ALM + "Tutors disagree about this: which is right?",
         # Numeric list prefixes are in the class now, so the ordinary use of one has to
         # survive it.
         "1. Learner autonomy matters for one reason: motivation.",
