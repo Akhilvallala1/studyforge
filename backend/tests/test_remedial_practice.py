@@ -325,6 +325,32 @@ def test_a_concept_with_no_items_is_unavailable_for_a_different_reason(client):
         session.close()
 
 
+def test_answers_from_other_sources_are_not_part_of_the_session(client):
+    """The session counts its own answers and nobody else's.
+
+    A lesson quiz or a review session on the same concept on the same day is not
+    practice. Counting either would spend the day's three answers on work the learner
+    did somewhere else and refuse the practice the note has just offered them.
+    """
+    card_id, key, _ = _practice_card(item_count=3)
+    first, second, _third = (item_id for item_id, _, _ in _items(key))
+    assert client.post(f"/quiz/{first}/answer", json={"answer": WRONG}).status_code == 200
+    assert (
+        client.post(
+            f"/review/cards/{card_id}/answer", json={"item_id": second, "answer": WRONG}
+        ).status_code
+        == 200
+    )
+
+    state = _state(client, card_id)
+
+    assert (state["status"], state["answered"], state["correct"]) == ("ready", 0, 0)
+    assert state["results"] == []
+    # And neither question is used up: practice may still ask both of them.
+    assert _answer(client, card_id, second, WRONG).status_code == 200
+    assert _answer(client, card_id, first, WRONG).status_code == 200
+
+
 def test_an_unknown_card_is_a_404(client):
     assert client.get("/review/cards/999999/remediation/practice").status_code == 404
     assert _answer(client, 999999, 1, "x").status_code == 404
