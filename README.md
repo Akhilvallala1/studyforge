@@ -1,6 +1,6 @@
 # StudyForge
 
-**Open-source adaptive learning platform.** Turn any material - PDFs, slides, links, notes - into a personalized course with quizzes and spaced review. Self-hosted, your data stays yours. An AI tutor is on the roadmap, not built.
+**Open-source adaptive learning platform.** Turn a PDF, a link, or pasted notes into a personalized course with quizzes and spaced review. Self-hosted, your data stays yours. An AI tutor is on the roadmap, not built.
 
 > Inspired by platforms like paradigm.study, but open: bring your own API key or run a local model, own your learning data.
 
