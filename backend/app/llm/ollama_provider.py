@@ -2,8 +2,9 @@
 
 Two things here exist because a local runtime fails differently from a hosted API.
 
-Context window. Ollama's default context is small (4096 tokens in current builds)
-and it does not complain when a prompt overruns it: it drops the overflow, answers
+Context window. Ollama's default context is small (4096 tokens in the builds this
+was written against) and it does not complain when a prompt overruns it: it drops
+the overflow, answers
 from the fragment it kept, and reports success. Course generation feeds whole
 documents in, so leaving num_ctx unset produces a plausible course written from the
 first few pages of the source and nothing anywhere says so. num_ctx is therefore
@@ -31,27 +32,43 @@ from app.llm.base import LLMCallError, LLMResult
 
 logger = logging.getLogger("studyforge.llm.ollama")
 
-# Sized to the prompts this pipeline actually sends, against 6GB of VRAM.
+# Sized to the prompts this pipeline actually sends. Measured facts and estimates are
+# marked apart below, because getting that wrong is how a comment becomes a lie.
 #
-# The prompts: a lesson call is the common case and by far the most frequent. It
-# sends LESSON_SYSTEM (~1,600 chars) plus the one or two source segments the outline
-# routed to it, and MAX_CHUNK_CHARS caps a segment at 8,000 chars, so the material
-# tops out near 16,100 chars with its labels. At roughly 4 chars per token that is
-# ~4,400 input tokens, and a lesson with 3-6 quiz items runs ~1,200-2,500 output
-# tokens: about 7,000 all in, which fits. An outline call sends every chunk, so it
-# fits up to about three chunks (~24,000 chars, very roughly ten pages); past that
-# the checks below say so rather than letting it pass. A remediation note is smaller
-# than either (MAX_LESSONS x MAX_LESSON_CHARS is 12,000 chars of grounding).
+# The prompts, MEASURED from the constants: a lesson call is the common case and by
+# far the most frequent. It sends LESSON_SYSTEM (1,578 chars) plus the one or two
+# source segments the outline routed to it, and MAX_CHUNK_CHARS caps a segment at
+# 8,000, so the whole prompt tops out at 17,778 chars with its labels. An outline
+# call sends every chunk. A remediation note is smaller than either (MAX_LESSONS x
+# MAX_LESSON_CHARS is 12,000 chars of grounding).
 #
-# The hardware: on a 6GB card a 7-8B model at Q4_K_M is 4.1-4.7GB of weights.
-# Llama-3.1-8B holds 128KB of KV cache per token at f16 (32 layers x 8 KV heads x
-# 128 dims x 2 for K and V x 2 bytes), so 8192 tokens costs exactly 1GB. Weights
-# plus cache plus compute buffers lands just under the 6GB line. Doubling this to
-# 16384 adds another gigabyte, spills the model onto the CPU, and turns a twelve
-# lesson course into something that races the 600s timeout on every call.
+# The prompts in tokens, ESTIMATED and not measured: at 4 chars per token that
+# lesson prompt is ~4,400 input tokens, and a lesson with 3-6 quiz items is guessed
+# at 1,200-2,500 output. Nobody has counted either against a real tokenizer. The
+# estimate is also known to be optimistic (see CHARS_PER_TOKEN), which is exactly
+# why _reject_if_window_filled judges the window from Ollama's reported counts and
+# never from this arithmetic. Treat the 8192 as a starting point that the runtime
+# checks will correct, not as a fit anyone has verified.
 #
-# Raise it with OLLAMA_NUM_CTX if you have the VRAM, or if a long document makes the
-# checks below start complaining.
+# The hardware, MEASURED on the target card (RTX 4050 laptop, 6GB) with
+# llama3.1:8b at this num_ctx, via `ollama ps`:
+#
+#     NAME          SIZE     PROCESSOR          CONTEXT
+#     llama3.1:8b   6.2 GB   32%/68% CPU/GPU    8192
+#
+# So 8192 does NOT fit in 6GB: about a third of the model runs on the CPU. The
+# arithmetic that got here was right about the parts it could see and wrong about
+# the slack. Llama-3.1-8B's KV cache is exactly 128KB per token at f16 (32 layers x
+# 8 KV heads x 128 dims x 2 for K and V x 2 bytes), so 8192 tokens is 1GB, and
+# 4.1-4.7GB of Q4_K_M weights leaves under a gigabyte for compute buffers that
+# evidently want more.
+#
+# 8192 is kept anyway, deliberately. A CPU spill is slow and correct; a smaller
+# window is fast and starts failing on documents that would otherwise work, and the
+# whole position of this module is that an honest slow answer beats a fast wrong
+# one. The lever for someone who wants the speed back is a smaller or more heavily
+# quantized model, not a smaller window: the window is what decides whether the
+# model sees the material at all. .env.example says this to the user.
 DEFAULT_NUM_CTX = 8192
 
 # Estimates only, never a verdict. Deliberately generous: English prose runs nearer
@@ -62,8 +79,10 @@ CHARS_PER_TOKEN = 4
 
 # How much of the window is held back for the reply when judging whether a prompt
 # fits. Without it, a prompt that filled the window and left nothing to answer with
-# read as a comfortable fit, since it never touched num_ctx. 2500 is the top of the
-# 1,200-2,500 token range a lesson with its quiz actually runs to.
+# read as a comfortable fit, since it never touched num_ctx. 2500 is the top of an
+# ESTIMATED 1,200-2,500 token range for a lesson and its quiz; nobody has measured
+# what a lesson really costs to write. It only has to be roughly right, since it
+# governs a warning and never a failure.
 OUTPUT_RESERVE_TOKENS = 2500
 
 # A request must ask for at least one token to be a request. Reached only when the

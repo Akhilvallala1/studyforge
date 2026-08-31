@@ -728,6 +728,65 @@ def test_metrics_markdown_renders_without_crashing():
     assert "Grounding" in markdown
 
 
+# --- a rendered cost figure says when it is not a price --------------------
+#
+# harness.latency_and_cost has always worked any_approximate out from the metered
+# rows and saved it in the bundle. Nothing rendered it, so a paid provider on a
+# model missing from costs.PRICING printed a confident dollar figure built from the
+# fallback rates with no qualifier at all. /usage grew a notice for exactly that
+# state; the report a human reads to judge a run had none.
+
+
+def _approximate_fixture():
+    result = _result_fixture()
+    result["cost_latency"] = {
+        "calls": 2,
+        "cost_usd": 1.2345,
+        "input_tokens": 1000,
+        "output_tokens": 500,
+        "any_approximate": True,
+        "per_stage": {
+            "outline": {
+                "calls": 1,
+                "input_tokens": 1000,
+                "output_tokens": 500,
+                "cost_usd": 1.2345,
+                "mean_latency_s": 1.0,
+                "max_latency_s": 1.0,
+            }
+        },
+    }
+    return result
+
+
+def test_cost_note_fires_only_on_the_flag_the_harness_computes():
+    assert report.cost_note({"any_approximate": True})
+    assert report.cost_note({"any_approximate": False}) is None
+    # An older bundle written before the flag existed must not claim exactness.
+    assert report.cost_note({}) is None
+
+
+def test_course_markdown_qualifies_an_approximate_cost():
+    markdown = report.course_markdown(_approximate_fixture())
+    assert "$1.2345" in markdown
+    assert "pricing table" in markdown
+    assert "STUDYFORGE_PRICE_DEFAULT_IN_USD" in markdown
+
+
+def test_course_markdown_leaves_an_exact_cost_unqualified():
+    assert "pricing table" not in report.course_markdown(_result_fixture())
+
+
+def test_metrics_markdown_qualifies_an_approximate_cost():
+    markdown = report.metrics_markdown([_approximate_fixture()])
+    assert "Cost and latency by stage" in markdown
+    assert "pricing table" in markdown
+
+
+def test_metrics_markdown_leaves_an_exact_cost_unqualified():
+    assert "pricing table" not in report.metrics_markdown([_result_fixture()])
+
+
 def test_compare_markdown_shows_deltas():
     before = {"label": "a", "runs": [_result_fixture()]}
     after = {"label": "b", "runs": [_result_fixture()]}

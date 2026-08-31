@@ -78,6 +78,30 @@ def headline(result: dict) -> dict:
     }
 
 
+APPROXIMATE_COST_NOTE = (
+    "Approximate: at least one metered call is missing an exact token count, or used a "
+    "model with no entry in the pricing table and was costed at the configured fallback "
+    "rate (STUDYFORGE_PRICE_DEFAULT_IN_USD / _OUT_USD)."
+)
+
+
+def cost_note(cost: dict) -> str | None:
+    """The qualifier a cost figure needs, when it needs one.
+
+    harness.latency_and_cost already works `any_approximate` out from the metered
+    rows and puts it in the saved bundle. Nothing rendered it, so a paid provider on
+    a model missing from costs.PRICING printed a confident dollar figure built from
+    the fallback rates with nothing saying the price was a guess. /usage grew a
+    notice for exactly that state; this file is the artifact a human reads to judge
+    a run, so it says it too.
+
+    The harness records one boolean for two causes and, unlike main.py, has no
+    session to separate them from. Naming both is the honest form of what the flag
+    actually knows, and it covers the token columns beside the cost as well.
+    """
+    return APPROXIMATE_COST_NOTE if cost.get("any_approximate") else None
+
+
 def _fmt(value) -> str:
     if isinstance(value, float):
         return f"{value:.4f}".rstrip("0").rstrip(".") if abs(value) < 1000 else f"{value:.2f}"
@@ -109,6 +133,7 @@ def course_markdown(result: dict) -> str:
         (f"- {cost.get('calls', 0)} LLM calls, {cost.get('input_tokens', 0):,} input tokens, "
         f"{cost.get('output_tokens', 0):,} output tokens, "
         f"${cost.get('cost_usd', 0):.4f}, {result.get('wall_clock_s', 0):.0f}s wall clock"),
+        *([f"- {note}"] if (note := cost_note(cost)) else []),
         (f"- Prompt fingerprint: outline `{result.get('prompts', {}).get('outline_system')}`, "
         f"lesson `{result.get('prompts', {}).get('lesson_system')}`"),
         "",
@@ -222,6 +247,8 @@ def metrics_markdown(results: list[dict]) -> str:
             ],
             ["Stage", "Calls", "In tokens", "Out tokens", "Cost", "Mean s", "Max s"],
         )
+        if note := cost_note(cost):
+            lines += ["", note, ""]
 
         metrics = result.get("metrics") or {}
         if not metrics:

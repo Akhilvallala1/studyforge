@@ -351,6 +351,13 @@ def main(argv: list[str] | None = None) -> int:
         results.append(result)
         cost = result.get("cost_latency", {})
         status = "ok" if result["ok"] else f"FAILED: {result['error']}"
+        # This dollar figure stays on a free run, where the projection above does not,
+        # and the difference is not an inconsistency. It is summed from real llm_calls
+        # rows, so on an unpaid provider it is a MEASURED zero: metering wrote 0.0
+        # because is_paid is False, and reporting what was measured is the point of
+        # the line. The projection is suppressed because it was never a measurement of
+        # anything, only estimate_cost guessing a rate for a model it did not know.
+        # Do not "tidy" this to match the projection path; they say different things.
         print(
             f"  {status} | {cost.get('calls', 0)} calls | "
             f"${cost.get('cost_usd', 0):.4f} | {result['wall_clock_s']:.0f}s"
