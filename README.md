@@ -1,17 +1,17 @@
 # StudyForge
 
-**Open-source adaptive learning platform.** Turn any material - PDFs, slides, links, notes - into a personalized course with quizzes, spaced review, and an AI tutor. Self-hosted, your data stays yours.
+**Open-source adaptive learning platform.** Turn a PDF, a link, or pasted notes into a personalized course with quizzes and spaced review. Self-hosted, your data stays yours. An AI tutor is on the roadmap, not built.
 
-> Inspired by platforms like paradigm.study, but open: bring your own API key or run a local model, export everything, own your learning data.
+> Inspired by platforms like paradigm.study, but open: bring your own API key or run a local model, own your learning data.
 
 ## Why open source?
 
 Closed adaptive-learning platforms lock in your content, your progress history, and your study data. StudyForge takes the opposite approach:
 
-- **Self-hosted** - run it on your own machine or server; nothing leaves your control
+- **Self-hosted** - run it on your own machine or server; your courses and progress never leave it
 - **Bring your own model** - Claude, or any local model via Ollama
-- **No lock-in** - export courses and progress as Markdown, JSON, or Anki decks
-- **Community courses** - share course templates as plain files in git, not a walled garden
+- **No lock-in** - your courses and progress live in a SQLite file you own, not behind anyone's account. Export to Markdown, JSON, or Anki decks is on the roadmap, not built
+- **Community courses** (planned) - course templates as plain files in git, not a walled garden
 
 ## Core features (roadmap)
 
@@ -24,9 +24,17 @@ Closed adaptive-learning platforms lock in your content, your progress history, 
 - [x] API cost tracking, with a spend alert and an optional hard cap
 
 ### Phase 2 - Adaptive learning
-- [ ] Spaced repetition scheduling (FSRS algorithm) for review
-- [ ] Difficulty adaptation: struggling on a concept → more scaffolding, remedial questions
-- [ ] Knowledge graph per course: prerequisites, mastery per concept
+- [x] Spaced repetition scheduling (FSRS-6) for review: a card per concept, a daily due queue, and a rating session at `/review`
+- [x] Mastery per concept, drawn as a per-course concept map (mastered / solid / shaky / not started)
+- [x] Re-teaching: a concept you keep missing is explained again in plainer words, with a worked example
+- [ ] Remedial questions: extra practice items aimed at a weak concept
+- [ ] Concept prerequisites
+
+Two of these are narrower than they sound, deliberately, so you know before you go looking.
+
+**Re-teaching is offered, not forced.** Miss a concept on two or more of its last five ratings and StudyForge offers to explain it again, at most once a week per concept. Taking the explanation does not reschedule the card and does not mark the concept learned: it keeps its stability, its lapses, and its due date, and it stays in the review queue. The lapse history is exactly what the trigger reads, so wiping it would make the next failure look like a first offence.
+
+**The concept map has no prerequisite arrows and no locked concepts.** Nothing in the system extracts real dependencies between concepts, and inferring them from lesson order would draw confident arrows that are frequently wrong. The map shows each concept grouped under the lesson that teaches it, coloured by how well you are holding it, and no more than that. It is not a prerequisite graph and it does not plot a path through the course.
 
 ### Phase 3 - AI tutor
 - [ ] Chat with a tutor grounded in the course material
@@ -34,6 +42,7 @@ Closed adaptive-learning platforms lock in your content, your progress history, 
 - [ ] Study planning: deadlines, session scheduling, reminders
 
 ### Phase 4 - Community
+- [ ] Export courses and progress as Markdown, JSON, or Anki decks
 - [ ] Course template format (portable, git-friendly)
 - [ ] Public course registry
 - [ ] Multi-user / classroom mode
@@ -54,12 +63,12 @@ Closed adaptive-learning platforms lock in your content, your progress history, 
                         └──────────────────┘
 ```
 
-- **Frontend:** Next.js (App Router) + TypeScript + Tailwind - course creation, lessons, quizzes, progress
-- **Backend:** FastAPI (Python) - document ingestion, course generation, quiz grading, progress; FSRS scheduling is planned
+- **Frontend:** Next.js (App Router) + TypeScript + Tailwind - course creation, lessons, quizzes, progress, review sessions, concept map
+- **Backend:** FastAPI (Python) - document ingestion, course generation, quiz grading, progress, FSRS review scheduling, re-teaching
 - **Storage:** SQLite by default (zero-config), Postgres for multi-user deployments
 - **LLM:** provider-agnostic adapter - Anthropic API first, Ollama for fully-local setups
 
-The tutor chat in the diagram and the SRS column in storage are Phase 2–3 - not built yet.
+The tutor chat in the diagram is Phase 3 and is not built yet. The rest of the diagram, the SRS column included, is real.
 
 ## Getting started
 
@@ -89,6 +98,8 @@ npm run dev
 
 Open http://localhost:3000 and create your first course - paste text, drop in a URL, or upload a PDF. The frontend talks to the backend via `NEXT_PUBLIC_API_URL` in `frontend/.env.local` (defaults to http://localhost:8000); if you change the frontend's origin, update `STUDYFORGE_CORS_ORIGINS` in `backend/.env` to match.
 
+Once a course exists, Today (http://localhost:3000) shows what is due, http://localhost:3000/review runs a rating session over it, and each course has a Concept map tab showing how well you are holding each concept.
+
 If you're generating against a paid API, the run reports its estimated cost when it finishes, and http://localhost:3000/usage keeps a running total. See [Cost control](#cost-control) before you point it at a large PDF.
 
 Prefer the raw API? The interactive docs live at http://localhost:8000/docs:
@@ -103,7 +114,7 @@ Or upload a PDF to `POST /courses/generate/pdf`. Run tests with `pytest backend/
 
 ## Cost control
 
-One course is dozens of LLM calls, so a careless PDF upload can be a surprising bill. StudyForge meters its own API usage and shows you the running total instead of letting you find out later. Every call is recorded with its provider, model, stage (outline or lesson), token counts, and estimated cost, and the same line is logged to the backend console as it happens.
+One course is dozens of LLM calls, so a careless PDF upload can be a surprising bill. StudyForge meters its own API usage and shows you the running total instead of letting you find out later. Every call is recorded with its provider, model, stage (outline, lesson, or remediation), token counts, and estimated cost, and the same line is logged to the backend console as it happens.
 
 - **Every page** in the web UI shows total estimated spend. **`/usage`** breaks it down by course and lists the recent calls.
 - **Generating a course** reports what that run cost when it finishes.
@@ -122,7 +133,7 @@ This tracks StudyForge's own API usage only. It has no view of anything else you
 
 ## Contributing
 
-Contributions welcome - see [CONTRIBUTING.md](CONTRIBUTING.md). Good first areas: document ingestion (PDF parsing), quiz generation prompts, FSRS scheduling.
+Contributions welcome - see [CONTRIBUTING.md](CONTRIBUTING.md). Good first areas: document ingestion (PDF parsing), quiz generation prompts, remedial question generation.
 
 ## License
 
