@@ -17,6 +17,9 @@ import type {
   ReviewQueue,
   ReviewRatingResult,
   ReviewToday,
+  TutorConflict,
+  TutorConversation,
+  TutorTurn,
   UsageSummary,
 } from "./types";
 
@@ -55,6 +58,10 @@ const COST_LIMIT_CONSEQUENCE = {
   // The cap is checked before the provider call and a re-teach is a single call, so
   // nothing was written and nothing was spent on this attempt.
   remediation: "No explanation was written, and this attempt spent nothing.",
+  // True for the same two reasons, and checked against the endpoint rather than assumed:
+  // the cap is tested before the model is called, and a turn that fails writes neither
+  // row, the learner's own message included. So the transcript is exactly as it was.
+  tutor: "No message was recorded, and this attempt spent nothing.",
 } as const;
 
 /** Returns null when the detail carries nothing useful, so the caller keeps its statusText fallback. */
@@ -363,6 +370,75 @@ export async function submitPractice(
   const fallback = res.statusText || `Request failed with status ${res.status}`;
   // No spend-cap consequence: practice calls no model, so a 402 cannot reach here.
   throw new ApiError(res.status, messageFromErrorBody(body, fallback));
+}
+
+/**
+ * One concept's whole conversation with the tutor, oldest first. Costs nothing.
+ *
+ * `concept_key` travels in the query string rather than in a path segment, which is the
+ * server's choice and a load-bearing one: keys keep their slashes and spaces, so
+ * "big-o / complexity" is an ordinary key, and a path segment holding a "/" would not
+ * route at all. Encoded once, here, so no caller has to remember to.
+ *
+ * Any key answers 200, an empty conversation included: a concept nobody has asked about
+ * is a fact rather than an error, and there is no 404 on this endpoint.
+ */
+export function getTutorConversation(conceptKey: string): Promise<TutorConversation> {
+  return get(`/tutor/conversation?concept_key=${encodeURIComponent(conceptKey)}`);
+}
+
+/**
+ * What asking the tutor one question came back with.
+ *
+ * A 409 is not an error here, which is why the conflict is returned rather than thrown.
+ * Both of its codes are the learner having run out of turns, and they differ in the one
+ * thing the learner will act on: concept_turn_limit means go and ask about something
+ * else, daily_turn_limit means stop for today. Nothing in `limits` reliably separates
+ * them, so a caller must branch on `error`.
+ *
+ * Genuine failures still throw ApiError: 422 for an empty or over-long message and for a
+ * concept with no material left to answer from, 402 for the spend cap, 502 for a model
+ * that failed or replied off-schema.
+ */
+export type TutorOutcome =
+  | { kind: "turn"; turn: TutorTurn }
+  | { kind: "conflict"; conflict: TutorConflict };
+
+/**
+ * Ask the tutor one question about one concept. One metered model call, two rows.
+ *
+ * Does not go through `request`, for the same reason requestRemediation does not:
+ * `request` reads the body only to build an error message and would throw the payload
+ * away. Here that payload is the fresh `limits`, which is the entire subject of the
+ * refusal and the only thing that tells the panel what it may still offer.
+ *
+ * NOTHING IS WRITTEN when this fails, on every failing path: the endpoint builds both
+ * rows only after the reply has parsed and commits them together. So a caller may keep
+ * the learner's typed text and let them send it again, and the transcript it is holding
+ * is still correct.
+ */
+export async function sendTutorMessage(
+  conceptKey: string,
+  message: string,
+): Promise<TutorOutcome> {
+  const res = await fetch(`${BASE_URL}/tutor/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ concept_key: conceptKey, message }),
+  });
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    // Non-JSON body, so the status has to carry the meaning on its own.
+  }
+  if (res.ok) return { kind: "turn", turn: body as TutorTurn };
+  if (res.status === 409) {
+    const detail = (body as { detail?: TutorConflict } | null)?.detail;
+    if (detail && typeof detail.error === "string") return { kind: "conflict", conflict: detail };
+  }
+  const fallback = res.statusText || `Request failed with status ${res.status}`;
+  throw new ApiError(res.status, messageFromErrorBody(body, fallback, COST_LIMIT_CONSEQUENCE.tutor));
 }
 
 export function getUsage(limit?: number): Promise<UsageSummary> {

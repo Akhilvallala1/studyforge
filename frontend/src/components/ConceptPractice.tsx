@@ -691,8 +691,9 @@ function ActivePanel({
         </div>
       )}
       {/* No schedule promise here. The note panel this is mounted inside carries it,
-          extended to name practice, and it renders immediately below: a second wording
-          of the same fact two lines apart is the failure lib/copy exists to prevent. */}
+          widened to name practice and the tutor, and it renders at the bottom of that
+          panel: a second wording of the same fact a few lines apart is the failure
+          lib/copy exists to prevent. */}
     </>
   );
 }

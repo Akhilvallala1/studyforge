@@ -404,6 +404,123 @@ export type PracticeConflict =
 
 export type PracticeConflictCode = PracticeConflict["error"];
 
+/**
+ * Both tutor caps, what they have taken, and when they lift. Straight from the server,
+ * which is the only thing that knows the numbers it refuses on.
+ *
+ * Rendered as a count of what has been used and never as a refusal. When a cap is
+ * actually reached the sentence shown is the server's, off the 409, so the panel cannot
+ * end up stating the same fact in a second wording that disagrees with it.
+ */
+export interface TutorLimits {
+  concept_used: number;
+  concept_limit: number;
+  day_used: number;
+  day_limit: number;
+  /** When the day's turns come back. The study day starts at 04:00, not midnight. */
+  resets_at: string;
+}
+
+/**
+ * One message in a concept's conversation, discriminated on `role`.
+ *
+ * ONE shape on the wire, with every key present on every row, and the two roles fill it
+ * in opposite directions: the learner's text is under `content` with `answer` null, and
+ * a TUTOR ROW'S TEXT IS UNDER `answer` WITH `content` NULL. Never both, because they are
+ * one column on the server and a payload carrying it twice is a second copy that can
+ * disagree.
+ *
+ * Written as a union rather than one interface of nullable fields so that reading a
+ * tutor row's text off `content` does not compile. That mistake renders an empty message
+ * and loses the register split with it, and it is the one failure in this feature that
+ * nothing downstream can detect: a blank reply and a reply whose grounded and ungrounded
+ * halves were merged both look like ordinary output to every check but a reader's eye.
+ */
+export type TutorMessage =
+  | {
+      role: "learner";
+      id: number;
+      /** What the learner typed. Never null on this role. */
+      content: string;
+      answer: null;
+      beyond: null;
+      check: null;
+      model: null;
+      created_at: string;
+    }
+  | {
+      role: "tutor";
+      id: number;
+      content: null;
+      /**
+       * The reply, grounded in the course material and nothing else. Markdown written by
+       * a model from an uploaded document, so it is untrusted: render it through
+       * LessonMarkdown, which escapes raw HTML rather than parsing it.
+       */
+      answer: string;
+      /**
+       * The model's general knowledge, outside the course, capped by the server at three
+       * sentences. Null when the reply stayed inside the material, which is the common
+       * case. MUST be rendered as its own block under its own heading and never folded
+       * into `answer`: the boundary between grounded and ungrounded is carried by this
+       * schema, so a renderer that inlines it is what erases the guarantee.
+       */
+      beyond: string | null;
+      /** One recall question the learner can try, or null when the reply offered none. */
+      check: string | null;
+      /** Which model answered, or null. Provenance lives on the usage screen. */
+      model: string | null;
+      created_at: string;
+    };
+
+/** A concept's whole conversation, oldest first. Any key gets a 200, empty included. */
+export interface TutorConversation {
+  concept_key: string;
+  concept_label: string;
+  messages: TutorMessage[];
+  /** Null on a conversation nobody has opened, so "never" is tellable from "last week". */
+  last_message_at: string | null;
+  limits: TutorLimits;
+}
+
+/**
+ * What one answered question produced: the two rows just written, not the conversation.
+ *
+ * The client already drew what it had and appends these two, which is why no third copy
+ * of the transcript comes back. `limits` is recomputed after the insert, so it is what
+ * the next request will be measured against rather than what this one was.
+ */
+export interface TutorTurn {
+  concept_key: string;
+  concept_label: string;
+  learner: TutorMessage;
+  reply: TutorMessage;
+  limits: TutorLimits;
+}
+
+/**
+ * Why the tutor would not take this turn. Its own union, and only these two codes.
+ *
+ * A third alongside RemediationConflict and PracticeConflict, deliberately not a
+ * widening of either. Each is scoped to one endpoint so that its exhaustive switch keeps
+ * meaning "every code this endpoint can send is handled"; folding these two into one of
+ * the others would downgrade all three to "every code is mentioned somewhere", which is
+ * a formality rather than a guarantee.
+ *
+ * Unlike those two, this carries NO conversation. The refusal did not change it, it is
+ * already on screen, and a second copy is a copy that can disagree. What the refusal is
+ * about is the limits, so that is what rides on it.
+ *
+ * The two codes are opposite advice and must be told apart by code, never by the numbers
+ * in `limits`: concept_turn_limit means there are other concepts left to ask about, and
+ * daily_turn_limit means there are not.
+ */
+export type TutorConflict =
+  | { error: "concept_turn_limit"; message: string; limits: TutorLimits }
+  | { error: "daily_turn_limit"; message: string; limits: TutorLimits };
+
+export type TutorConflictCode = TutorConflict["error"];
+
 export type RatingName = "again" | "hard" | "good" | "easy";
 
 /**
