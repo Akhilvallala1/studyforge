@@ -585,6 +585,9 @@ def test_the_thirteenth_turn_on_one_concept_is_refused_and_costs_nothing(client,
     assert detail["error"] == "concept_turn_limit"
     assert detail["limits"]["concept_used"] == tutor.CONCEPT_TURNS_PER_DAY
     assert detail["limits"]["resets_at"] is not None
+    # And the other half of the distinction: here there ARE other concepts to go to, so
+    # the sentence must say so. See the day-cap test for why this is asserted as a phrase.
+    assert "Other concepts still have" in detail["message"]
     assert provider.calls == 0
     # The refusal wrote nothing either: the twelve seeded turns are all there is.
     assert len(_rows(key)) == tutor.CONCEPT_TURNS_PER_DAY
@@ -610,6 +613,11 @@ def test_the_forty_first_turn_of_the_day_is_refused_whatever_the_concept(client,
     assert detail["limits"]["day_used"] >= tutor.DAY_TURNS
     # This concept has spent nothing, so the concept cap cannot be what refused it.
     assert detail["limits"]["concept_used"] == 0
+    # The sentence has to say the day is gone. A phrase rather than the whole string, so
+    # a copy edit does not break the test but exchanging the two bodies does: told
+    # "other concepts still have questions left" here, the learner goes to another
+    # concept to be refused there too, which is what the split exists to prevent.
+    assert "across every concept" in detail["message"]
     assert provider.calls == 0
 
 
@@ -629,6 +637,9 @@ def test_the_day_cap_is_reported_even_when_the_concept_cap_is_also_reached(clien
 
     assert detail["error"] == "daily_turn_limit"
     assert detail["limits"]["concept_used"] >= tutor.CONCEPT_TURNS_PER_DAY
+    # The code AND the sentence, because this is the case where a learner who is out for
+    # the day is most likely to be handed the concept sentence and sent looking.
+    assert "across every concept" in detail["message"]
     assert provider.calls == 0
 
 

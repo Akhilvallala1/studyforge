@@ -1061,8 +1061,11 @@ def post_tutor_message(body: TutorQuestion, session: Session = Depends(get_sessi
     A REPLY THAT WILL NOT PARSE WRITES NOTHING, the learner's own message included. Both
     rows are built after the reply parses, added together, and committed once, so there
     is no window in which the transcript holds a question with nothing under it. The
-    llm_calls row is still written by the meter, because those tokens were spent, exactly
-    as in remediation.generate_note.
+    llm_calls row is still written by the meter WHEN THE PROVIDER ANSWERED, because those
+    tokens were spent, exactly as in remediation.generate_note. A provider that raised
+    before answering records nothing at all, since metering only writes a row on a clean
+    return or on LLMCallError, so "the tokens were spent" is a claim about the reply that
+    would not parse, not about every failure below.
 
     Nothing here rates, schedules, or grades. The only rows this can produce are two
     tutor_messages: a conversation is not a retrieval test, and folding one into the
@@ -1093,9 +1096,13 @@ def post_tutor_message(body: TutorQuestion, session: Session = Depends(get_sessi
     # Which course this call is charged to, decided here at call time and from the
     # UNTRIMMED matches: sole_course_id is answering which courses teach the concept, and
     # an answer that changed with how many lessons happened to fit in a prompt would not
-    # be an answer about courses at all. Read after the caps, so a refused turn does not
-    # pay for it, and never backfilled afterwards, because unlike a generation run there
-    # is no course saved later to backfill from.
+    # be an answer about courses at all. Read after the caps, so a turn refused by either
+    # cap pays for one read of the courseware rather than two; a turn refused by the SPEND
+    # cap still pays for both, because that cap fires inside meter.generate, below. That
+    # is the rarest refusal and the read is one the request was about to make anyway, so
+    # it is left alone rather than reaching inside the meter to check the cap early.
+    # Never backfilled afterwards either, because unlike a generation run there is no
+    # course saved later to backfill from.
     matches = remediation.teaching_lessons(session, concept_key)
     meter = MeteredLLM(provider, run_id, course_id=remediation.sole_course_id(session, matches))
     prompt = tutor.build_prompt(context, tutor.history(session, concept_key), message)
