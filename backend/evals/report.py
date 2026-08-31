@@ -448,7 +448,20 @@ def compare_markdown(before: dict, after: dict) -> str:
 
 def write_outputs(out_dir: Path, label: str, results: list[dict]) -> dict:
     """Persist the machine-readable result bundle, the metrics report, and one
-    markdown file per generated course."""
+    markdown file per generated course.
+
+    Every filename carries the label. The course files did not, and were named by
+    source alone, so twenty labelled runs across three sources shared three
+    filenames: each run silently overwrote the courses of whatever ran before it,
+    and the ones in evals/output are simply whoever went last. That cost the prompt
+    trials the artifact they were about. The metrics survived per label, but the
+    courses those metrics describe, which is what a human reads to judge whether a
+    variant is actually better, did not. --rescore had the same effect, writing
+    rescored courses over the originals.
+
+    Reusing a label still overwrites, deliberately and consistently with the other
+    three: a label is the run's name, and rerunning a name replaces it.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     bundle = {
         "label": label,
@@ -466,7 +479,7 @@ def write_outputs(out_dir: Path, label: str, results: list[dict]) -> dict:
 
     for result in results:
         if result.get("course"):
-            course_path = out_dir / f"course-{result['name']}.md"
+            course_path = out_dir / f"course-{label}-{result['name']}.md"
             course_path.write_text(course_markdown(result), encoding="utf-8")
             written[f"course:{result['name']}"] = course_path
     return written

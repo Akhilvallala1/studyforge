@@ -806,11 +806,46 @@ def test_write_outputs_creates_report_and_course_files(tmp_path):
     written = report.write_outputs(tmp_path, "unit", [_result_fixture()])
     assert (tmp_path / "results-unit.json").exists()
     assert (tmp_path / "report-unit.md").exists()
-    assert (tmp_path / "course-demo.md").exists()
+    assert (tmp_path / "course-unit-demo.md").exists()
     bundle = json.loads((tmp_path / "results-unit.json").read_text(encoding="utf-8"))
     assert bundle["label"] == "unit"
     assert bundle["runs"][0]["name"] == "demo"
     assert written["results"].exists()
+
+
+def test_two_labelled_runs_do_not_overwrite_each_others_courses(tmp_path):
+    """The bug: course files were named by SOURCE alone while every other artifact
+    carried the label, so a second run on the same source destroyed the first run's
+    course. Twenty labelled runs across three sources shared three filenames.
+
+    It only shows up when someone actually runs the same source twice, which is
+    exactly what the prompt trials did and what nobody checked afterwards.
+    """
+    first = _result_fixture()
+    second = _result_fixture()
+    second["course"]["title"] = "Second run's course"
+
+    report.write_outputs(tmp_path, "before", [first])
+    report.write_outputs(tmp_path, "after", [second])
+
+    assert (tmp_path / "course-before-demo.md").exists()
+    assert (tmp_path / "course-after-demo.md").exists()
+    assert "Second run" not in (tmp_path / "course-before-demo.md").read_text(encoding="utf-8")
+    assert "Second run" in (tmp_path / "course-after-demo.md").read_text(encoding="utf-8")
+
+
+def test_rerunning_one_label_still_replaces_it(tmp_path):
+    """The overwrite that is meant to happen: a label is the run's name."""
+    first = _result_fixture()
+    second = _result_fixture()
+    second["course"]["title"] = "Replaced"
+
+    report.write_outputs(tmp_path, "same", [first])
+    report.write_outputs(tmp_path, "same", [second])
+
+    courses = sorted(p.name for p in tmp_path.glob("course-*.md"))
+    assert courses == ["course-same-demo.md"]
+    assert "Replaced" in (tmp_path / "course-same-demo.md").read_text(encoding="utf-8")
 
 
 # --- run_eval preflight ----------------------------------------------------

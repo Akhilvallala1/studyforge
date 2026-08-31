@@ -44,11 +44,20 @@ commit to it; check the projection against your cap.
 
 Outputs land in `evals/output/`:
 
-- `course-<source>.md`: the full generated course, every lesson and every quiz
-  answer, for a human to read and judge.
+- `course-<label>-<source>.md`: the full generated course, every lesson and every
+  quiz answer, for a human to read and judge.
 - `report-<label>.md`: the metrics, with every grounding failure quoted.
 - `results-<label>.json`: machine-readable bundle, the input to `--compare`.
 - `usage-<label>.json`: the app's own `GET /usage` totals.
+
+Rerunning a label replaces all four: a label is the run's name.
+
+The three older `course-<source>.md` files, with no label in the name, predate
+that. Course files used to be named by source alone while everything else carried
+the label, so every run overwrote the previous run's course for that source and
+those three are whichever run happened to go last. They were last written by the
+prompt trials (commit 8d491cc), and which variant produced them is not recoverable.
+Read them as samples of the format, not as any particular run's output.
 
 ## Comparing before and after a prompt change
 
