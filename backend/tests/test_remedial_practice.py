@@ -220,11 +220,14 @@ class _FakeItem:
 
 
 def test_order_items_puts_never_asked_first_by_id():
-    """Unseen items are partitioned out, not sorted against a sentinel date.
+    """Never asked comes first, and id decides among those; least recent follows.
 
-    A datetime.min sentinel would order the never-asked items among themselves by an
-    invented timestamp instead of by id, which is a silent change to which question a
-    learner is asked first.
+    This pins the order, not the implementation. A datetime.min sentinel in place of
+    the partition is indistinguishable here and everywhere else: every stored
+    timestamp sorts after it and the id tie-break is the same either way, which was
+    checked by making that substitution and running the suite. The partition stays
+    because it is clearer to read, not because a test can tell the difference, and
+    there is deliberately no test here pretending otherwise.
     """
     day_start, _ = days.day_bounds()
     items = [_FakeItem(3), _FakeItem(1), _FakeItem(2)]
@@ -1040,14 +1043,107 @@ def test_a_concept_with_no_items_refuses_the_answer_as_a_conflict(client):
     assert detail["state"]["item"] is None
 
 
+def test_a_card_missing_both_a_note_and_items_gives_one_reason(client):
+    """The two preconditions can fail together, and the answer must not name both.
+
+    no_note outranks no_items in practice_state, and the refusal quotes the state's
+    reason rather than deciding a second one. A response whose error said no_items
+    while its own state said no_note would be the one thing this feature's reason
+    vocabulary exists to prevent: two answers to "why was this refused".
+    """
+    card_id, key, _ = _seed_concept([fsrs.AGAIN, fsrs.AGAIN], item_count=0)
+    _, other_key, _ = _practice_card(item_count=1)
+    assert _items(key) == []
+
+    state = _state(client, card_id)
+    response = _answer(client, card_id, _items(other_key)[0][0], WRONG)
+
+    assert (state["status"], state["reason"]) == ("unavailable", "no_note")
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["error"] == "no_note"
+    assert detail["error"] == detail["state"]["reason"] == state["reason"]
+
+
+def test_a_cleared_note_still_accepts_a_cold_answer(client):
+    """A known and accepted gap, pinned so it stays a decision rather than a surprise.
+
+    Nothing records that an item was ever served, so "an answer already in the
+    learner's hands" is not something the endpoint can check. What it checks instead is
+    that the card has a note in some status, which means an answer is accepted for a
+    card whose note was cleared long ago, from a client that never opened the panel and
+    never called the GET. Narrowing it would mean writing down each item as it is
+    served, which is the durable state this feature is built to do without, and
+    widening the refusal instead would discard the real answers during a mid-session
+    clear that the ruling exists to protect.
+
+    What it can reach is bounded and worth stating: at most a study day's answers, only
+    for concepts that were genuinely remediated at some point, and never scheduling,
+    since grade_lesson rates from _lesson_quiz_attempts and that is LESSON_QUIZ scoped.
+    What moves is display state: the lesson attempt history, the rendered attempt_state,
+    and which question review rotates to next.
+    """
+    card_id, key, _ = _practice_card(item_count=3)
+    before = _card_row(card_id)
+    _clear_note(card_id)
+    session = SessionLocal()
+    try:
+        note = remediation.latest_note(session, card_id)
+        note.cleared_at = review.now_utc() - timedelta(days=30)
+        session.commit()
+    finally:
+        session.close()
+    # The learner is never shown this: the GET refuses throughout.
+    assert _state(client, card_id)["reason"] == "no_note"
+
+    first, second, third = (item_id for item_id, _, _ in _items(key))
+    assert _answer(client, card_id, first, WRONG).status_code == 200
+    assert _state(client, card_id)["reason"] == "no_note"
+    assert _answer(client, card_id, second, WRONG).status_code == 200
+    assert _answer(client, card_id, third, WRONG).status_code == 200
+
+    # The day is still consumed by answers, so it stops where any session stops.
+    assert len(_attempts(key, PRACTICE)) == 3
+    spent = _answer(client, card_id, first, WRONG)
+    assert spent.status_code == 409
+    assert spent.json()["detail"]["error"] == "no_note"
+    assert len(_attempts(key, PRACTICE)) == 3
+    assert _card_row(card_id) == before
+
+
 def test_practice_is_not_reachable_from_inside_a_review_session(client):
     """The queue serves questions and previews, and offers no way into practice.
 
     Practice belongs under the note on the Today screen, where the learner has just
     read an explanation. Offering it mid-review would put an untimed second try inside
     the retrieval test the card exists to run.
+
+    Asserted on the shape of the responses, never as a substring of them. The test
+    database is one file for the whole session and /review/queue serves every due card
+    in it, so a substring assertion here is really an assertion about every other test
+    module's concept labels and questions, and the first branch to teach a concept with
+    this word in it would break a test in a file it never touched.
     """
     _practice_card(item_count=2)
 
-    assert "practice" not in client.get("/review/queue").text
-    assert "practice" not in client.get("/review/today").text
+    queue = client.get("/review/queue", params={"limit": 200}).json()
+    today = client.get("/review/today").json()
+
+    assert queue["cards"], "an empty queue would make the payload assertion vacuous"
+    for card in queue["cards"]:
+        assert set(card) == {
+            "card_id",
+            "concept_key",
+            "concept_label",
+            "state",
+            "due",
+            "lapses",
+            "retrievability",
+            "preview",
+            "item",
+        }
+        if card["item"] is not None:
+            assert set(card["item"]) == {"id", "question", "kind", "options"}
+    # Key names are ours; concept labels and questions are other tests' data.
+    assert all("practice" not in key for key in today)
+    assert all("practice" not in key for entry in today["needs_attention"] for key in entry)

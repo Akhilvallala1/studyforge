@@ -723,6 +723,14 @@ def get_remediation(card_id: int, session: Session = Depends(get_session)):
     return remediation.note_payload(remediation.active_note(session, card.id))
 
 
+# What each unavailable reason is told to the learner. Keyed by the reason itself, so
+# a refusal quotes the state's own vocabulary instead of a parallel copy of it.
+PRACTICE_UNAVAILABLE_MESSAGES = {
+    remediation.NO_NOTE: "This concept has no explanation open to practice against.",
+    remediation.NO_ITEMS: "This concept has no quiz questions to practice with.",
+}
+
+
 def _practice_conflict(code: str, message: str, state: dict) -> HTTPException:
     """409 that carries the practice session the answer could not join.
 
@@ -731,6 +739,14 @@ def _practice_conflict(code: str, message: str, state: dict) -> HTTPException:
     redraw the session it should have been looking at. The next question to ask, when
     there is one, rides in detail.state.item rather than in a second copy of it that
     could disagree.
+
+    INVARIANT. When `code` is drawn from the reason vocabulary, it MUST equal
+    detail.state.reason. Both preconditions can fail on the same card, so a code
+    decided independently of the state can name the second reason while the state
+    names the first, and the response then gives two answers for one refusal.
+    SESSION_COMPLETE and ITEM_ALREADY_ANSWERED are deliberately outside that
+    vocabulary: they describe the request rather than the session, and there is no
+    reason for them to collide with.
     """
     return HTTPException(409, detail={"error": code, "message": message, "state": state})
 
@@ -776,7 +792,9 @@ def answer_remedial_practice(
     the missing-note case after it. That is not an accident: with no items there is no
     item that could pass the concept check, so 404 or 400 would answer a question about
     the request instead of about the session, while a note that has gone still has to
-    let through an answer the learner was already holding.
+    let through an answer the learner was already holding. A card can be missing both at
+    once, so that first refusal still reports the reason the state reports, and does not
+    decide a second one of its own.
 
     The session is derived from attempts alone, so a card deleted and recreated for the
     same concept picks that day's practice back up. That is deliberate: the memory being
@@ -795,10 +813,13 @@ def answer_remedial_practice(
     facts = remediation.practice_facts(session, card, now)
     state = remediation.practice_state(session, card, now, facts=facts)
     if not facts.items:
+        # The code is read off the state rather than decided again here, which is what
+        # makes them agree by construction. Both preconditions can fail at once, and a
+        # refusal that says no_items beside a state that says no_note is one response
+        # giving two reasons for the same refusal. state["reason"] is never null on this
+        # path: with no items the status is always unavailable.
         raise _practice_conflict(
-            remediation.NO_ITEMS,
-            "This concept has no quiz questions to practice with.",
-            state,
+            state["reason"], PRACTICE_UNAVAILABLE_MESSAGES[state["reason"]], state
         )
 
     item = session.get(models.QuizItem, body.item_id)
@@ -825,10 +846,20 @@ def answer_remedial_practice(
         # first one can have handed the learner a question. latest_note sees cleared
         # rows, which is what tells them apart: a card that has never been re-taught
         # refuses every answer, here and in the state the GET reports.
+        #
+        # Be clear about what this does NOT establish. Nothing records that an item was
+        # served, so "already in the learner's hands" is not a fact this endpoint can
+        # check, and what is actually allowed is wider: any answer to a servable item on
+        # a card whose note was cleared at any point, weeks ago included, with no GET in
+        # between. Narrowing it would mean recording each item as it is served, which is
+        # the durable state this feature is built to do without. The cost is bounded and
+        # known: at most the day's answers, on concepts that were genuinely remediated,
+        # and it cannot reach scheduling, because grade_lesson rates from
+        # _lesson_quiz_attempts. What moves is display state. See the test named for it.
         if not servable or remediation.latest_note(session, card.id) is None:
             raise _practice_conflict(
                 remediation.NO_NOTE,
-                "This concept has no explanation open to practice against.",
+                PRACTICE_UNAVAILABLE_MESSAGES[remediation.NO_NOTE],
                 state,
             )
     elif facts.stop_reason is not None:
