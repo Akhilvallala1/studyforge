@@ -18,6 +18,12 @@ A worked example comes before further practice. The prompt forbids asking the
 learner questions, because they have just failed several: another retrieval
 attempt on something they cannot retrieve only adds a failure rep.
 
+Practice, at the bottom of this module, is the other half of that promise: after
+reading the note the learner gets a short bounded run at the concept using quiz items
+that already exist. It is a study event and not an assessment, so it calls no model,
+writes no review log, and touches no column of the card. Everything it remembers is
+derived from the append-only attempts table, which is why it needs no state of its own.
+
 The trigger is review.needs_attention() and nothing else. There is exactly one
 definition of "a concept the learner keeps missing" in this codebase, and a second
 one here would drift from it silently.
@@ -48,10 +54,12 @@ import uuid
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from typing import NamedTuple
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
-from app import fsrs, generation, models, review
+from app import days, fsrs, generation, models, review
 from app.attempts import iso_utc
 from app.concepts import normalize_concept
 from app.metering import MeteredLLM
@@ -645,3 +653,222 @@ def generate_note(
         "remediation note %s written for concept=%r run=%s", note.id, card.concept_key, run_id
     )
     return note
+
+
+# --------------------------------------------------------------------------
+# Remedial practice
+# --------------------------------------------------------------------------
+
+# The Attempt.source value these answers are written under. Seventeen characters,
+# which fits Attempt.source's String(20); a longer name would not, and Postgres
+# would enforce that length even though SQLite does not.
+REMEDIAL_PRACTICE_SOURCE = "remedial_practice"
+
+# Two right answers is the point of the exercise, and three answers is the ceiling.
+# A learner who has just read an explanation gets a short bounded run at the concept,
+# not a drill: this is a study event, and the card's own schedule is what assesses it.
+PRACTICE_TARGET_CORRECT = 2
+PRACTICE_MAX_ANSWERS = 3
+
+# The four values of practice_state()["status"]. status is the discriminator the
+# client branches on, and reason only ever explains the last two.
+READY = "ready"
+IN_PROGRESS = "in_progress"
+DONE = "done"
+UNAVAILABLE = "unavailable"
+
+# The reasons, partitioned by the status that carries them. DONE takes the first
+# three, UNAVAILABLE the last two, and the two sets never cross: "you finished" and
+# "there was nothing here" are different sentences and a client that conflates them
+# tells the learner they completed something that never existed.
+TARGET_REACHED = "target_reached"
+ATTEMPTS_SPENT = "attempts_spent"
+POOL_EXHAUSTED = "pool_exhausted"
+NO_NOTE = "no_note"
+NO_ITEMS = "no_items"
+
+# The two 409 codes that are not also reasons. They describe the request rather than
+# the session: an answer that arrived after the session closed, and an answer to a
+# question today's session has already had.
+SESSION_COMPLETE = "session_complete"
+ITEM_ALREADY_ANSWERED = "item_already_answered"
+
+
+class PracticeFacts(NamedTuple):
+    """Everything today's practice session is, read out of the append-only tables.
+
+    Separate from the rendered state because the endpoints need two different things
+    from the same read: the GET needs the payload, and the POST needs to decide
+    whether the answer in its hands is one this session can still take. Deriving the
+    decision from the rendered payload would not work, since a cleared note hides the
+    stop conditions behind an UNAVAILABLE status.
+    """
+
+    note: models.RemediationNote | None
+    items: list[models.QuizItem]
+    attempts: list[models.Attempt]
+    answered: int
+    correct: int
+    used_item_ids: set[int]
+    next_item: models.QuizItem | None
+    stop_reason: str | None
+    day_end: datetime
+
+
+def _item_payload(item: models.QuizItem | None) -> dict | None:
+    """A question to ask, in the same shape the review queue serves.
+
+    No answer key, for the same reason the queue withholds one: practice is still
+    retrieval, and an item that arrives with its answer attached tests nothing.
+    """
+    if item is None:
+        return None
+    return {
+        "id": item.id,
+        "question": item.question,
+        "kind": item.kind,
+        "options": item.options,
+    }
+
+
+def _last_asked(session: Session, items: list[models.QuizItem]) -> dict[int, datetime]:
+    """When each of these items was last answered, by any source. One query."""
+    item_ids = [item.id for item in items]
+    if not item_ids:
+        return {}
+    return dict(
+        session.query(models.Attempt.quiz_item_id, func.max(models.Attempt.created_at))
+        .filter(models.Attempt.quiz_item_id.in_(item_ids))
+        .group_by(models.Attempt.quiz_item_id)
+        .all()
+    )
+
+
+def practice_facts(
+    session: Session, card: models.ReviewCard, now: datetime | None = None
+) -> PracticeFacts:
+    """Today's practice session for this card's concept, derived from attempts.
+
+    Scoped to concept_key and not to the card, because concept_key is what an attempt
+    row carries. A card deleted and recreated for the same concept therefore inherits
+    that day's attempts, and that is correct rather than a leak: the memory being
+    practiced is the concept's, and the card is only the row that schedules it.
+
+    The attempt query is covered by ix_attempts_concept_created.
+    """
+    moment = _moment(now)
+    day_start, day_end = days.day_bounds(now=moment)
+    attempts = (
+        session.query(models.Attempt)
+        .filter(models.Attempt.concept_key == card.concept_key)
+        .filter(models.Attempt.source == REMEDIAL_PRACTICE_SOURCE)
+        .filter(models.Attempt.created_at >= day_start)
+        .filter(models.Attempt.created_at < day_end)
+        .order_by(models.Attempt.created_at, models.Attempt.id)
+        .all()
+    )
+    used_item_ids = {row.quiz_item_id for row in attempts}
+    answered = len(attempts)
+    correct = sum(1 for row in attempts if row.correct)
+
+    items = review.concept_item_index(session).get(card.concept_key, [])
+    remaining = [item for item in items if item.id not in used_item_ids]
+    ordered = review.order_items(remaining, _last_asked(session, remaining))
+    next_item = ordered[0] if ordered else None
+
+    # Precedence is fixed here rather than at each caller, so two clients cannot
+    # describe the same finished session differently.
+    if correct >= PRACTICE_TARGET_CORRECT:
+        stop_reason = TARGET_REACHED
+    elif answered >= PRACTICE_MAX_ANSWERS:
+        stop_reason = ATTEMPTS_SPENT
+    elif next_item is None:
+        stop_reason = POOL_EXHAUSTED
+    else:
+        stop_reason = None
+
+    return PracticeFacts(
+        note=active_note(session, card.id),
+        items=items,
+        attempts=attempts,
+        answered=answered,
+        correct=correct,
+        used_item_ids=used_item_ids,
+        next_item=next_item,
+        stop_reason=stop_reason,
+        day_end=day_end,
+    )
+
+
+def practice_state(
+    session: Session,
+    card: models.ReviewCard,
+    now: datetime | None = None,
+    facts: PracticeFacts | None = None,
+) -> dict:
+    """What today's practice session looks like to the learner. Writes nothing.
+
+    The whole feature's memory, and it is one query over attempts plus the item
+    lookup: there is no practice table and no column on the card, so a restart, a
+    second tab, or a rebuilt card all see the same session because they all read the
+    same rows.
+
+    `status` is what a client branches on. READY and IN_PROGRESS carry an item to
+    answer; DONE and UNAVAILABLE carry a reason and no item. The reason vocabularies
+    are partitioned by status and never cross.
+
+    Preconditions outrank stop conditions: a concept whose note has gone reports
+    NO_NOTE even if the learner had already finished today, because the practice
+    surface lives underneath the note and claiming a completed session for a note
+    that is no longer there tells the learner they finished something they cannot see.
+
+    `results` carries the expected answer for every row in it, which is safe for the
+    reason attempts.latest_quiz_attempt is: each of those rows is an answer already
+    submitted, so nothing in it can be read off before the retrieval it tests.
+
+    `facts` is for the POST endpoint, which has already read them to decide whether
+    it could accept the answer at all. Left None, this reads them itself.
+    """
+    facts = practice_facts(session, card, now) if facts is None else facts
+
+    if facts.note is None:
+        status, reason = UNAVAILABLE, NO_NOTE
+    elif not facts.items:
+        status, reason = UNAVAILABLE, NO_ITEMS
+    elif facts.stop_reason is not None:
+        status, reason = DONE, facts.stop_reason
+    elif facts.answered == 0:
+        status, reason = READY, None
+    else:
+        status, reason = IN_PROGRESS, None
+
+    questions = {item.id: item.question for item in facts.items}
+    return {
+        "card_id": card.id,
+        "concept_key": card.concept_key,
+        "concept_label": card.concept_label,
+        "status": status,
+        "reason": reason,
+        "answered": facts.answered,
+        "correct": facts.correct,
+        "target_correct": PRACTICE_TARGET_CORRECT,
+        "max_answers": PRACTICE_MAX_ANSWERS,
+        "item": _item_payload(facts.next_item) if status in (READY, IN_PROGRESS) else None,
+        "results": [
+            {
+                "item_id": row.quiz_item_id,
+                # Blank when the item has since been regenerated away. The attempt row
+                # is still the record of what was answered, and the snapshotted
+                # expected answer is the part that has to survive.
+                "question": questions.get(row.quiz_item_id, ""),
+                "submitted": row.submitted_answer,
+                "expected": row.expected_answer,
+                "correct": row.correct,
+                "created_at": iso_utc(row.created_at),
+            }
+            for row in facts.attempts
+        ],
+        # Only on a finished session, because it answers "when can I do this again"
+        # and nothing else asked the question.
+        "resets_at": iso_utc(facts.day_end) if status == DONE else None,
+    }

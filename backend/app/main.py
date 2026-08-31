@@ -723,6 +723,146 @@ def get_remediation(card_id: int, session: Session = Depends(get_session)):
     return remediation.note_payload(remediation.active_note(session, card.id))
 
 
+def _practice_conflict(code: str, message: str, state: dict) -> HTTPException:
+    """409 that carries the practice session the answer could not join.
+
+    Shaped like _remediation_conflict, with the session where that one carries the
+    note, because the only sensible thing a UI can do about "not that answer" is
+    redraw the session it should have been looking at. The next question to ask, when
+    there is one, rides in detail.state.item rather than in a second copy of it that
+    could disagree.
+    """
+    return HTTPException(409, detail={"error": code, "message": message, "state": state})
+
+
+@app.get("/review/cards/{card_id}/remediation/practice")
+def get_remedial_practice(card_id: int, session: Session = Depends(get_session)):
+    """Today's remedial practice session for this card. It describes; it never refuses.
+
+    Any real card gets a 200. "This concept has no explanation open" and "this concept
+    has no quiz questions" are facts about the session, reported as status and reason,
+    not errors: the Today screen fans this out per concept, and a 4xx per concept would
+    make a page full of ordinary answers look broken.
+
+    Unlike the note endpoints this deliberately does not call remediation.clear_resolved.
+    Retiring a note is a write, and this is the read the practice panel polls; a GET
+    that can end the session it is describing would let one tab close another tab's
+    session between the question and the answer.
+    """
+    card = session.get(models.ReviewCard, card_id)
+    if not card:
+        raise HTTPException(404, "Review card not found")
+    return remediation.practice_state(session, card, review.now_utc())
+
+
+@app.post("/review/cards/{card_id}/remediation/practice")
+def answer_remedial_practice(
+    card_id: int, body: ReviewAnswer, session: Session = Depends(get_session)
+):
+    """Record one remedial practice answer and hand back the session that follows it.
+
+    The top-level fields are answer_review's, so the feedback UI binds to the same
+    names. `state` is the GET's payload recomputed after the insert, never a mutated
+    copy of what was read, so the two endpoints cannot drift into two answers about
+    the same session. Its `item` is the NEXT question, or null when this answer ended
+    the session.
+
+    Nothing here is an assessment. No model is called, no review log is written, no
+    column of the card is touched, and the note keeps its status and its cooldown. The
+    only row this produces is one attempt, under its own source, which is what makes
+    the session reconstructible after a restart.
+
+    "No quiz questions for this concept" is decided before the item is looked at, and
+    the missing-note case after it. That is not an accident: with no items there is no
+    item that could pass the concept check, so 404 or 400 would answer a question about
+    the request instead of about the session, while a note that has gone still has to
+    let through an answer the learner was already holding.
+
+    The session is derived from attempts alone, so a card deleted and recreated for the
+    same concept picks that day's practice back up. That is deliberate: the memory being
+    practiced belongs to the concept, not to the row that schedules it.
+
+    Every refusal is a 409 carrying an `error` code and the same `state` the GET would
+    return, except the two that describe a malformed request: an unknown item is a 404
+    and an item from another concept or an empty answer is a 400, matching the review
+    endpoint the client already talks to.
+    """
+    card = session.get(models.ReviewCard, card_id)
+    if not card:
+        raise HTTPException(404, "Review card not found")
+
+    now = review.now_utc()
+    facts = remediation.practice_facts(session, card, now)
+    state = remediation.practice_state(session, card, now, facts=facts)
+    if not facts.items:
+        raise _practice_conflict(
+            remediation.NO_ITEMS,
+            "This concept has no quiz questions to practice with.",
+            state,
+        )
+
+    item = session.get(models.QuizItem, body.item_id)
+    if not item:
+        raise HTTPException(404, "Quiz item not found")
+    if normalize_concept(item.concept) != card.concept_key:
+        raise HTTPException(400, "That quiz item does not test this concept")
+    if not body.answer.strip():
+        raise HTTPException(400, "Answer cannot be empty")
+
+    # Read before anything is written, because the duplicate guard cannot stand in for
+    # it: that guard matches on the answer text, so a DIFFERENT answer to an item this
+    # session already used would sail past it and write a second row for the same
+    # question, which is exactly the repetition this rule exists to prevent.
+    servable = facts.stop_reason is None and item.id not in facts.used_item_ids
+    if facts.note is None:
+        # The note can be retired underneath a session: the Today screen fans out per
+        # concept, so another tab can clear it between this question and this answer.
+        # Terminating means no NEW question is served. It does not mean an answer
+        # already in the learner's hands is thrown away, so this one is still graded
+        # and kept, and the terminal state arrives on the response that carries it.
+        #
+        # A retired note and no note at all are different situations, and only the
+        # first one can have handed the learner a question. latest_note sees cleared
+        # rows, which is what tells them apart: a card that has never been re-taught
+        # refuses every answer, here and in the state the GET reports.
+        if not servable or remediation.latest_note(session, card.id) is None:
+            raise _practice_conflict(
+                remediation.NO_NOTE,
+                "This concept has no explanation open to practice against.",
+                state,
+            )
+    elif facts.stop_reason is not None:
+        raise _practice_conflict(
+            remediation.SESSION_COMPLETE,
+            "You have finished practicing this concept for today.",
+            state,
+        )
+    elif item.id in facts.used_item_ids:
+        # state.item is the next question, and it is never null here: a session with
+        # nothing left to serve is a finished session, which the branch above answered.
+        raise _practice_conflict(
+            remediation.ITEM_ALREADY_ANSWERED,
+            "You have already answered that question in today's practice.",
+            state,
+        )
+
+    attempt = _record_attempt(
+        session,
+        item,
+        body.answer,
+        _grade(body.answer, item.answer),
+        _sanitize_elapsed_ms(body.elapsed_ms),
+        source=remediation.REMEDIAL_PRACTICE_SOURCE,
+    )
+    return {
+        "correct": attempt.correct,
+        "expected": item.answer,
+        "submitted": attempt.submitted_answer,
+        "attempt_id": attempt.id,
+        "state": remediation.practice_state(session, card, now),
+    }
+
+
 @app.get("/courses/{course_id}/concepts")
 def get_course_concepts(course_id: int, session: Session = Depends(get_session)):
     """The concept map's data: every concept in the course with its mastery bucket.

@@ -101,12 +101,18 @@ def provider(monkeypatch):
     return _install(monkeypatch, RecordingProvider())
 
 
-def _seed_concept(ratings, content=LESSON_CONTENT, with_lesson=True):
+def _seed_concept(ratings, content=LESSON_CONTENT, with_lesson=True, item_count=1):
     """A course teaching one fresh concept, plus a rating history for its card.
 
     The label is unique per call because concept keys are global and the test
     database is shared across the suite: a fixed label would let one test's ratings
     decide whether another test's concept is flagged.
+
+    item_count is how many quiz items test the concept. One is all the re-teaching
+    tests need; remedial practice needs a pool it can walk through and exhaust, and
+    zero is a concept with lesson text but nothing to practice on. The first item
+    keeps its exact question and answer whatever the count, because the grounding
+    tests below assert on that wording.
     """
     label = f"Concept {uuid4().hex[:8]}"
     key = normalize_concept(label)
@@ -118,15 +124,21 @@ def _seed_concept(ratings, content=LESSON_CONTENT, with_lesson=True):
             lesson = models.Lesson(
                 title=f"Lesson on {label}", position=0, content=content, concepts=[label]
             )
-            lesson.quiz_items.append(
-                models.QuizItem(
-                    question=f"What does {label} mean?",
-                    kind="short",
-                    options=[],
-                    answer="days until recall drops to ninety percent",
-                    concept=label,
+            for position in range(item_count):
+                first = position == 0
+                lesson.quiz_items.append(
+                    models.QuizItem(
+                        question=f"What does {label} mean?"
+                        if first
+                        else f"Question {position} about {label}?",
+                        kind="short",
+                        options=[],
+                        answer="days until recall drops to ninety percent"
+                        if first
+                        else f"answer {position} for {label}",
+                        concept=label,
+                    )
                 )
-            )
             module.lessons.append(lesson)
             course.modules.append(module)
             session.add(course)

@@ -477,6 +477,31 @@ def concept_item_index(session: Session) -> dict[str, list[models.QuizItem]]:
     return index
 
 
+def order_items(
+    items: list[models.QuizItem], last_seen: dict[int, datetime]
+) -> list[models.QuizItem]:
+    """Which question to ask next, as a whole ordered list rather than one choice.
+
+    Items never asked come first, since an unseen question is the strongest test of
+    the concept rather than of the answer; the rest follow least recently asked.
+    `last_seen` maps quiz item id to the most recent attempt on it, and an id missing
+    from it has never been asked.
+
+    Partitioned rather than sorted with a sentinel date, so a "never asked" item is
+    never compared against a timestamp. id breaks ties inside each half, making the
+    order stable rather than dependent on row order.
+
+    A list because two callers want different slices of the same preference: a review
+    session takes the first item for each concept, and remedial practice walks down
+    the list, skipping whatever today's session has already used.
+    """
+    unseen = [item for item in items if item.id not in last_seen]
+    seen = [item for item in items if item.id in last_seen]
+    return sorted(unseen, key=lambda item: item.id) + sorted(
+        seen, key=lambda item: (last_seen[item.id], item.id)
+    )
+
+
 def pick_items(
     session: Session,
     concept_keys: list[str],
@@ -485,8 +510,8 @@ def pick_items(
     """Choose which question to ask for each concept: the one asked least recently.
 
     Rotating through a concept's items stops a card from decaying into one memorized
-    string. Items never asked come first, since an unseen question is the strongest
-    test of the concept rather than of the answer.
+    string. The preference itself is order_items, so remedial practice walks the same
+    order rather than carrying a second opinion about which question is next.
 
     Two queries total regardless of how many concepts are asked for, which is what
     keeps rendering a fifty card queue from being a hundred round trips.
@@ -508,14 +533,7 @@ def pick_items(
     for key, items in candidates.items():
         if not items:
             continue
-        # Partitioned rather than sorted with a sentinel date, so a "never asked" item
-        # is never compared against a timestamp. id breaks ties, making the choice
-        # stable rather than dependent on row order.
-        unseen = [item for item in items if item.id not in last_seen]
-        if unseen:
-            chosen[key] = min(unseen, key=lambda item: item.id)
-        else:
-            chosen[key] = min(items, key=lambda item: (last_seen[item.id], item.id))
+        chosen[key] = order_items(items, last_seen)[0]
     return chosen
 
 
