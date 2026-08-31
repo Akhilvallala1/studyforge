@@ -343,3 +343,52 @@ class RemediationNote(Base):
     cleared_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cooldown_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class TutorMessage(Base):
+    """One turn of the tutor conversation about one concept. Append-only.
+
+    There is no conversation table, for the same reason remedial practice has no
+    practice table: a conversation is not a thing that gets updated, it is the rows
+    for one concept_key read in (created_at, id) order. Adding a parent row would
+    create a second place to ask "which conversation is this", which could then
+    disagree with the messages themselves.
+
+    concept_label is stored alongside the key for the reason RemediationNote stores
+    one: the key is normalized and lossy, and a conversation has to render a display
+    name long after the card, the lesson, and the course that named it are gone.
+
+    beyond and check_question are SEPARATE COLUMNS and must stay that way. beyond is
+    what the tutor said that its material did not support, and check_question is the
+    question it asked back; flattening either into content as markdown would destroy
+    the grounded/ungrounded boundary on every row written afterwards, and no migration
+    can restore it because the information is simply not in the text. The JSON key the
+    model replies with is still "check": this column is check_question because CHECK is
+    reserved SQL, and while SQLAlchemy quotes it correctly, a raw-SQL debugging session
+    or a future Postgres path would trip on it.
+
+    run_id and model match llm_calls, so a reply can be tied back to what it cost and
+    to the model that wrote it. Both are blank on a learner row, which pays for nothing.
+    """
+
+    __tablename__ = "tutor_messages"
+    __table_args__ = (
+        # One conversation, read in order, and the per-concept daily cap counted off
+        # the same rows.
+        Index("ix_tutor_messages_concept_created", "concept_key", "created_at"),
+        # The day-wide cap is not concept-scoped, so the index above cannot serve it
+        # and it would otherwise scan every message ever written.
+        Index("ix_tutor_messages_created", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    concept_key: Mapped[str] = mapped_column(String(200))
+    concept_label: Mapped[str] = mapped_column(String(200), default="")
+    role: Mapped[str] = mapped_column(String(10))  # "learner" | "tutor"
+    # The learner's question, or the tutor's grounded answer.
+    content: Mapped[str] = mapped_column(Text, default="")
+    beyond: Mapped[str] = mapped_column(Text, default="")
+    check_question: Mapped[str] = mapped_column(Text, default="")
+    run_id: Mapped[str] = mapped_column(String(32), default="")
+    model: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
