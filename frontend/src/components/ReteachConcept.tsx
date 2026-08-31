@@ -187,6 +187,20 @@ export function ReteachConcept({
     panelRef.current?.focus();
   }, [open, note]);
 
+  // The recovered path has no panel to land on, and it has already lost focus: the
+  // click passed through `busy`, `busy` is a real disabled, and disabling the focused
+  // element blurs it. Every other terminal state in this component puts focus
+  // somewhere meaningful, so this one returns it to the trigger the learner pressed,
+  // which aria-disabled keeps focusable for exactly this reason. Left alone, a
+  // keyboard user was dropped to the body and tabbed onward past the notice their
+  // own keypress produced.
+  useEffect(() => {
+    if (!recovered) return;
+    // Only when the blur left focus nowhere. If they moved on while the request was
+    // in flight, that is where they want to be.
+    if (document.activeElement === document.body) buttonRef.current?.focus();
+  }, [recovered]);
+
   async function generate() {
     setPending(true);
     setElapsed(0);
@@ -272,6 +286,9 @@ export function ReteachConcept({
   }
 
   function handleClick() {
+    // aria-disabled does not stop activation the way disabled does, so the refusal
+    // has to be here. See the button for why it is aria-disabled and not disabled.
+    if (recovered) return;
     if (!hasNote) {
       void generate();
       return;
@@ -324,12 +341,32 @@ export function ReteachConcept({
             type="button"
             ref={buttonRef}
             onClick={handleClick}
-            disabled={busy || recovered}
+            /*
+              Two inert states, expressed differently on purpose.
+
+              `busy` is a real `disabled`. It is transient, and React commits it before
+              a second real click can land, which is the only thing stopping a
+              double-clicked button from starting two metered generations.
+
+              `recovered` is permanent for this render, and `disabled` would blur the
+              button the instant it is set: a learner who pressed Enter on it dropped to
+              the body and tabbed onward past the very notice their keypress produced.
+              aria-disabled keeps the element focusable, so focus never moves and there
+              is nothing to restore, and a keyboard user tabbing back through the row
+              still meets the button and hears why it is inert. Focusing the notice
+              instead would also solve the focus loss, but the notice and the live
+              region carry the same words, and this component already refuses to put
+              the same text in two places a screen reader will read.
+            */
+            disabled={busy}
+            aria-disabled={recovered || undefined}
             aria-label={accessibleName}
             aria-expanded={hasNote ? open : undefined}
             aria-controls={hasNote && open ? panelId : undefined}
-            className={`rounded-lg border border-zinc-300 px-3.5 py-1.5 text-[13px] font-medium transition-colors hover:border-zinc-500 disabled:opacity-60 dark:border-zinc-700 dark:hover:border-zinc-500 ${
-              busy ? "disabled:cursor-progress" : "disabled:cursor-not-allowed"
+            className={`rounded-lg border border-zinc-300 px-3.5 py-1.5 text-[13px] font-medium transition-colors dark:border-zinc-700 ${
+              busy || recovered
+                ? `opacity-60 ${busy ? "cursor-progress" : "cursor-not-allowed"}`
+                : "hover:border-zinc-500 dark:hover:border-zinc-500"
             }`}
           >
             {label}
