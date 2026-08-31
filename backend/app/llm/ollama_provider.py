@@ -9,6 +9,13 @@ documents in, so leaving num_ctx unset produces a plausible course written from 
 first few pages of the source and nothing anywhere says so. num_ctx is therefore
 always sent, and what Ollama reports evaluating is checked against it afterwards.
 
+The window fills from both ends, so both are watched. num_predict is capped to what
+the window has left rather than passed through at the pipeline's 64000, because a
+request eight times the window invites the runner to shift the context mid-reply and
+finish the lesson with the source material evicted. And the post-call check counts
+the reply as well as the prompt: on material that tokenizes denser than the
+character estimate assumes, the prompt fits and the ANSWER is what runs out of room.
+
 Errors. The Anthropic provider raises LLMCallError carrying whatever tokens the
 failed call consumed, which is what lets MeteredLLM record it. This one used to let
 raw httpx exceptions out, so a local setup's ordinary failures (Ollama not running,
@@ -47,12 +54,51 @@ logger = logging.getLogger("studyforge.llm.ollama")
 # checks below start complaining.
 DEFAULT_NUM_CTX = 8192
 
-# Used only to warn, before a call, that the material looks too big for the window.
-# Deliberately generous: English prose runs nearer 3.5 chars per token, so this
-# undercounts and the warning errs toward staying quiet rather than crying wolf.
+# Estimates only, never a verdict. Deliberately generous: English prose runs nearer
+# 3.5 chars per token and markdown with code fences nearer 2.5, so this undercounts
+# and everything built on it errs toward staying quiet. That optimism is why the
+# checks that can FAIL a call are all built on Ollama's own reported counts instead.
 CHARS_PER_TOKEN = 4
 
+# How much of the window is held back for the reply when judging whether a prompt
+# fits. Without it, a prompt that filled the window and left nothing to answer with
+# read as a comfortable fit, since it never touched num_ctx. 2500 is the top of the
+# 1,200-2,500 token range a lesson with its quiz actually runs to.
+OUTPUT_RESERVE_TOKENS = 2500
+
+# A request must ask for at least one token to be a request. Reached only when the
+# prompt estimate already fills the window, which is a call that will fail its
+# post-call check anyway; this just keeps the body valid until it gets there.
+MIN_NUM_PREDICT = 1
+
 _REQUEST_TIMEOUT = 600
+
+
+def _token_count(value: object, field: str) -> int | None:
+    """Ollama's own count for `field`, or None when what came back is not a count.
+
+    The response body is untrusted parsed input like any other, and these numbers do
+    not merely get reported: prompt_eval_count is compared against num_ctx, and both
+    end up in an Integer column. A string, a list, or a float used to reach that
+    comparison and leave a raw TypeError, which is exactly the escape this module
+    exists to close. bool is rejected by hand because it passes isinstance(x, int).
+
+    Unparseable becomes unknown rather than fatal. It is the same state as Ollama
+    not reporting the count at all, which is already handled, and the reply text
+    itself may be perfectly good. The warning is what makes it findable, and it
+    matters: an unknown count means the truncation checks have nothing to judge.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        logger.warning(
+            "Ollama reported %s=%r, which is not a token count. Treating it as unknown, "
+            "which means the context window check cannot run on this call.",
+            field,
+            value,
+        )
+        return None
+    return value
 
 
 def _num_ctx_from_env() -> int:
@@ -94,9 +140,9 @@ class OllamaProvider:
 
     def generate(self, system: str, prompt: str, max_tokens: int = 64000) -> LLMResult:
         self._warn_if_prompt_looks_too_long(system, prompt)
-        body = self._post(system, prompt, max_tokens)
-        input_tokens = body.get("prompt_eval_count")
-        output_tokens = body.get("eval_count")
+        body = self._post(system, prompt, self._num_predict(system, prompt, max_tokens))
+        input_tokens = _token_count(body.get("prompt_eval_count"), "prompt_eval_count")
+        output_tokens = _token_count(body.get("eval_count"), "eval_count")
         text = self._message_content(body, input_tokens, output_tokens)
         self._reject_if_window_filled(input_tokens, output_tokens)
         return LLMResult(text=text, input_tokens=input_tokens, output_tokens=output_tokens)
@@ -105,7 +151,7 @@ class OllamaProvider:
     # Transport
     # ----------------------------------------------------------------------
 
-    def _post(self, system: str, prompt: str, max_tokens: int) -> dict:
+    def _post(self, system: str, prompt: str, num_predict: int) -> dict:
         try:
             response = httpx.post(
                 f"{self.base_url}/api/chat",
@@ -116,7 +162,7 @@ class OllamaProvider:
                         {"role": "user", "content": prompt},
                     ],
                     "stream": False,
-                    "options": {"num_predict": max_tokens, "num_ctx": self.num_ctx},
+                    "options": {"num_predict": num_predict, "num_ctx": self.num_ctx},
                 },
                 timeout=_REQUEST_TIMEOUT,
             )
@@ -187,48 +233,114 @@ class OllamaProvider:
     # Truncation
     # ----------------------------------------------------------------------
 
+    def _estimated_prompt_tokens(self, system: str, prompt: str) -> int:
+        return (len(system) + len(prompt)) // CHARS_PER_TOKEN
+
+    def _prompt_budget(self) -> int:
+        """How much of the window a prompt may use before the warning fires.
+
+        The window has to hold the answer as well, and judging the prompt against
+        the whole of it called a prompt that left no room to reply a comfortable
+        fit. Half the window stands in when num_ctx is too small to give 2,500
+        away: such a window cannot run this pipeline at all, but every call
+        warning about it would only bury the ones that mean something.
+        """
+        return max(self.num_ctx - OUTPUT_RESERVE_TOKENS, self.num_ctx // 2)
+
+    def _num_predict(self, system: str, prompt: str, max_tokens: int) -> int:
+        """What to ask for, never more than the window could possibly hold.
+
+        max_tokens arrives as the pipeline's 64000 default, eight times the whole
+        window. Asking for that against a pinned num_ctx invites context shifting:
+        once the window fills, the runner keeps generating by evicting the oldest
+        tokens, which are the source material, so the model writes the rest of the
+        lesson with the document gone while prompt_eval_count never moves. Capping
+        to what is left makes generation stop at the ceiling instead, which surfaces
+        as an unterminated JSON object and a visible failure.
+
+        The estimate used here is the optimistic one, which makes the cap an upper
+        bound on the real room: it can never cut a reply shorter than the window
+        would have. Denser material means the cap is simply not the binding
+        constraint, and _reject_if_window_filled catches that case from the counts.
+        """
+        available = self.num_ctx - self._estimated_prompt_tokens(system, prompt)
+        return min(max_tokens, max(available, MIN_NUM_PREDICT))
+
     def _warn_if_prompt_looks_too_long(self, system: str, prompt: str) -> None:
         """Say so before the call when the material plainly will not fit.
 
-        An estimate from character counts, so it only warns. It is here because it
-        is the one signal that survives Ollama truncating to somewhere below the
-        ceiling, which _reject_if_window_filled cannot see, and because it arrives
-        before minutes of local GPU time rather than after.
+        An estimate from character counts, so it only warns, and it is measured
+        against the prompt's share of the window rather than all of it. It arrives
+        before minutes of local GPU time rather than after, which is its whole
+        value; the checks that can fail a call are the ones with evidence.
         """
-        estimated = (len(system) + len(prompt)) // CHARS_PER_TOKEN
-        if estimated <= self.num_ctx:
+        estimated = self._estimated_prompt_tokens(system, prompt)
+        budget = self._prompt_budget()
+        if estimated <= budget:
             return
         logger.warning(
-            "Prompt is about %d tokens against OLLAMA_NUM_CTX=%d: Ollama will silently "
-            "drop whatever does not fit, and %s will answer from a fragment of the "
-            "material. Raise OLLAMA_NUM_CTX or use shorter material.",
+            "Prompt is about %d tokens against a %d token window with about %d of that "
+            "meant for the reply. If it overruns, Ollama drops the overflow without "
+            "saying so and %s answers from a fragment of the material; if it only "
+            "crowds the reply, the answer gets cut off instead. Raise OLLAMA_NUM_CTX "
+            "or use shorter material.",
             estimated,
             self.num_ctx,
+            self.num_ctx - budget,
             self.model,
         )
 
     def _reject_if_window_filled(
         self, input_tokens: int | None, output_tokens: int | None
     ) -> None:
-        """Fail the call when Ollama evaluated a prompt right up to the window.
+        """Fail the call when the context window filled up, from either end.
 
-        prompt_eval_count cannot exceed the context window, so reaching it means the
-        prompt either exactly filled it, leaving no room to answer, or was cut down
-        to fit. Either way the reply is not about the material that was sent, and a
-        course written from a fragment is worse than a generation that failed: it
-        looks finished, so nobody goes looking.
+        Two ways in, one rule: only the ceiling counts as proof. Neither branch
+        rests on the character estimate, which is what makes them hold on material
+        that tokenizes denser than CHARS_PER_TOKEN assumes.
 
-        Only the ceiling counts as proof. Comparing against the character estimate
-        instead would misfire on a prompt cache hit, where Ollama reports only the
-        tokens it newly evaluated and the count is legitimately small.
+        The prompt end. prompt_eval_count cannot exceed the window, so reaching it
+        means the prompt either exactly filled it, leaving nothing to answer with,
+        or was cut down to fit. A course written from a fragment is worse than a
+        generation that failed: it looks finished, so nobody goes looking.
+
+        The answer end. prompt + generated reaching the window means generation ran
+        into the ceiling: the reply stopped mid-object, or the runner shifted the
+        context to keep going and wrote the rest with the source material evicted.
+        This is the branch that catches dense material, where the prompt fits, the
+        estimate has nothing to complain about, and the answer is what gets cut. On
+        a 17,778-char routed lesson prompt the difference is real: at 4 chars per
+        token it is 4,444 tokens with room to spare, at 2.5 it is 7,111 and the
+        reply has nowhere to go, and nothing before this point can tell them apart.
+
+        The blind spot, on both branches, and the mirror of why the estimate is not
+        trusted here. Ollama reports only the tokens it newly evaluated, so a prompt
+        cache hit lowers prompt_eval_count: that is what would make comparing the
+        count against the estimate misfire, and it equally means a cached prefix
+        could in principle carry a genuinely truncated prompt in under the ceiling.
+        Small in practice, since the first oversized call in a stage raises before
+        any later call can reuse its prefix.
         """
-        if input_tokens is None or input_tokens < self.num_ctx:
+        if input_tokens is None:
             return
-        raise LLMCallError(
-            f"Ollama evaluated {input_tokens} prompt tokens against a {self.num_ctx} token "
-            f"context window, so the prompt was truncated to fit and {self.model} did not "
-            f"see all of the material. Raise OLLAMA_NUM_CTX (costs VRAM) or use shorter "
-            f"material.",
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-        )
+        if input_tokens >= self.num_ctx:
+            raise LLMCallError(
+                f"Ollama evaluated {input_tokens} prompt tokens against a {self.num_ctx} "
+                f"token context window, so the prompt was truncated to fit and "
+                f"{self.model} did not see all of the material. Raise OLLAMA_NUM_CTX "
+                f"(costs VRAM) or use shorter material.",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+        if output_tokens is None:
+            return
+        if input_tokens + output_tokens >= self.num_ctx:
+            raise LLMCallError(
+                f"Ollama filled its {self.num_ctx} token context window while replying "
+                f"({input_tokens} prompt + {output_tokens} generated), so the answer was "
+                f"either cut off at the ceiling or continued with the source material "
+                f"evicted from the window. Raise OLLAMA_NUM_CTX (costs VRAM) or use "
+                f"shorter material.",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )

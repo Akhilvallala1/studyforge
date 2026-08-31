@@ -10,7 +10,12 @@ import httpx
 import pytest
 
 from app.llm.base import LLMCallError, LLMResult
-from app.llm.ollama_provider import DEFAULT_NUM_CTX, OllamaProvider
+from app.llm.ollama_provider import (
+    CHARS_PER_TOKEN,
+    DEFAULT_NUM_CTX,
+    OUTPUT_RESERVE_TOKENS,
+    OllamaProvider,
+)
 
 OLLAMA_LOGGER = "studyforge.llm.ollama"
 
@@ -69,22 +74,29 @@ def test_num_ctx_is_sent_alongside_num_predict(monkeypatch):
     assert options["num_predict"] == 1234
 
 
+def _routed_lesson_prompt_chars() -> int:
+    """The biggest prompt the common case sends: system plus two whole segments."""
+    from app.generation import LESSON_SYSTEM
+    from app.ingest import MAX_CHUNK_CHARS
+
+    return len(LESSON_SYSTEM) + 2 * MAX_CHUNK_CHARS + 200
+
+
 def test_default_num_ctx_fits_a_routed_lesson_call():
     """The default is chosen against the pipeline's real prompts, not a round number.
 
     A lesson call sends up to two 8,000-char segments plus the system prompt, which
     is ~4,400 input tokens, and the lesson it writes back runs to a couple of
     thousand more. Anything at or below Ollama's own 4096 default cannot hold that.
-    """
-    from app.generation import LESSON_SYSTEM
-    from app.ingest import MAX_CHUNK_CHARS
-    from app.llm.ollama_provider import CHARS_PER_TOKEN
 
-    biggest_lesson_prompt = len(LESSON_SYSTEM) + 2 * MAX_CHUNK_CHARS + 200
-    estimated_input = biggest_lesson_prompt // CHARS_PER_TOKEN
+    Both sides of this are ESTIMATED tokens, so it guards the constants growing
+    (raising MAX_CHUNK_CHARS past ~10,500 turns it red) and not the estimate being
+    wrong. The checks that catch a wrong estimate are the reported-count ones below.
+    """
+    estimated_input = _routed_lesson_prompt_chars() // CHARS_PER_TOKEN
     assert DEFAULT_NUM_CTX > 4096
     # Room left over for the reply, not just for the prompt.
-    assert DEFAULT_NUM_CTX - estimated_input >= 2500
+    assert DEFAULT_NUM_CTX - estimated_input >= OUTPUT_RESERVE_TOKENS
 
 
 def test_num_ctx_reads_the_env_var(monkeypatch):
@@ -169,8 +181,12 @@ def test_truncation_error_carries_tokens_so_the_call_is_still_metered(monkeypatc
     assert caught.value.output_tokens == 77
 
 
-def test_prompt_below_the_window_is_not_flagged(monkeypatch):
-    _stub_post(monkeypatch, _response(json=_chat_body(prompt_eval_count=511)))
+def test_prompt_one_token_below_the_window_is_not_flagged(monkeypatch):
+    """The boundary, isolated: eval_count 0 so only the prompt end is under test."""
+    _stub_post(
+        monkeypatch,
+        _response(json=_chat_body(prompt_eval_count=511, eval_count=0)),
+    )
     result = OllamaProvider(num_ctx=512).generate("sys", "short prompt")
     assert result.text == "hello"
 
@@ -187,7 +203,10 @@ def test_missing_prompt_eval_count_cannot_be_judged(monkeypatch):
 def test_oversized_prompt_warns_before_the_call(monkeypatch, caplog):
     """The estimate catches what the ceiling check cannot: a truncation that lands
     below num_ctx. It warns rather than raising, since it is only an estimate."""
-    _stub_post(monkeypatch, _response(json=_chat_body(prompt_eval_count=5)))
+    _stub_post(
+        monkeypatch,
+        _response(json=_chat_body(prompt_eval_count=5, eval_count=0)),
+    )
     with caplog.at_level(logging.WARNING, logger=OLLAMA_LOGGER):
         result = OllamaProvider(num_ctx=10).generate("sys", "x" * 400)
     assert "OLLAMA_NUM_CTX" in caplog.text
@@ -201,6 +220,187 @@ def test_prompt_that_fits_does_not_warn(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING, logger=OLLAMA_LOGGER):
         OllamaProvider(num_ctx=8192).generate("sys", "x" * 400)
     assert caplog.text == ""
+
+
+def test_prompt_that_fits_but_crowds_the_reply_still_warns(monkeypatch, caplog):
+    """The reserve's whole point.
+
+    24,000 chars estimates to 6,000 tokens, which fits an 8,192 window with room to
+    spare by the old rule and leaves 2,192 for a lesson that needs up to 2,500.
+    Judged against the window alone this read as comfortable.
+    """
+    _stub_post(monkeypatch, _response(json=_chat_body(prompt_eval_count=5)))
+    provider = OllamaProvider(num_ctx=8192)
+    estimated = (len("sys") + 24_000) // CHARS_PER_TOKEN
+    assert estimated < provider.num_ctx, "the prompt does fit the window"
+
+    with caplog.at_level(logging.WARNING, logger=OLLAMA_LOGGER):
+        provider.generate("sys", "x" * 24_000)
+    assert "meant for the reply" in caplog.text
+
+
+def test_prompt_budget_never_goes_negative_on_a_tiny_window(monkeypatch, caplog):
+    """A window smaller than the reserve must not make every call warn."""
+    _stub_post(monkeypatch, _response(json=_chat_body(prompt_eval_count=5)))
+    with caplog.at_level(logging.WARNING, logger=OLLAMA_LOGGER):
+        OllamaProvider(num_ctx=1024).generate("sys", "x" * 400)
+    assert caplog.text == ""
+
+
+# --------------------------------------------------------------------------
+# num_predict: never ask for more than the window can hold
+# --------------------------------------------------------------------------
+
+
+def test_num_predict_is_capped_to_what_the_window_has_left(monkeypatch):
+    """The pipeline's 64000 default is eight times the window.
+
+    Asking for it against a pinned num_ctx invites the runner to shift the context
+    mid-reply, evicting the source material while the model keeps writing, with
+    prompt_eval_count none the wiser.
+    """
+    sent = _stub_post(monkeypatch, _response(json=_chat_body()))
+    provider = OllamaProvider(num_ctx=8192)
+    provider.generate("sys", "x" * 4000, max_tokens=64000)
+
+    expected = 8192 - (len("sys") + 4000) // CHARS_PER_TOKEN
+    assert sent[0]["json"]["options"]["num_predict"] == expected
+    assert expected < 64000
+
+
+def test_num_predict_never_exceeds_what_the_caller_asked_for(monkeypatch):
+    """Remediation passes 4000 on purpose; the cap must not hand it more."""
+    sent = _stub_post(monkeypatch, _response(json=_chat_body()))
+    OllamaProvider(num_ctx=8192).generate("sys", "short", max_tokens=4000)
+    assert sent[0]["json"]["options"]["num_predict"] == 4000
+
+
+def test_num_predict_stays_positive_when_the_prompt_fills_the_window(monkeypatch):
+    """A doomed call still has to be a valid request; the counts fail it afterwards."""
+    sent = _stub_post(monkeypatch, _response(json=_chat_body(prompt_eval_count=1)))
+    OllamaProvider(num_ctx=100).generate("sys", "x" * 40_000)
+    assert sent[0]["json"]["options"]["num_predict"] >= 1
+
+
+# --------------------------------------------------------------------------
+# The answer end of the window
+# --------------------------------------------------------------------------
+
+
+def test_reply_that_runs_into_the_ceiling_raises(monkeypatch):
+    """Dense material: the prompt fits, so nothing before the call complains, and
+    the reply is what runs out of room.
+
+    A 17,778-char routed lesson prompt is 4,444 tokens at 4 chars per token and
+    7,111 at 2.5, which is ordinary for markdown with code fences. At 2.5 the prompt
+    still fits an 8,192 window, prompt_eval_count lands well under the ceiling, and
+    the lesson gets cut off mid-object instead.
+    """
+    _stub_post(
+        monkeypatch,
+        _response(json=_chat_body(prompt_eval_count=7111, eval_count=1081)),
+    )
+    with pytest.raises(LLMCallError) as caught:
+        OllamaProvider(num_ctx=8192).generate("sys", "short prompt")
+    assert "while replying" in str(caught.value)
+    assert caught.value.input_tokens == 7111
+    assert caught.value.output_tokens == 1081
+
+
+def test_the_case_that_passed_silently_before(monkeypatch):
+    """Verified live against a real Ollama: prompt_eval_count 8000 against a 8192
+    window produced no error and no warning and handed back truncated text.
+
+    8000 is under the ceiling, so the prompt-end check cannot see it, and the
+    prompt is far too short for the character estimate to complain. Only counting
+    the reply as well catches it.
+    """
+    _stub_post(
+        monkeypatch,
+        _response(json=_chat_body(prompt_eval_count=8000, eval_count=192)),
+    )
+    with pytest.raises(LLMCallError):
+        OllamaProvider(num_ctx=8192).generate("sys", "short prompt")
+
+
+def test_reply_with_a_token_to_spare_does_not_raise(monkeypatch):
+    _stub_post(
+        monkeypatch,
+        _response(json=_chat_body(prompt_eval_count=7111, eval_count=1080)),
+    )
+    result = OllamaProvider(num_ctx=8192).generate("sys", "short prompt")
+    assert result.text == "hello"
+
+
+def test_missing_eval_count_cannot_judge_the_reply(monkeypatch):
+    body = _chat_body(prompt_eval_count=8000)
+    del body["eval_count"]
+    _stub_post(monkeypatch, _response(json=body))
+    result = OllamaProvider(num_ctx=8192).generate("sys", "short prompt")
+    assert result.output_tokens is None
+
+
+# --------------------------------------------------------------------------
+# The reported counts are untrusted input like the rest of the body
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bogus", ["512", [512], {"n": 512}, 511.5, True, -1])
+def test_a_count_that_is_not_a_count_becomes_unknown(monkeypatch, caplog, bogus):
+    """These used to reach `input_tokens < self.num_ctx` and leave a raw TypeError,
+    which MeteredLLM does not catch, so the failed call wrote no row at all.
+
+    Unknown rather than fatal: it is the same state as Ollama not reporting the
+    count, and the reply text may be perfectly good. The warning is what makes it
+    findable, since an unknown count means the window checks cannot run.
+    """
+    _stub_post(monkeypatch, _response(json=_chat_body(prompt_eval_count=bogus)))
+    with caplog.at_level(logging.WARNING, logger=OLLAMA_LOGGER):
+        result = OllamaProvider(num_ctx=512).generate("sys", "short prompt")
+    assert result.input_tokens is None
+    assert result.text == "hello"
+    assert "prompt_eval_count" in caplog.text
+
+
+def test_a_string_count_at_the_ceiling_does_not_raise_typeerror(monkeypatch):
+    """The exact reproduction: "512" against num_ctx 512 hit the comparison."""
+    _stub_post(monkeypatch, _response(json=_chat_body(prompt_eval_count="512")))
+    result = OllamaProvider(num_ctx=512).generate("sys", "short prompt")
+    assert result.input_tokens is None
+
+
+def test_a_bogus_eval_count_cannot_break_the_reply_check(monkeypatch, caplog):
+    """The sum check adds the two counts, so eval_count needs the same guard."""
+    _stub_post(
+        monkeypatch,
+        _response(json=_chat_body(prompt_eval_count=100, eval_count="200")),
+    )
+    with caplog.at_level(logging.WARNING, logger=OLLAMA_LOGGER):
+        result = OllamaProvider(num_ctx=8192).generate("sys", "short prompt")
+    assert result.input_tokens == 100
+    assert result.output_tokens is None
+    assert "eval_count" in caplog.text
+
+
+def test_a_float_count_never_reaches_the_integer_column(monkeypatch):
+    _stub_post(
+        monkeypatch,
+        _response(json=_chat_body(prompt_eval_count=511.5, eval_count=2.5)),
+    )
+    result = OllamaProvider(num_ctx=8192).generate("sys", "short prompt")
+    assert result.input_tokens is None
+    assert result.output_tokens is None
+
+
+def test_zero_is_a_real_count_and_survives(monkeypatch):
+    """0 is falsy but perfectly valid: a call that generated nothing."""
+    _stub_post(
+        monkeypatch,
+        _response(json=_chat_body(prompt_eval_count=0, eval_count=0)),
+    )
+    result = OllamaProvider(num_ctx=8192).generate("sys", "short prompt")
+    assert result.input_tokens == 0
+    assert result.output_tokens == 0
 
 
 # --------------------------------------------------------------------------
