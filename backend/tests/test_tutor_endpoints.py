@@ -556,6 +556,12 @@ def test_the_spend_cap_surfaces_as_402_with_both_figures(client, monkeypatch):
     assert detail["error"] == "cost_limit_exceeded"
     assert detail["limit_usd"] == pytest.approx(spent)
     assert detail["spent_usd"] == pytest.approx(spent)
+    # The message and the key set are pinned because all three metered surfaces render
+    # this payload through one formatter on the way to the learner. A site that drifted
+    # would not raise anywhere: it would print the wrong sentence about their own money.
+    # See test_usage_api.py for the generation and re-teaching halves of the same claim.
+    assert detail["message"] == "LLM spend limit reached"
+    assert set(detail) == {"error", "message", "limit_usd", "spent_usd"}
     assert provider.calls == 0
     assert _rows(key) == []
 

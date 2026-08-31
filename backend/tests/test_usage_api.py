@@ -5,7 +5,9 @@ no real LLM API is ever called."""
 import json
 from datetime import datetime, timedelta
 
-from app import models
+from test_remediation import _seed_concept
+
+from app import fsrs, models
 from app.db import SessionLocal
 from app.llm.base import LLMCallError, LLMResult
 from app.llm.fake_provider import FakeProvider
@@ -332,3 +334,60 @@ def test_hard_cap_blocks_paid_provider_but_not_fake(client, stub_paid_provider, 
     monkeypatch.setattr("app.main.get_provider", lambda: FakeProvider())
     resp3 = client.post("/courses/generate", json={"text": "Fake provider still works fine."})
     assert resp3.status_code == 200
+
+
+def test_the_cap_refuses_re_teaching_in_the_same_shape_the_other_sites_use(
+    client, stub_paid_provider, monkeypatch
+):
+    """The third cost-cap site, and until now the only one with no test at all.
+
+    What is asserted is not that a 402 happens. It is that this site emits the IDENTICAL
+    payload the generation site does, key for key and including the exact message string.
+    The three sites are read through one formatter on the way to the learner, so a
+    divergence between them does not surface as an error: it surfaces as the wrong
+    sentence about their own money, which is the failure mode this whole file exists for.
+
+    Deliberately parallel to test_hard_cap_blocks_paid_provider_but_not_fake above, down
+    to how the limit is chosen, so the two can be read side by side and any difference
+    between the shapes is visible rather than inferred.
+
+    Re-teaching reaches the cap through remediation.generate_note, which builds its meter
+    inside the generation slot. The cap is checked before the provider is called, so the
+    refusal costs nothing, and nothing about the card is touched on the way out.
+    """
+    card_id, _, _ = _seed_concept([fsrs.AGAIN, fsrs.AGAIN])
+    session = SessionLocal()
+    try:
+        # SQLite hands a deleted row's id to the next insert and some tests in this suite
+        # delete review cards, so a brand new card can arrive already carrying another
+        # test's notes and answer with their 409 instead of the 402 under test. Test
+        # hygiene only: the app itself never deletes a card.
+        session.query(models.RemediationNote).filter(
+            models.RemediationNote.card_id == card_id
+        ).delete()
+        session.commit()
+    finally:
+        session.close()
+
+    baseline_total = client.get("/usage").json()["totals"]["estimated_cost_usd"]
+    assert client.post("/courses/generate", json={"text": "Cap shape source."}).status_code == 200
+    after_one_run = client.get("/usage").json()["totals"]["estimated_cost_usd"]
+    assert after_one_run > baseline_total
+
+    limit = after_one_run - 0.0001
+    monkeypatch.setenv("STUDYFORGE_COST_LIMIT_USD", str(limit))
+
+    calls_before = stub_paid_provider.calls
+    resp = client.post(f"/review/cards/{card_id}/remediation")
+
+    assert resp.status_code == 402, resp.json()
+    detail = resp.json()["detail"]
+    assert detail["error"] == "cost_limit_exceeded"
+    assert detail["message"] == "LLM spend limit reached"
+    assert detail["limit_usd"] == limit
+    assert detail["spent_usd"] == after_one_run
+    # No extra keys and none missing: the shape itself is the contract, not just its
+    # contents, because the formatter reads it positionally by name.
+    assert set(detail) == {"error", "message", "limit_usd", "spent_usd"}
+    # Blocked before the provider was reached, so a refused re-teach spends nothing.
+    assert stub_paid_provider.calls == calls_before
