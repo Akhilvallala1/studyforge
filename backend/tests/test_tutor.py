@@ -15,6 +15,7 @@ by making the change and watching them go red:
 """
 
 import json
+import re
 from datetime import UTC, datetime
 
 import pytest
@@ -35,6 +36,8 @@ NBSP = chr(0x00A0)  # no-break space
 BOM = chr(0xFEFF)  # zero-width no-break space
 WORD_JOINER = chr(0x2060)
 LRM = chr(0x200E)  # left-to-right mark
+SOFT_HYPHEN = chr(0x00AD)  # a hyphenation hint PDF and web text carry constantly
+LRI = chr(0x2066)  # left-to-right isolate, in the range gap an earlier table left open
 
 
 def _lesson(title="Optimization Basics", content="Gradient descent steps downhill.") -> models.Lesson:
@@ -289,6 +292,52 @@ def test_the_learners_pasted_text_cannot_forge_a_register_label():
 
 
 @pytest.mark.parametrize(
+    ("code_point", "name", "in_class"),
+    [
+        # In. Each of these defeated some earlier version of the pattern.
+        (0x00A0, "no-break space", True),
+        (0x00AD, "soft hyphen", True),
+        (0x034F, "combining grapheme joiner", True),
+        (0x180B, "mongolian free variation selector one", True),
+        (0x200B, "zero-width space", True),
+        (0x200E, "left-to-right mark", True),
+        (0x2060, "word joiner", True),
+        (0x2066, "left-to-right isolate", True),
+        (0x2069, "pop directional isolate", True),
+        (0x206F, "nominal digit shapes", True),
+        (0xFE0F, "variation selector sixteen", True),
+        (0xFEFF, "zero-width no-break space", True),
+        # Out, and this direction is the load-bearing half. A prefix class that can
+        # match a line break lets the anchor slide down the block and match a label many
+        # lines below the position it appeared to be testing, which is a worse hole than
+        # any of the ones above.
+        (0x000A, "line feed", False),
+        (0x000B, "vertical tab", False),
+        (0x000C, "form feed", False),
+        (0x000D, "carriage return", False),
+        (0x0085, "next line", False),
+        (0x2028, "line separator", False),
+        (0x2029, "paragraph separator", False),
+    ],
+)
+def test_the_prefix_class_membership_is_pinned_by_code_point(code_point, name, in_class):
+    """The range table is a claim about Unicode that nothing else checks.
+
+    "(0x2060, 0x2064)" reads as authoritative, and an earlier version of the table paired
+    it with "(0x206A, 0x206F)", reaching over the four bidi isolate controls at
+    U+2066-U+2069 to collect the deprecated format characters. Both entries looked
+    deliberate, so reading the table could not find the gap.
+
+    So membership is asserted here by code point, against the compiled class rather than
+    against the tuple it was built from. Deliberately white-box: it names _LABEL_PREFIX
+    because pinning the boundary is the whole point, and going through build_prompt would
+    only prove the pattern behaves the same way twice.
+    """
+    single = re.compile(f"^[{tutor._LABEL_PREFIX}]$")
+    assert bool(single.match(chr(code_point))) is in_class, name
+
+
+@pytest.mark.parametrize(
     "prefix",
     [
         pytest.param("", id="bare"),
@@ -303,7 +352,12 @@ def test_the_learners_pasted_text_cannot_forge_a_register_label():
         pytest.param(BOM, id="byte-order-mark"),
         pytest.param(WORD_JOINER, id="word-joiner"),
         pytest.param(LRM, id="left-to-right-mark"),
+        # The soft hyphen is the one that arrives by accident rather than by intent, so
+        # it is the likeliest of all of these to be met in the wild.
+        pytest.param(SOFT_HYPHEN, id="soft-hyphen"),
+        pytest.param(LRI, id="left-to-right-isolate"),
         pytest.param(NBSP + ZWSP + "  ", id="mixed-run"),
+        pytest.param(SOFT_HYPHEN + LRI, id="mixed-invisible-run"),
     ],
 )
 def test_a_prefixed_label_does_not_walk_past_the_scrub(prefix):

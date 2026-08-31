@@ -452,16 +452,25 @@ BEYOND_LABEL = "Tutor (not in your course):"
 # match a line break lets the anchor slide down the block and match a label many lines
 # below the position it appeared to be testing. That is the same reason the class is an
 # explicit set rather than \s, which under re.MULTILINE would swallow newlines.
+#
+# Boundaries here are pinned by test_the_prefix_class_membership_is_pinned_by_code_point
+# rather than by this table being read correctly. That test exists because a range table
+# is a claim about Unicode that nothing else checks: an earlier version of this tuple had
+# (0x2060, 0x2064) and (0x206A, 0x206F) as separate entries, which reached OVER
+# U+2066-U+2069, the bidi isolates, to pick up the deprecated format characters. The
+# ranges looked deliberate, so review could not see it.
 _INVISIBLE_PREFIX = (
     (0x00A0, 0x00A0),  # no-break space
+    (0x00AD, 0x00AD),  # soft hyphen
+    (0x034F, 0x034F),  # combining grapheme joiner
     (0x1680, 0x1680),  # ogham space mark
-    (0x180E, 0x180E),  # mongolian vowel separator
+    (0x180B, 0x180E),  # mongolian free variation selectors and vowel separator
     (0x2000, 0x200F),  # en and em spaces, zero-width space, ZWNJ, ZWJ, LRM, RLM
     (0x202A, 0x202F),  # bidi embedding controls, narrow no-break space
     (0x205F, 0x205F),  # medium mathematical space
-    (0x2060, 0x2064),  # word joiner and the invisible operators
-    (0x206A, 0x206F),  # deprecated format characters
+    (0x2060, 0x206F),  # word joiner, invisible operators, bidi isolates, deprecated
     (0x3000, 0x3000),  # ideographic space
+    (0xFE00, 0xFE0F),  # variation selectors
     (0xFEFF, 0xFEFF),  # zero-width no-break space, which is also the BOM
 )
 # Visible spacing, markdown list and quote markers, numeric list prefixes, then the
@@ -497,15 +506,22 @@ _LABEL_PREFIX = r" \t>*_#.)\-0-9" + "".join(
 #      purpose. Allowing \n inside the qualifier class lets one match span lines, which
 #      is the anchor-sliding hazard the _INVISIBLE_PREFIX note describes, and it buys
 #      protection only against a forgery that no longer renders as a single label line.
-#   4. Any OTHER visible leading character: "| Tutor (from your course):" in a markdown
-#      table, or a leading quotation mark. The prefix class enumerates the markers that
-#      ordinary pasted text puts in front of a line; it cannot enumerate every glyph.
-#      These stay visible to a reader, which is what separates them from the invisible
-#      prefixes, and those are in the class precisely because they are NOT.
+#   4. Any OTHER leading character, visible or not. A markdown table's "| ", a leading
+#      quotation mark, and also invisible code points this class does not list: a sweep
+#      of every Cf and Zs found 147 that defeated an earlier version of it, and the ones
+#      named in _INVISIBLE_PREFIX are the ones somebody has actually tried. This is an
+#      ENUMERATION, not a category test, and it is not closed. Python's re has no
+#      \p{Cf}, so a real category test needs the third-party regex module, and what is
+#      left after the fixes above is a tail nobody pastes by accident: Egyptian
+#      hieroglyph joiners, musical format controls, the astral tag block, U+3164 HANGUL
+#      FILLER. The line drawn here is the soft hyphen's: U+00AD is in the class because
+#      PDF and web text carry it constantly and it arrives on the clipboard by accident,
+#      which is the threat _scrub_turn names. Deliberate exotica is not chased.
 #
 # None of these is defence in depth. The register split has nothing below it, which is
-# why the invisible-prefix class was fixed rather than documented: it reproduced the
-# label byte for byte at what looks to a reader like column zero.
+# why the invisible prefixes that DO arrive by accident were fixed rather than
+# documented: they reproduce the label byte for byte at what looks to a reader like
+# column zero, so nothing in the rendered prompt tells them from a genuine turn.
 _REGISTER_FORGERY = re.compile(
     rf"^[{_LABEL_PREFIX}]*(?:Learner|Tutor)(?:\s*\([^)\n]*\))?\s*:",
     re.MULTILINE | re.IGNORECASE,
