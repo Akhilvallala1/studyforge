@@ -2,7 +2,7 @@
 
 import json
 
-from app import generation, remediation, tutor
+from app import generation, models, remediation, tutor
 from app.llm import get_provider
 from app.llm.fake_provider import (
     HOSTILE_LESSON_TITLE,
@@ -52,12 +52,16 @@ def _tutor_prompt(question="explain this", concept="Gradient Descent"):
     return tutor.build_prompt(
         tutor.TutorContext(
             concept_label=concept,
-            lessons=[
-                tutor.TutorLesson(title="Optimization Basics", content="Some lesson text.")
-            ],
-            # Question-only, which is the common case: answer keys are withheld under
-            # an open retrieval.
-            items=[tutor.TutorItem(question="What does it minimize?")],
+            # An unattached Lesson row: never flushed, so no module or course is needed.
+            lessons=[models.Lesson(title="Optimization Basics", content="Some lesson text.")],
+            # Question-only, which is the common case: answer keys are withheld for
+            # every item under an open retrieval.
+            items=[tutor.MaterialItem(question="What does it minimize?", answer=None)],
+            flagged=False,
+            missed=0,
+            of=0,
+            bucket="not_started",
+            recent_incorrect=[],
         ),
         [],
         question,
@@ -190,7 +194,7 @@ def test_fake_tutor_beyond_survives_the_cap_intact():
     """The fixture is written to sit inside the cap, so QA sees a whole aside."""
     reply = _reply(FakeProvider(), "what is beyond this?")
     assert reply.beyond == tutor.truncate_beyond(reply.beyond)
-    assert len(reply.beyond) <= tutor.MAX_BEYOND_CHARS
+    assert len(reply.beyond) <= tutor.BEYOND_MAX_CHARS
 
 
 def test_fake_tutor_is_deterministic_and_concept_sensitive():
