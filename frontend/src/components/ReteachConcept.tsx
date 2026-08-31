@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { ConceptPractice } from "@/components/ConceptPractice";
 import { LessonMarkdown } from "@/components/LessonMarkdown";
 import { ApiError, getRemediation, requestRemediation } from "@/lib/api";
+import { formatDay, noLongerMissed } from "@/lib/copy";
 import type { NeedsAttentionEntry, RemediationNote } from "@/lib/types";
 
 /* How a request that lost the race waits for the winner. The refusal carries no
@@ -37,13 +39,6 @@ function RecallBar({ retrievability }: { retrievability: number | null }) {
       <div className="h-full bg-amber-600" style={{ width: `${percent}%` }} />
     </div>
   );
-}
-
-/** A fixed locale, so a date rendered on the server survives hydration unchanged. */
-function formatDay(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
 /**
@@ -250,9 +245,12 @@ export function ReteachConcept({
           // the miss counts it was drawn with: the server has just said they are out of
           // date, and a stale count beside this notice reads as the page disagreeing
           // with itself. Nothing replaces them, because nothing here knows the new ones.
+          // The clause itself lives in lib/copy, because the practice panel below can
+          // deliver the same news by a different route and one row must not carry two
+          // wordings of one fact.
           const message =
-            `${entry.concept_label} is no longer one of the concepts you keep missing, ` +
-            "so there is nothing to re-teach. It stays in your review queue on its usual schedule.";
+            `${noLongerMissed(entry.concept_label)}, so there is nothing to re-teach. ` +
+            "It stays in your review queue on its usual schedule.";
           setRecovered(true);
           setNotice(message);
           setAnnouncement(message);
@@ -449,6 +447,24 @@ export function ReteachConcept({
           <div className="mt-3">
             <LessonMarkdown content={note.content} title={note.concept_label} />
           </div>
+
+          {/* Practice lives INSIDE the note panel, and that placement is the
+              precondition rather than a layout preference: this subtree only exists
+              when an explanation exists AND is open in front of the learner, so
+              "explanation before practice" cannot be broken by a reordering. Nothing
+              on the review route renders this component, which is what keeps practice
+              out of a review session.
+
+              `open` is passed rather than relied on implicitly so the panel can fetch
+              lazily on the first open: Today already runs one getRemediation per
+              flagged concept in a fan-out, and this panel is closed by default and
+              mostly never opened, so it must not become a second one. */}
+          <ConceptPractice
+            cardId={entry.card_id}
+            conceptLabel={entry.concept_label}
+            open={open}
+            onAnnounce={setAnnouncement}
+          />
 
           <p className="mt-4 border-t border-amber-200 pt-3 text-[13px] text-amber-900/80 dark:border-amber-900 dark:text-amber-200/80">
             This concept stays in your review queue on its usual schedule. Nothing here

@@ -8,6 +8,9 @@ import type {
   CourseSummary,
   GenerateResult,
   LessonDetail,
+  PracticeAnswer,
+  PracticeConflict,
+  PracticeState,
   RemediationConflict,
   RemediationNote,
   ReviewAnswerResult,
@@ -287,6 +290,79 @@ export async function requestRemediation(cardId: number): Promise<RemediationOut
 /** The concept's current explanation, or null when it has none. Costs nothing. */
 export function getRemediation(cardId: number): Promise<RemediationNote | null> {
   return get(`/review/cards/${cardId}/remediation`);
+}
+
+function practicePath(cardId: number): string {
+  return `/review/cards/${cardId}/remediation/practice`;
+}
+
+/**
+ * Today's practice run for a concept. It describes; it never refuses.
+ *
+ * Any real card answers 200, including "this concept has no explanation open" and
+ * "this concept has no quiz questions": those are facts about the run, carried as
+ * status and reason, not errors. Only an unknown card is a 404.
+ */
+export function getPractice(cardId: number): Promise<PracticeState> {
+  return get(practicePath(cardId));
+}
+
+/**
+ * What submitting one practice answer came back with.
+ *
+ * A 409 is not an error here, which is why the conflict is returned rather than
+ * thrown: each of its four codes carries the run the answer could not join, and
+ * redrawing that run is the only useful thing a UI can do about it.
+ */
+export type PracticeOutcome =
+  | { kind: "answer"; answer: PracticeAnswer }
+  | { kind: "conflict"; conflict: PracticeConflict };
+
+/**
+ * Record one practice answer and get back the run that follows it.
+ *
+ * Does not go through `request`, for the same reason requestRemediation does not:
+ * `request` reads the body only to build an error message and would throw the 409's
+ * `state` away, which is the whole payload the panel needs to redraw itself.
+ *
+ * A run can also end on a 200 rather than a 409, which is the case worth being careful
+ * about. A note retired underneath an open panel terminates the run without discarding
+ * the answer the learner was already holding: that answer is still graded and kept, and
+ * the terminal state arrives on the response carrying it. Callers must therefore read
+ * `state.status` on success too, and never read 200 as "the run continues".
+ *
+ * Genuine failures still throw ApiError: 404 for an unknown card or item, 400 for an
+ * empty answer or an item that tests another concept.
+ */
+export async function submitPractice(
+  cardId: number,
+  itemId: number,
+  answer: string,
+  elapsedMs?: number,
+): Promise<PracticeOutcome> {
+  const res = await fetch(`${BASE_URL}${practicePath(cardId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      item_id: itemId,
+      answer,
+      elapsed_ms: elapsedMs === undefined ? null : elapsedMs,
+    }),
+  });
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    // Non-JSON body, so the status has to carry the meaning on its own.
+  }
+  if (res.ok) return { kind: "answer", answer: body as PracticeAnswer };
+  if (res.status === 409) {
+    const detail = (body as { detail?: PracticeConflict } | null)?.detail;
+    if (detail && typeof detail.error === "string") return { kind: "conflict", conflict: detail };
+  }
+  const fallback = res.statusText || `Request failed with status ${res.status}`;
+  // No spend-cap consequence: practice calls no model, so a 402 cannot reach here.
+  throw new ApiError(res.status, messageFromErrorBody(body, fallback));
 }
 
 export function getUsage(limit?: number): Promise<UsageSummary> {
