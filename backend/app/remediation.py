@@ -45,6 +45,7 @@ import logging
 import re
 import threading
 import uuid
+from collections import defaultdict
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
@@ -193,10 +194,10 @@ def _moment(now: datetime | None) -> datetime:
 # --------------------------------------------------------------------------
 
 
-def concept_material(
+def teaching_lessons(
     session: Session, concept_key: str
-) -> tuple[list[models.Lesson], list[models.QuizItem]]:
-    """The lessons that taught this concept and the quiz items that test it.
+) -> list[tuple[models.Lesson, list[models.QuizItem]]]:
+    """Every lesson that teaches this concept, paired with its items that test it.
 
     A lesson counts if it lists the concept or if one of its quiz items tests it.
     The two are written by separate model calls, and either one alone can be the
@@ -205,9 +206,13 @@ def concept_material(
     Matched in Python rather than in SQL for the reason review.py gives: the
     grouping key is normalize_concept() of a stored label, which SQLite can neither
     compute nor index.
+
+    Untrimmed on purpose. The grounding budget belongs to the prompt, and the other
+    caller, sole_course_id, is asking which courses teach this concept: an answer
+    that changed with how many lessons happened to fit in a prompt would not be an
+    answer about courses at all.
     """
-    lessons: list[models.Lesson] = []
-    items: list[models.QuizItem] = []
+    matches: list[tuple[models.Lesson, list[models.QuizItem]]] = []
     rows = session.query(models.Lesson).options(selectinload(models.Lesson.quiz_items)).all()
     for lesson in rows:
         matching = [
@@ -220,9 +225,63 @@ def concept_material(
         )
         if not matching and not listed:
             continue
-        lessons.append(lesson)
-        items.extend(matching)
+        matches.append((lesson, matching))
+    return matches
+
+
+def trim_material(
+    matches: list[tuple[models.Lesson, list[models.QuizItem]]],
+) -> tuple[list[models.Lesson], list[models.QuizItem]]:
+    """The teaching_lessons matches cut down to the prompt's grounding budget."""
+    lessons = [lesson for lesson, _ in matches]
+    items = [item for _, matching in matches for item in matching]
     return lessons[:MAX_LESSONS], items[:MAX_ITEMS]
+
+
+def concept_material(
+    session: Session, concept_key: str
+) -> tuple[list[models.Lesson], list[models.QuizItem]]:
+    """The lessons that taught this concept and the quiz items that test it."""
+    return trim_material(teaching_lessons(session, concept_key))
+
+
+def sole_course_id(
+    session: Session, matches: list[tuple[models.Lesson, list[models.QuizItem]]]
+) -> int | None:
+    """The one course this re-teaching call can honestly be charged to, or None.
+
+    Review cards are keyed on concept_key globally and carry no course (see
+    models.ReviewCard), because a learner who meets a concept in two courses has one
+    memory of it rather than two. That is the right shape for scheduling, and it
+    means a re-teaching call does not arrive with a course already attached.
+
+    When exactly one course teaches the concept there is no ambiguity, and the spend
+    belongs against that course because that is where the learner will look for it.
+    When several do, choosing one would put a real dollar figure against a course
+    that did not earn it, which is a different false statement rather than a fix, so
+    the call stays unattributed and /usage explains that group in its own words.
+    """
+    module_ids = {lesson.module_id for lesson, _ in matches}
+    if not module_ids:
+        return None
+    course_ids = {
+        course_id
+        for (course_id,) in session.query(models.Module.course_id)
+        .filter(models.Module.id.in_(module_ids))
+        .distinct()
+    }
+    return _sole(course_ids)
+
+
+def _sole(course_ids: set[int]) -> int | None:
+    """Exactly one course, or None. The single definition of "unambiguous".
+
+    Note that it answers None for NO courses as well as for several, and the two are
+    not the same story: several means the spend is genuinely shared, none means the
+    concept's lessons are gone. Nothing here can tell them apart afterwards, so the
+    /usage copy for the group names both rather than asserting either.
+    """
+    return next(iter(course_ids)) if len(course_ids) == 1 else None
 
 
 def _as_data(text: str) -> str:
@@ -260,6 +319,116 @@ def build_prompt(
         )
     body = "\n\n".join(parts)
     return f"{MATERIAL_OPEN}\n{body}\n{MATERIAL_CLOSE}"
+
+
+# --------------------------------------------------------------------------
+# Backfilling the calls recorded before attribution existed
+# --------------------------------------------------------------------------
+
+# Marks the one-time backfill as done, in app_settings alongside the acked cost alert.
+BACKFILL_SETTING = "remediation_course_backfill_v1"
+
+
+def backfill_course_ids(session: Session) -> int:
+    """Attribute re-teaching calls made before anything attributed them. Returns how many.
+
+    Every remediation row written before this feature carries course_id NULL, because
+    metering never set one and the generation backfill only ever touches its own run.
+    Leaving them would put a NEW false sentence on the EXACT rows the learner already
+    complained about: they would group under "no single course accounts for this" while
+    sole_course_id, on the very same request that renders that sentence, names the one
+    course that teaches the concept. Same rows, same page, a different wrong answer.
+
+    A row is only reached through the note it paid for. models.RemediationNote carries
+    the same run_id as llm_calls and the card, and the card carries the concept. A call
+    that FAILED wrote no note (see generate_note), so nothing records what concept it
+    was for and nothing here can attribute it; those rows stay NULL, and the /usage copy
+    for that group names every reason a row can be in it.
+
+    Runs once, recorded in app_settings, and deliberately not on every startup. After
+    this feature a NULL course id means "no single course owned this when it was
+    charged", which is a decision taken at call time. Re-deriving it later from a
+    database that has since gained or lost a course would quietly overwrite that
+    decision with a different day's answer, which is the same class of invention this
+    whole change exists to remove.
+
+    Safe on an existing database: it only ever fills a NULL, never rewrites a course id
+    that is already set, and it writes nothing at all when there is nothing to fix.
+
+    Reads the whole courseware ONCE. The obvious shape, sole_course_id(teaching_lessons())
+    per concept, is quadratic: teaching_lessons reads every lesson each time it is called,
+    so the cost is concepts times lessons. It ran for twenty seconds at 200 concepts over
+    4000 lessons, and it is the learner with the most re-teaching, the one this exists
+    for, who waits longest, on a boot that is serving nobody yet.
+
+    Does not commit; the caller owns the transaction.
+    """
+    if session.get(models.AppSetting, BACKFILL_SETTING) is not None:
+        return 0
+
+    rows = (
+        session.query(models.LlmCall)
+        .filter(models.LlmCall.stage == REMEDIATION_STAGE)
+        .filter(models.LlmCall.course_id.is_(None))
+        .all()
+    )
+    attributed = 0
+    if rows:
+        # Every note, rather than the run ids of these rows: an IN list of one bind
+        # parameter per row hits SQLITE_LIMIT_VARIABLE_NUMBER at about 32k re-teaches
+        # and raises inside a startup handler that has no except, so the app would
+        # simply not boot. Two columns of a table already bounded by the rows above.
+        concept_by_run = {
+            run_id: concept_key
+            for run_id, concept_key in session.query(
+                models.RemediationNote.run_id, models.RemediationNote.concept_key
+            )
+            if run_id
+        }
+        courses_by_concept = course_ids_by_concept(session)
+        for row in rows:
+            concept_key = concept_by_run.get(row.run_id)
+            if not concept_key:
+                continue
+            course_id = _sole(courses_by_concept.get(concept_key, set()))
+            if course_id is None:
+                continue
+            row.course_id = course_id
+            attributed += 1
+
+    session.add(models.AppSetting(key=BACKFILL_SETTING, value=str(attributed)))
+    session.flush()
+    return attributed
+
+
+def course_ids_by_concept(session: Session) -> dict[str, set[int]]:
+    """Every concept in the courseware, mapped to the courses that teach it.
+
+    The same rule teaching_lessons applies, in bulk and in two queries: a course teaches
+    a concept if one of its lessons lists it or if one of its quiz items tests it. Built
+    for the backfill, which needs the answer for every concept at once and cannot afford
+    to re-read the lessons per concept.
+
+    Matched in Python rather than in SQL for the reason review.py gives: the grouping key
+    is normalize_concept() of a stored label, which SQLite can neither compute nor index.
+    """
+    course_by_lesson: dict[int, int] = {}
+    courses: dict[str, set[int]] = defaultdict(set)
+    lessons = session.query(
+        models.Lesson.id, models.Lesson.concepts, models.Module.course_id
+    ).join(models.Module, models.Lesson.module_id == models.Module.id)
+    for lesson_id, concepts, course_id in lessons:
+        course_by_lesson[lesson_id] = course_id
+        for raw in concepts or []:
+            if isinstance(raw, str) and raw:
+                courses[normalize_concept(raw)].add(course_id)
+
+    items = session.query(models.QuizItem.lesson_id, models.QuizItem.concept)
+    for lesson_id, concept in items:
+        course_id = course_by_lesson.get(lesson_id)
+        if course_id is not None and concept:
+            courses[normalize_concept(concept)].add(course_id)
+    return dict(courses)
 
 
 # --------------------------------------------------------------------------
@@ -437,14 +606,19 @@ def generate_note(
     Nothing about the card is written: not stability, not lapses, not due.
     """
     moment = _moment(now)
-    lessons, items = concept_material(session, card.concept_key)
+    matches = teaching_lessons(session, card.concept_key)
+    lessons, items = trim_material(matches)
     if not lessons and not items:
         raise NoMaterial(f"No lesson material for concept {card.concept_key!r}")
 
     label = card.concept_label or card.concept_key
     prompt = build_prompt(label, lessons, items)
     run_id = uuid.uuid4().hex
-    meter = MeteredLLM(provider, run_id)
+    # The course this call is charged to is decided here, at call time, and not by a
+    # backfill after the fact: unlike a generation run there is no course being saved
+    # afterwards to backfill from, so a call recorded with no course would stay that
+    # way forever and /usage would report the learner's re-teaching as unattributed.
+    meter = MeteredLLM(provider, run_id, course_id=sole_course_id(session, matches))
 
     # Parsed before the row is built, so a reply that will not parse leaves no row
     # at all rather than half an explanation the learner would read and trust. The

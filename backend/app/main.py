@@ -22,7 +22,8 @@ from app.attempts import (
     iso_utc,
 )
 from app.concepts import normalize_concept
-from app.db import get_session, init_db
+from app.costs import is_priced
+from app.db import SessionLocal, get_session, init_db
 from app.llm import get_provider
 from app.llm.base import LLMCallError
 from app.metering import CostLimitExceeded, MeteredLLM, acknowledge_alert, alert_state
@@ -50,6 +51,19 @@ def startup() -> None:
         handler.setLevel(logging.INFO)
         usage_logger.addHandler(handler)
         usage_logger.setLevel(logging.INFO)
+
+    # One-time repair of re-teaching calls recorded before they were attributed to a
+    # course. On the first boot after upgrading; a no-op on every boot after that.
+    session = SessionLocal()
+    try:
+        attributed = remediation.backfill_course_ids(session)
+        session.commit()
+    finally:
+        session.close()
+    if attributed:
+        logger.info(
+            "Attributed %s re-teaching call(s) recorded before attribution existed", attributed
+        )
 
 
 class GenerateRequest(BaseModel):
@@ -752,6 +766,179 @@ def get_course_concepts(course_id: int, session: Session = Depends(get_session))
     }
 
 
+# --------------------------------------------------------------------------
+# Usage reporting
+# --------------------------------------------------------------------------
+
+# How /usage groups spend, and the sentence the page prints under each group that is
+# not a course. The copy lives beside the grouping rather than in the page because
+# whether a sentence is TRUE is a fact about how these rows were grouped, and the two
+# drifted apart once already: re-teaching calls were filed under "Unattributed", whose
+# note told the learner that seven successful re-teaches were failed generation runs.
+GROUP_COURSE = "course"
+GROUP_REMEDIATION = "remediation"
+GROUP_FAILED_RUN = "failed_run"
+
+GROUP_LABELS = {
+    GROUP_REMEDIATION: "Re-teaching (no single course)",
+    GROUP_FAILED_RUN: "Unattributed",
+}
+
+GROUP_NOTES = {
+    # Examples, not a closed list, and the two words carrying that are "at the time they
+    # were charged" and "commonly". No list can close, because the course id is decided
+    # once and never revisited while a sentence in the present tense is a claim about
+    # today's courseware: whatever the row was charged under, editing the courses
+    # afterwards can falsify it. A re-teach charged while two courses taught the concept
+    # reads as none of "several", "gone", or "failed" once one of those courses is
+    # deleted. Scoping the claim to when the charge happened is what the row actually
+    # records, and it survives every later edit. Says nothing about whether these calls
+    # succeeded, either: a re-teaching call that failed still records the tokens it
+    # spent, and lands in this group like any other.
+    GROUP_REMEDIATION: (
+        "Re-teaching a concept is charged to the course that teaches it, when exactly one "
+        "does. These calls could not be tied to a single course at the time they were "
+        "charged, commonly because several courses teach the concept, because the lessons "
+        "that taught it are gone, or because the call failed before anything recorded which "
+        "concept it was for."
+    ),
+    # "or from one still running" is not padding. Generation is synchronous and can take
+    # minutes, and its rows carry no course until it finishes, so a learner who opens
+    # this page mid-run is reading about a run that has not failed at all.
+    GROUP_FAILED_RUN: (
+        '"Unattributed" calls have no course to attach to: they come from a generation run '
+        "that failed before its course could be saved, or from one still running now."
+    ),
+}
+
+# Keyed on (a token count was estimated, a price was estimated). The row's single
+# approximate flag is set by either, and the page used to name only the first.
+APPROXIMATE_NOTES = {
+    (True, False): (
+        "Some of these figures are approximate: at least one recorded call is missing an "
+        "exact token count, so its cost was worked out from an estimated count."
+    ),
+    (False, True): (
+        "Some of these figures are approximate: at least one recorded call used a model with "
+        "no entry in the pricing table, so its cost was worked out from the configured "
+        "fallback price. The token counts are exact."
+    ),
+    (True, True): (
+        "Some of these figures are approximate: at least one recorded call used a model with "
+        "no entry in the pricing table, and at least one is missing an exact token count."
+    ),
+}
+
+
+def _approximation_causes(session: Session) -> tuple[bool, bool]:
+    """(a token count was estimated, a price was estimated), across all recorded calls.
+
+    llm_calls stores one boolean for two different causes, and the page named only the
+    first of them. A model whose id is not in costs.PRICING reports exact token counts
+    and gets an estimated PRICE, and was told its token counts were the estimate.
+
+    The two stay separable from what is already recorded, with no new column. A row
+    with both counts present is flagged only when the model had no price, so it is the
+    price case outright. A row missing a count is the token case, and is ALSO the price
+    case when an unpriced model still charged for the count that was present: cost above
+    zero is what proves a price was applied at all, since an unpaid provider always
+    records zero and a paid one with no counts at all prices zero tokens at any rate.
+
+    One gap, left open knowingly. The proof rests on cost, so it fails wherever the
+    surviving count prices to nothing (costs.estimate_cost reads a missing count as
+    zero). A zero INPUT count essentially never happens, but a missing input count
+    beside zero OUTPUT tokens is the ordinary shape of a call that failed before it
+    produced anything, and estimate_cost on an unpriced model answers (0.0, True) for
+    it. Such a row reports the token cause alone: still true, merely less complete.
+    Closing it properly would mean recording whether the provider was paid, which is a
+    column this change is not entitled to add.
+    """
+    rows = (
+        session.query(
+            models.LlmCall.model,
+            models.LlmCall.input_tokens,
+            models.LlmCall.output_tokens,
+            models.LlmCall.estimated_cost_usd,
+        )
+        .filter(models.LlmCall.approximate.is_(True))
+        .all()
+    )
+    estimated_tokens = False
+    estimated_price = False
+    for model, input_tokens, output_tokens, cost in rows:
+        if input_tokens is None or output_tokens is None:
+            estimated_tokens = True
+            if cost and cost > 0 and not is_priced(model):
+                estimated_price = True
+        else:
+            estimated_price = True
+        if estimated_tokens and estimated_price:
+            break
+    return estimated_tokens, estimated_price
+
+
+def _unattributed_group(stage: str) -> str:
+    """Why a call carrying no course id has none, read from the stage that wrote it.
+
+    Every stage that is not re-teaching belongs to the generation pipeline
+    (generation.STAGES), and those rows have their course id backfilled the moment
+    the course is saved, so one still missing means the run never got that far.
+    """
+    if stage == remediation.REMEDIATION_STAGE:
+        return GROUP_REMEDIATION
+    return GROUP_FAILED_RUN
+
+
+def _spend_groups(session: Session) -> list[dict]:
+    """Spend for the /usage table: one row per course, then one row per reason a call
+    has no course. Courses first in id order, then re-teaching, then the failed runs."""
+    rows = (
+        session.query(
+            models.LlmCall.course_id,
+            models.LlmCall.stage,
+            func.count(models.LlmCall.id),
+            func.sum(models.LlmCall.input_tokens),
+            func.sum(models.LlmCall.output_tokens),
+            func.sum(models.LlmCall.estimated_cost_usd),
+        )
+        .group_by(models.LlmCall.course_id, models.LlmCall.stage)
+        .all()
+    )
+    buckets: dict[tuple[str, int | None], dict] = {}
+    for course_id, stage, stage_calls, stage_in, stage_out, stage_cost in rows:
+        group = GROUP_COURSE if course_id is not None else _unattributed_group(stage)
+        bucket = buckets.setdefault(
+            (group, course_id),
+            {"calls": 0, "input_tokens": 0, "output_tokens": 0, "estimated_cost_usd": 0.0},
+        )
+        bucket["calls"] += stage_calls
+        bucket["input_tokens"] += stage_in or 0
+        bucket["output_tokens"] += stage_out or 0
+        bucket["estimated_cost_usd"] += stage_cost or 0.0
+
+    rank = {GROUP_COURSE: 0, GROUP_REMEDIATION: 1, GROUP_FAILED_RUN: 2}
+    groups = []
+    for (group, course_id), bucket in sorted(
+        buckets.items(), key=lambda item: (rank[item[0][0]], item[0][1] or 0)
+    ):
+        course_row = session.get(models.Course, course_id) if group == GROUP_COURSE else None
+        title = course_row.title if course_row else None
+        groups.append(
+            {
+                "group": group,
+                "course_id": course_id,
+                "title": title,
+                # The leftmost column. Usage history outlives the courses it came
+                # from (see models.LlmCall), so a deleted course keeps its spend and
+                # loses its name, and falls back to the id the row still carries.
+                "label": GROUP_LABELS.get(group) or title or f"Course #{course_id}",
+                "note": GROUP_NOTES.get(group),
+            }
+            | bucket
+        )
+    return groups
+
+
 @app.get("/usage")
 def get_usage(limit: int = 50, session: Session = Depends(get_session)):
     limit = max(1, min(limit, 500))
@@ -760,38 +947,7 @@ def get_usage(limit: int = 50, session: Session = Depends(get_session)):
     input_tokens = session.query(func.sum(models.LlmCall.input_tokens)).scalar() or 0
     output_tokens = session.query(func.sum(models.LlmCall.output_tokens)).scalar() or 0
     estimated_cost_usd = session.query(func.sum(models.LlmCall.estimated_cost_usd)).scalar() or 0.0
-    any_approximate = (
-        session.query(models.LlmCall.id).filter(models.LlmCall.approximate.is_(True)).first()
-        is not None
-    )
-
-    per_course_rows = (
-        session.query(
-            models.LlmCall.course_id,
-            func.count(models.LlmCall.id),
-            func.sum(models.LlmCall.input_tokens),
-            func.sum(models.LlmCall.output_tokens),
-            func.sum(models.LlmCall.estimated_cost_usd),
-        )
-        .group_by(models.LlmCall.course_id)
-        .all()
-    )
-    per_course = []
-    for course_id, course_calls, course_in, course_out, course_cost in per_course_rows:
-        title = None
-        if course_id is not None:
-            course_row = session.get(models.Course, course_id)
-            title = course_row.title if course_row else None
-        per_course.append(
-            {
-                "course_id": course_id,
-                "title": title,
-                "calls": course_calls,
-                "input_tokens": course_in or 0,
-                "output_tokens": course_out or 0,
-                "estimated_cost_usd": course_cost or 0.0,
-            }
-        )
+    approximate_tokens, approximate_pricing = _approximation_causes(session)
 
     recent_rows = (
         session.query(models.LlmCall).order_by(models.LlmCall.id.desc()).limit(limit).all()
@@ -827,9 +983,10 @@ def get_usage(limit: int = 50, session: Session = Depends(get_session)):
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "estimated_cost_usd": estimated_cost_usd,
-            "approximate": any_approximate,
+            "approximate": approximate_tokens or approximate_pricing,
+            "approximate_note": APPROXIMATE_NOTES.get((approximate_tokens, approximate_pricing)),
         },
-        "per_course": per_course,
+        "per_course": _spend_groups(session),
         "recent_calls": recent_calls,
         "alert": alert_state(session),
         "limit": limit_info,

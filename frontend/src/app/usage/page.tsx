@@ -32,8 +32,9 @@ export default async function UsagePage() {
       </Link>
       <h1 className="mt-4 text-3xl font-semibold tracking-tight">API cost usage</h1>
       <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-        Estimated LLM spend across every course generation on this server. Figures on this page
-        are ESTIMATES derived from token counts and provider pricing tables, not billed amounts.
+        Estimated LLM spend on this server, across course generation and re-teaching alike.
+        Figures on this page are ESTIMATES derived from token counts and provider pricing
+        tables, not billed amounts.
       </p>
 
       {loadError && (
@@ -77,10 +78,9 @@ export default async function UsagePage() {
                 </dd>
               </div>
             </dl>
-            {usage.totals.approximate && (
+            {usage.totals.approximate_note && (
               <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                Some of these figures are approximate: at least one recorded call is missing an
-                exact token count and was estimated instead.
+                {usage.totals.approximate_note}
               </p>
             )}
           </section>
@@ -121,11 +121,11 @@ export default async function UsagePage() {
 
           <section aria-labelledby="per-course-heading" className="mt-10">
             <h2 id="per-course-heading" className="text-lg font-semibold">
-              Spend by course
+              Where the spend went
             </h2>
             {usage.per_course.length === 0 ? (
               <p className="mt-3 rounded-lg border border-dashed border-zinc-300 px-4 py-6 text-center text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
-                No course generations recorded yet.
+                No LLM spend recorded yet.
               </p>
             ) : (
               <div className="mt-3 overflow-x-auto">
@@ -133,7 +133,7 @@ export default async function UsagePage() {
                   <thead>
                     <tr className="border-b border-zinc-200 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
                       <th scope="col" className="py-2 pr-4 font-medium">
-                        Course
+                        Attributed to
                       </th>
                       <th scope="col" className="py-2 pr-4 font-medium">
                         Calls
@@ -152,23 +152,23 @@ export default async function UsagePage() {
                   <tbody>
                     {usage.per_course.map((row) => (
                       <tr
-                        key={row.course_id ?? "unattributed"}
+                        key={`${row.group}:${row.course_id ?? ""}`}
                         className="border-b border-zinc-100 last:border-0 dark:border-zinc-900"
                       >
                         <td className="py-2 pr-4">
-                          {row.course_id === null ? (
-                            <Link
-                              href="#unattributed-note"
-                              className="text-zinc-600 underline decoration-dotted underline-offset-2 dark:text-zinc-400"
-                            >
-                              Unattributed
-                            </Link>
-                          ) : (
+                          {row.group === "course" && row.course_id !== null ? (
                             <Link
                               href={`/courses/${row.course_id}`}
                               className="hover:underline"
                             >
-                              {row.title ?? `Course #${row.course_id}`}
+                              {row.label}
+                            </Link>
+                          ) : (
+                            <Link
+                              href={`#note-${row.group}`}
+                              className="text-zinc-600 underline decoration-dotted underline-offset-2 dark:text-zinc-400"
+                            >
+                              {row.label}
                             </Link>
                           )}
                         </td>
@@ -180,12 +180,20 @@ export default async function UsagePage() {
                     ))}
                   </tbody>
                 </table>
-                {usage.per_course.some((row) => row.course_id === null) && (
-                  <p id="unattributed-note" className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                    &quot;Unattributed&quot; calls come from a generation run that failed before its
-                    course could be saved, so the spend has no course to attach to.
-                  </p>
-                )}
+                {/* One note per non-course group actually present. The server writes
+                    these sentences, because which one is true of a row is decided by
+                    the same code that decided the row's group. */}
+                {usage.per_course
+                  .filter((row) => row.note !== null)
+                  .map((row) => (
+                    <p
+                      key={row.group}
+                      id={`note-${row.group}`}
+                      className="mt-2 text-xs text-zinc-500 dark:text-zinc-400"
+                    >
+                      {row.note}
+                    </p>
+                  ))}
               </div>
             )}
           </section>
