@@ -103,6 +103,46 @@ class StubPaidProvider:
         return LLMResult(text=text, input_tokens=self.input_tokens, output_tokens=self.output_tokens)
 
 
+def clear_todays_tutor_turns() -> None:
+    """Delete this study day's tutor messages. Call before a turn that must not be refused.
+
+    THE RULE THIS EXISTS FOR: any POST to /tutor/messages that expects not to be refused
+    needs today's window clear first. The tutor's day-wide cap counts every learner turn
+    written today across EVERY concept, the whole suite shares one SQLite file, and
+    test_tutor_endpoints.py deliberately seeds runs of turns to drive the caps. Without
+    this, a tutor test starts failing once enough other tutor tests exist, which is the
+    most expensive kind of failure to diagnose: it points at the wrong file, and at a
+    change that did not cause it.
+
+    Here in conftest rather than in either test module because two files need it and a
+    third will. It was written out twice, byte for byte, with two docstrings that could
+    drift apart; whoever writes the third file finds this instead of neither copy.
+
+    Callers couple it to whatever actually needs it. test_tutor_endpoints.py runs it from
+    an autouse fixture, because every test in that file is about the tutor.
+    test_usage_attribution.py calls it from its _ask_tutor helper instead, because six of
+    its forty tests touch the tutor and an autouse delete would misdescribe the other
+    thirty-four as caring about tutor_messages.
+
+    SCOPED TO TODAY'S WINDOW, never the whole table. test_tutor_context.py seeds rows at
+    fixed past dates precisely to prove where the 04:00 day boundary falls, and a blanket
+    delete would take exactly those rows and quietly hollow out that proof.
+    """
+    from app import days, models
+    from app.db import SessionLocal, init_db
+
+    init_db()
+    day_start, day_end = days.day_bounds()
+    session = SessionLocal()
+    try:
+        session.query(models.TutorMessage).filter(
+            models.TutorMessage.created_at >= day_start
+        ).filter(models.TutorMessage.created_at < day_end).delete()
+        session.commit()
+    finally:
+        session.close()
+
+
 @pytest.fixture
 def client():
     from fastapi.testclient import TestClient

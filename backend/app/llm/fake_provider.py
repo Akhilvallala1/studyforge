@@ -13,10 +13,17 @@ is model-written markdown rendered in the browser, so each needs the same check.
 The tutor branch varies on the learner's question, because the reply shape is
 optional in two places and a fixture that only ever produced one shape would leave
 the other paths unreachable offline. The rules, which offline QA can drive
-deliberately: the word "beyond" anywhere in the question adds a `beyond` field, and
-the phrase "just tell me" suppresses the `check` question. So an ordinary question
-gets answer plus check, "just tell me" gets an answer alone, and the two together
-get answer plus beyond. All four combinations are reachable by typing.
+deliberately: the word "beyond" anywhere in the question puts the reply into the
+system prompt's case 3, the material does not cover what was asked, and the phrase
+"just tell me" suppresses the `check` question. So an ordinary question gets answer
+plus check, "just tell me" gets an answer alone, and the two together get answer plus
+beyond. All four combinations are reachable by typing.
+
+Case 3 changes the ANSWER as well as adding the `beyond` field, and both halves are
+required: the case says the answer states where the course stops and names the nearest
+concept the material does cover. A fixture that only added the aside would model a
+reply whose two registers contradict each other, confidently answering from a course
+while an aside underneath says the course never covered it.
 
 That concept is deliberately carried by one of the hostile lesson's quiz items, not
 only by its concept list. Review cards are created from quiz attempts and nothing
@@ -214,19 +221,35 @@ class FakeProvider:
         concept = _concept(prompt)
         question = _question(prompt)
         lowered = question.lower()
+        # The fixture's switch for case 3. See the module docstring for why it has to
+        # move the answer and not only add the aside.
+        uncovered = "beyond" in lowered
 
-        answer = (
-            f"Short version: {concept} is the idea your course keeps coming back to in "
-            f"this lesson, and the thing to hold onto is what goes in and what comes "
-            f"out.\n\n"
-            f"Your course introduces {concept} first as a definition, then shows it "
-            f"working on one example. If the definition is not sticking, read the "
-            f"example first and go back to the definition afterwards; it is the same "
-            f"idea from the other end.\n\n"
-            f"This reply comes from the fake provider, so the prose is short, but the "
-            f"shape matches a real one: the grounded answer first, anything outside "
-            f"your course kept separate."
-        )
+        if uncovered:
+            answer = (
+                f"Your course does not cover that. The nearest thing it does cover is "
+                f"{concept}, which it introduces as a definition and then shows working "
+                f"on one example.\n\n"
+                f"So I cannot answer what you asked from your course. What I can say "
+                f"about it is general knowledge rather than course content, and it is "
+                f"kept under its own heading below.\n\n"
+                f"This reply comes from the fake provider, so the prose is short, but "
+                f"the shape matches a real one: where your course stops is said plainly "
+                f"instead of being papered over."
+            )
+        else:
+            answer = (
+                f"Short version: {concept} is the idea your course keeps coming back to "
+                f"in this lesson, and the thing to hold onto is what goes in and what "
+                f"comes out.\n\n"
+                f"Your course introduces {concept} first as a definition, then shows it "
+                f"working on one example. If the definition is not sticking, read the "
+                f"example first and go back to the definition afterwards; it is the same "
+                f"idea from the other end.\n\n"
+                f"This reply comes from the fake provider, so the prose is short, but "
+                f"the shape matches a real one: the grounded answer first, anything "
+                f"outside your course kept separate."
+            )
         if concept == HOSTILE_LESSON_TITLE:
             # A tutor answer is model-written markdown rendered in the browser, the
             # same trust level as lesson content and remedial notes, so it carries
@@ -240,7 +263,7 @@ class FakeProvider:
             )
 
         reply = {"answer": answer}
-        if "beyond" in lowered:
+        if uncovered:
             # Exactly three sentences and well inside 400 characters, so the offline
             # reply is what truncate_beyond would leave rather than a trimmed stub
             # that reads to QA like a bug.

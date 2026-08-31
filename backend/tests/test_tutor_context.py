@@ -16,10 +16,11 @@ wrong answers. It may not know stability, difficulty, retrievability, due date, 
 lapse count, because a tutor that mentions one is telling the learner a fact about
 themselves the interface never told them, drawn from a number they cannot check.
 
-The prompt-level halves of acceptance criteria 10, 11 and 19, and the endpoint-level
-halves of 7, 8 and 9, are marked skipped at the bottom with the owner named. They are
-real requirements with no code to assert against yet, and deleting them would be the
-only way to lose them.
+The prompt-level halves of acceptance criteria 10, 11 and 19 are at the bottom of this
+file, against the real build_prompt. The endpoint-level halves of 7, 8 and 9 were carried
+here as skipped placeholders while there was no write path to assert against; they now
+live in test_tutor_endpoints.py against the real endpoint, keeping the names the
+placeholders gave them.
 """
 
 from datetime import UTC, date, datetime, timedelta
@@ -746,24 +747,6 @@ def test_reading_the_context_leaves_the_card_untouched():
         session.close()
 
     assert after == before
-
-
-# --------------------------------------------------------------------------
-# Acceptance criteria with no code to assert against yet
-# --------------------------------------------------------------------------
-
-
-@pytest.mark.skip(reason="AC 7/8: needs the POST endpoint, owned by the tutor endpoint task")
-def test_a_full_exchange_leaves_review_tables_byte_identical():
-    """Row counts on review_cards, review_logs and attempts, plus every column of the
-    card, and needs_attention / mastery_bucket / retention / day_streak / due_counts
-    identical before and after. There is no write path to exercise yet."""
-
-
-@pytest.mark.skip(reason="AC 9 end to end: needs the request path, owned by the endpoint task")
-def test_the_tutor_request_path_writes_only_tutor_messages():
-    """test_the_context_module_writes_nothing covers this module. The endpoint-level
-    claim needs the endpoint."""
 
 
 # --------------------------------------------------------------------------
