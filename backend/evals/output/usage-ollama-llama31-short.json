@@ -1,0 +1,312 @@
+{
+  "totals": {
+    "calls": 23,
+    "input_tokens": 22402,
+    "output_tokens": 20125,
+    "estimated_cost_usd": 0.0,
+    "approximate": false,
+    "approximate_note": null
+  },
+  "per_course": [
+    {
+      "group": "failed_run",
+      "course_id": null,
+      "title": null,
+      "label": "Unattributed",
+      "note": "\"Unattributed\" calls have no course to attach to: they come from a generation run that failed before its course could be saved, or from one still running now.",
+      "calls": 23,
+      "input_tokens": 22402,
+      "output_tokens": 20125,
+      "estimated_cost_usd": 0.0
+    }
+  ],
+  "recent_calls": [
+    {
+      "id": 23,
+      "created_at": "2026-08-31T18:02:17.282688+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 1012,
+      "output_tokens": 1164,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 22,
+      "created_at": "2026-08-31T18:01:09.941928+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 955,
+      "output_tokens": 912,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 21,
+      "created_at": "2026-08-31T18:00:16.605067+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 1013,
+      "output_tokens": 671,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 20,
+      "created_at": "2026-08-31T17:59:36.572700+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 956,
+      "output_tokens": 745,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 19,
+      "created_at": "2026-08-31T17:58:52.762954+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 1011,
+      "output_tokens": 529,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 18,
+      "created_at": "2026-08-31T17:58:21.654147+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 954,
+      "output_tokens": 693,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 17,
+      "created_at": "2026-08-31T17:57:40.934599+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 1019,
+      "output_tokens": 612,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 16,
+      "created_at": "2026-08-31T17:57:05.208502+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 962,
+      "output_tokens": 1370,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 15,
+      "created_at": "2026-08-31T17:55:46.284310+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 1018,
+      "output_tokens": 869,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 14,
+      "created_at": "2026-08-31T17:54:55.923841+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 961,
+      "output_tokens": 670,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 13,
+      "created_at": "2026-08-31T17:54:16.083554+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 1019,
+      "output_tokens": 1683,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 12,
+      "created_at": "2026-08-31T17:52:36.885089+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 962,
+      "output_tokens": 1139,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 11,
+      "created_at": "2026-08-31T17:51:30.487234+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 1011,
+      "output_tokens": 837,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 10,
+      "created_at": "2026-08-31T17:50:41.767656+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 954,
+      "output_tokens": 793,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 9,
+      "created_at": "2026-08-31T17:49:54.795648+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 1026,
+      "output_tokens": 625,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 8,
+      "created_at": "2026-08-31T17:49:17.845306+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 969,
+      "output_tokens": 1114,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 7,
+      "created_at": "2026-08-31T17:48:12.655654+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 1021,
+      "output_tokens": 956,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 6,
+      "created_at": "2026-08-31T17:47:16.805175+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 964,
+      "output_tokens": 887,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 5,
+      "created_at": "2026-08-31T17:46:24.765976+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 1017,
+      "output_tokens": 1063,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 4,
+      "created_at": "2026-08-31T17:45:23.632146+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 960,
+      "output_tokens": 606,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 3,
+      "created_at": "2026-08-31T17:44:46.661005+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 1012,
+      "output_tokens": 690,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 2,
+      "created_at": "2026-08-31T17:44:06.809238+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "lesson",
+      "course_id": null,
+      "input_tokens": 955,
+      "output_tokens": 942,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    },
+    {
+      "id": 1,
+      "created_at": "2026-08-31T17:43:12.447683+00:00",
+      "provider": "ollama",
+      "model": "llama3.1:8b",
+      "stage": "outline",
+      "course_id": null,
+      "input_tokens": 671,
+      "output_tokens": 555,
+      "estimated_cost_usd": 0.0,
+      "approximate": false
+    }
+  ],
+  "alert": {
+    "active": false,
+    "threshold_usd": 10.0,
+    "total_usd": 0.0,
+    "acknowledged": null
+  },
+  "limit": {
+    "configured": false,
+    "limit_usd": null,
+    "reached": false
+  }
+}
