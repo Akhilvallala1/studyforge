@@ -38,6 +38,11 @@ type FocusTarget = "answer" | "next" | "terminal" | "submit";
  * an answer string, which generated quizzes produce constantly (true/false, yes/no, a
  * shared one-word answer). `answered` increments on every answer, right or wrong, so
  * no two announcements in a run can collide.
+ *
+ * That prefix is dropped when the answer ENDED the run, because there is no "of M" left
+ * to count towards and saying so would have this sentence report the run, which is the
+ * terminal panel's job and the reason the two do not repeat each other. Nothing is lost
+ * by dropping it: a run ends exactly once, so the shortened form cannot collide either.
  */
 function gradeAnnouncement(
   correct: boolean,
@@ -45,11 +50,12 @@ function gradeAnnouncement(
   kind: "mcq" | "short",
   answered: number,
   maxAnswers: number,
+  ended: boolean,
 ): string {
-  const position = `Answer ${answered} of ${maxAnswers}.`;
-  if (correct) return `${position} Correct.`;
+  const position = ended ? "" : `Answer ${answered} of ${maxAnswers}. `;
+  if (correct) return `${position}Correct.`;
   const verdict = kind === "short" ? "Not an exact match." : "Not the right option.";
-  return `${position} ${verdict} The reference answer is: ${expected}`;
+  return `${position}${verdict} The reference answer is: ${expected}`;
 }
 
 function errorMessage(err: unknown): string {
@@ -118,14 +124,20 @@ function ResultRow({ result }: { result: PracticeResult }) {
       <p className="text-[13px] text-zinc-700 dark:text-zinc-300">
         {result.question || "This question is no longer in the course."}
       </p>
+      {/* "Your answer", not "You wrote": these rows carry no `kind`, and half of them
+          are options the learner picked rather than prose they typed. Same label the
+          review session uses for the same thing. */}
       <p className="mt-1 text-[13px] text-zinc-600 dark:text-zinc-400">
-        <span className="text-zinc-500 dark:text-zinc-500">You wrote: </span>
+        <span className="text-zinc-500 dark:text-zinc-500">Your answer: </span>
         {result.submitted}
+        {/* The separator is a text node, not a margin. Margins do not exist in the
+            accessible name, and this used to read "Your answer: trueRight". */}
+        <span className="text-zinc-500 dark:text-zinc-500"> · </span>
         {result.correct ? (
-          <span className="ml-2 text-emerald-700 dark:text-emerald-500">Right</span>
+          <span className="text-emerald-700 dark:text-emerald-500">Right</span>
         ) : (
           <>
-            <span className="text-zinc-500 dark:text-zinc-500"> · Reference answer: </span>
+            <span className="text-zinc-500 dark:text-zinc-500">Reference answer: </span>
             {result.expected}
           </>
         )}
@@ -154,6 +166,7 @@ export function ConceptPractice({
   conceptLabel,
   open,
   onAnnounce,
+  onRecovered,
 }: {
   cardId: number;
   conceptLabel: string;
@@ -174,6 +187,18 @@ export function ConceptPractice({
    * about the same concept, and a screen reader would read whichever won the race.
    */
   onAnnounce: (message: string) => void;
+  /**
+   * Told when the server says this concept has stopped being one the learner keeps
+   * missing, which practice learns whenever a run comes back `no_note`.
+   *
+   * The row above was drawn from an older read and still says "Missed 2 of 3 times,
+   * due now". Without this, that line sits directly over "You are past this one" and
+   * the row contradicts itself on the numbers even though both sentences are right
+   * about the words. The re-teach button already reports the same fact by the
+   * `not_flagged` route, so this feeds the same `recovered` flag rather than adding a
+   * second notion of the same thing.
+   */
+  onRecovered: () => void;
 }) {
   const [run, setRun] = useState<PracticeState | null>(null);
   const [loading, setLoading] = useState(false);
@@ -213,11 +238,26 @@ export function ConceptPractice({
   const baseId = `practice-${cardId}`;
   const currentItemId = run?.item?.id ?? null;
 
+  /**
+   * News in a run that outranks what the row around it was drawn with.
+   *
+   * `no_note` means the concept stopped being flagged, which is the same fact the
+   * re-teach button is told as `not_flagged`. Raised from the two places a run arrives
+   * rather than from an effect on `run`, because it is an event ("the server just said
+   * so") and not a property of the render.
+   */
+  function reportNews(next: PracticeState) {
+    if (next.status === "unavailable" && next.reason === "no_note") onRecovered();
+  }
+
   function load() {
     setLoading(true);
     setError(null);
     getPractice(cardId)
-      .then(setRun)
+      .then((next) => {
+        setRun(next);
+        reportNews(next);
+      })
       .catch((err) => {
         const message = errorMessage(err);
         setError(message);
@@ -283,6 +323,7 @@ export function ConceptPractice({
    */
   function adopt(next: PracticeState, whenActive: FocusTarget) {
     setRun(next);
+    reportNews(next);
     // The terminal state REPLACES the question. There is no dismissing it and no
     // practising anyway, so the only thing left to do with it is read it.
     pendingFocus.current =
@@ -317,6 +358,12 @@ export function ConceptPractice({
       if (outcome.kind === "answer") {
         const result = outcome.answer;
         setAnswer("");
+        // Read from state.status, never from the 200 itself. A note retired underneath
+        // this panel ends the run on a SUCCESSFUL response: the answer already in the
+        // learner's hands is still graded and kept, and the terminal state arrives on
+        // the response that carries it. Computed before the announcement because the
+        // announcement's wording depends on it.
+        const ended = result.state.status === "done" || result.state.status === "unavailable";
         // Announced because focus is about to move to a control that does not carry the
         // grading result, and the result is the point of having answered. This fires on
         // a terminal arrival too: the learner earned a grade on that answer, and the
@@ -329,13 +376,9 @@ export function ConceptPractice({
             item.kind,
             result.state.answered,
             result.state.max_answers,
+            ended,
           ),
         );
-        // Read from state.status, never from the 200 itself. A note retired underneath
-        // this panel ends the run on a SUCCESSFUL response: the answer already in the
-        // learner's hands is still graded and kept, and the terminal state arrives on
-        // the response that carries it.
-        const ended = result.state.status === "done" || result.state.status === "unavailable";
         setFeedback(
           ended
             ? null
@@ -357,6 +400,12 @@ export function ConceptPractice({
       // Read before the switch narrows `conflict` away, for the unreachable default.
       const serverMessage = conflict.message;
       setFeedback(null);
+      // The answer that was refused belongs to a question that is no longer on screen.
+      // item_already_answered swaps the question underneath the learner, and leaving
+      // their previous answer sitting in the field leaves it aimed at a question it was
+      // never written for, one reflex press away from being submitted. Cleared for the
+      // terminal codes too, so nothing is carried into a reopened panel.
+      setAnswer("");
       // Switched on the code, exhaustively, and never on the shape of the state that
       // came with it. Its own union and its own switch: RemediationConflict is switched
       // exhaustively one component up, and folding these codes into that one would
@@ -513,9 +562,15 @@ function ActivePanel({
   // Deriving this from `answered > 0` would be exactly the shape test the union exists
   // to forbid, and it would be one refactor away from being wrong.
   const heading = run.status === "ready" ? "Practise this" : "Continue";
+  // The opening states the STOP RULES, not a promise about what is available. Nothing
+  // in the payload says how many questions the concept has, and a one-item concept was
+  // being told to get two right out of at most three: a target it cannot reach and a
+  // ceiling four times its pool. "or when the questions run out" is the pool-exhausted
+  // stop condition, which is the honest way to say a number this component cannot know.
+  // The resumed line needs none of that, because it reports counts that already happened.
   const lede =
     run.status === "ready"
-      ? `Get ${run.target_correct} right and this is done. You have at most ${run.max_answers} questions.`
+      ? `A short run: it stops at ${run.target_correct} right answers, ${run.max_answers} answers, or when the questions run out.`
       : `${run.answered} of ${run.max_answers} answers used, ${run.correct} of ${run.target_correct} right so far.`;
 
   return (
@@ -543,7 +598,7 @@ function ActivePanel({
             )}
           </p>
           <p className="mt-1.5 text-[13px] text-zinc-600 dark:text-zinc-400">
-            <span className="text-zinc-500 dark:text-zinc-500">You wrote: </span>
+            <span className="text-zinc-500 dark:text-zinc-500">Your answer: </span>
             {feedback.submitted}
           </p>
           {!feedback.correct && (

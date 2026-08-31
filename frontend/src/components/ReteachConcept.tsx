@@ -101,6 +101,18 @@ export function ReteachConcept({
   // Our own call and someone else's look the same from here: work is happening and
   // the button must not start a second one.
   const busy = pending || awaiting;
+  /**
+   * When the button itself has nothing left to do, which is narrower than `recovered`.
+   *
+   * Two routes reach `recovered` and they want different things from the button. The
+   * button's own `not_flagged` refusal only happens when there is no note, so there is
+   * nothing to show and the control is genuinely spent. The practice panel's `no_note`
+   * report arrives with an explanation open on screen, and that panel is inside the
+   * very thing this button toggles: going inert there would strand the learner with a
+   * panel they could close but never reopen. `recovered` still drops the stale miss
+   * counts in both cases, which is the part both routes agree on.
+   */
+  const spent = recovered && !hasNote;
 
   /**
    * Put an explanation on screen, from wherever it came.
@@ -189,12 +201,17 @@ export function ReteachConcept({
   // which aria-disabled keeps focusable for exactly this reason. Left alone, a
   // keyboard user was dropped to the body and tabbed onward past the notice their
   // own keypress produced.
+  //
+  // Keyed on `spent` rather than on `recovered`, because only the button's own route
+  // loses focus this way. When the practice panel reports the same news, the learner is
+  // inside that panel and it has already moved focus onto its terminal state; pulling
+  // them back out to this button would undo it.
   useEffect(() => {
-    if (!recovered) return;
+    if (!spent) return;
     // Only when the blur left focus nowhere. If they moved on while the request was
     // in flight, that is where they want to be.
     if (document.activeElement === document.body) buttonRef.current?.focus();
-  }, [recovered]);
+  }, [spent]);
 
   async function generate() {
     setPending(true);
@@ -286,7 +303,7 @@ export function ReteachConcept({
   function handleClick() {
     // aria-disabled does not stop activation the way disabled does, so the refusal
     // has to be here. See the button for why it is aria-disabled and not disabled.
-    if (recovered) return;
+    if (spent) return;
     if (!hasNote) {
       void generate();
       return;
@@ -301,7 +318,7 @@ export function ReteachConcept({
 
   const label = busy
     ? "Writing…"
-    : recovered
+    : spent
       ? "Not needed"
       : hasNote
         ? open
@@ -310,7 +327,7 @@ export function ReteachConcept({
         : "Re-teach";
   const accessibleName = busy
     ? `Writing an explanation of ${entry.concept_label}`
-    : recovered
+    : spent
       ? `${entry.concept_label} no longer needs re-teaching`
       : hasNote
         ? open
@@ -323,9 +340,13 @@ export function ReteachConcept({
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="text-[15px] font-medium">{entry.concept_label}</div>
-          {/* Dropped once the concept has recovered. These counts came from the page
-              load, and the click that set `recovered` came back with something newer
-              saying they no longer describe this concept. */}
+          {/* Dropped once the concept has recovered, whichever control found that out:
+              the re-teach button being told `not_flagged`, or the practice panel below
+              finding its run come back `no_note`. These counts came from the page load
+              and the server has since said something newer, so leaving them up has the
+              row contradict itself, "Missed 2 of 3 times, due now" sitting directly over
+              a panel saying the learner is past it. Nothing replaces them, because
+              nothing here knows the new ones. */}
           {!recovered && (
             <div className="mt-0.5 text-[13px] text-zinc-500 dark:text-zinc-400">
               Missed {entry.missed} of {entry.of} times
@@ -346,7 +367,7 @@ export function ReteachConcept({
               a second real click can land, which is the only thing stopping a
               double-clicked button from starting two metered generations.
 
-              `recovered` is permanent for this render, and `disabled` would blur the
+              `spent` is permanent for this render, and `disabled` would blur the
               button the instant it is set: a learner who pressed Enter on it dropped to
               the body and tabbed onward past the very notice their keypress produced.
               aria-disabled keeps the element focusable, so focus never moves and there
@@ -355,14 +376,18 @@ export function ReteachConcept({
               instead would also solve the focus loss, but the notice and the live
               region carry the same words, and this component already refuses to put
               the same text in two places a screen reader will read.
+
+              `spent`, not `recovered`: a concept that recovered while its explanation is
+              open still has an explanation to show and hide, and this button is what
+              shows and hides it.
             */
             disabled={busy}
-            aria-disabled={recovered || undefined}
+            aria-disabled={spent || undefined}
             aria-label={accessibleName}
             aria-expanded={hasNote ? open : undefined}
             aria-controls={hasNote && open ? panelId : undefined}
             className={`rounded-lg border border-zinc-300 px-3.5 py-1.5 text-[13px] font-medium transition-colors dark:border-zinc-700 ${
-              busy || recovered
+              busy || spent
                 ? `opacity-60 ${busy ? "cursor-progress" : "cursor-not-allowed"}`
                 : "hover:border-zinc-500 dark:hover:border-zinc-500"
             }`}
@@ -464,6 +489,11 @@ export function ReteachConcept({
             conceptLabel={entry.concept_label}
             open={open}
             onAnnounce={setAnnouncement}
+            /* Only the miss counts are dropped. No notice and no announcement: the
+               practice panel is already saying this in its own terminal state and has
+               moved focus onto it, and adding the row's `not_flagged` notice underneath
+               would be the same news twice, once in a panel and once in a paragraph. */
+            onRecovered={() => setRecovered(true)}
           />
 
           {/* The whole panel's promise, made once and covering everything inside it.
