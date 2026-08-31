@@ -310,7 +310,7 @@ def test_reteach_across_two_courses_stays_unattributed_and_is_not_called_a_failu
     assert reteach["note"] == main.GROUP_NOTES[main.GROUP_REMEDIATION]
     # The whole point: this call is not described as a generation that failed.
     assert "generation run" not in reteach["note"]
-    assert "could not be charged to one course" in reteach["note"]
+    assert "could not be tied to a single course" in reteach["note"]
 
     # It did not leak into the failed-run bucket, and neither course was charged.
     assert _calls_in(_group(usage, "failed_run")) == failed_before
@@ -488,12 +488,17 @@ def test_backfill_attributes_legacy_reteaches_that_one_course_explains():
 
 
 def test_backfill_leaves_alone_what_it_cannot_honestly_name():
-    """Three ways a re-teach ends up with no course, and the sentence has to cover all.
+    """Three ways a re-teach ends up with no course, all of which the sentence covers.
 
-    Several courses teach it; no course teaches it any more, its lessons having gone;
-    or the call failed and so recorded no concept at all. remediation._sole answers None
-    to the first two alike and nothing downstream can separate them, so a sentence
-    naming fewer than three asserts something false about the rows it left out.
+    Several courses teach it; no course teaches it any more, its lessons having gone; or
+    the call failed and so recorded no concept at all. remediation._sole answers None to
+    the first two alike and nothing downstream can separate them.
+
+    The sentence names these as examples rather than as the whole set, because the set
+    does not close: the course id is decided once and never revisited, so any claim
+    phrased in the present tense can be falsified by editing the courseware afterwards.
+    A row charged while two courses taught the concept fits none of the three the moment
+    one of those courses goes away.
     """
     session = _isolated_session()
     try:
@@ -510,8 +515,14 @@ def test_backfill_leaves_alone_what_it_cannot_honestly_name():
         assert _group_of(main._spend_groups(session), "remediation")["calls"] == 3
 
         note = main.GROUP_NOTES[main.GROUP_REMEDIATION]
-        assert "taught by several courses" in note
-        assert "by none of them any more" in note
+        # The two words that keep this sentence true under any later edit to the
+        # courseware: the claim is about when the row was charged, and the reasons are
+        # offered as examples. A closed list in the present tense cannot survive, since
+        # the course id is decided once and never revisited.
+        assert "at the time they were charged" in note
+        assert "commonly because" in note
+        assert "several courses teach the concept" in note
+        assert "the lessons that taught it are gone" in note
         assert "failed before anything recorded which concept it was for" in note
     finally:
         session.close()

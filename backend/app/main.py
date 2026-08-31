@@ -785,17 +785,22 @@ GROUP_LABELS = {
 }
 
 GROUP_NOTES = {
-    # Three causes, because there are three, and a shorter list asserts something false
-    # about the rows it leaves out. A concept taught by NO course is not the same story
-    # as one taught by several: remediation._sole answers None to both, and by the time
-    # this renders nothing can tell them apart, so both are named. Says nothing about
-    # whether these calls succeeded, either: a re-teaching call that failed still records
-    # the tokens it spent, and lands in this group like any other.
+    # Examples, not a closed list, and the two words carrying that are "at the time they
+    # were charged" and "commonly". No list can close, because the course id is decided
+    # once and never revisited while a sentence in the present tense is a claim about
+    # today's courseware: whatever the row was charged under, editing the courses
+    # afterwards can falsify it. A re-teach charged while two courses taught the concept
+    # reads as none of "several", "gone", or "failed" once one of those courses is
+    # deleted. Scoping the claim to when the charge happened is what the row actually
+    # records, and it survives every later edit. Says nothing about whether these calls
+    # succeeded, either: a re-teaching call that failed still records the tokens it
+    # spent, and lands in this group like any other.
     GROUP_REMEDIATION: (
-        "Re-teaching a concept is charged to the course that teaches it. These calls could "
-        "not be charged to one course: the concept is taught by several courses, or by none "
-        "of them any more, or the call failed before anything recorded which concept it "
-        "was for."
+        "Re-teaching a concept is charged to the course that teaches it, when exactly one "
+        "does. These calls could not be tied to a single course at the time they were "
+        "charged, commonly because several courses teach the concept, because the lessons "
+        "that taught it are gone, or because the call failed before anything recorded which "
+        "concept it was for."
     ),
     # "or from one still running" is not padding. Generation is synchronous and can take
     # minutes, and its rows carry no course until it finishes, so a learner who opens
@@ -839,12 +844,14 @@ def _approximation_causes(session: Session) -> tuple[bool, bool]:
     zero is what proves a price was applied at all, since an unpaid provider always
     records zero and a paid one with no counts at all prices zero tokens at any rate.
 
-    One gap, left open knowingly. If the count that survived is itself 0, the cost is 0
-    too (costs.estimate_cost treats a missing count as zero), so nothing proves a rate
-    was applied and the row reports the token cause alone. The sentence stays true and
-    is merely less complete, and a call that really consumed zero input tokens does not
-    happen; closing it properly would mean recording whether the provider was paid,
-    which is a column this change is not entitled to add.
+    One gap, left open knowingly. The proof rests on cost, so it fails wherever the
+    surviving count prices to nothing (costs.estimate_cost reads a missing count as
+    zero). A zero INPUT count essentially never happens, but a missing input count
+    beside zero OUTPUT tokens is the ordinary shape of a call that failed before it
+    produced anything, and estimate_cost on an unpriced model answers (0.0, True) for
+    it. Such a row reports the token cause alone: still true, merely less complete.
+    Closing it properly would mean recording whether the provider was paid, which is a
+    column this change is not entitled to add.
     """
     rows = (
         session.query(
