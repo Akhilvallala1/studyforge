@@ -36,7 +36,10 @@ class StubPaidProvider:
     same way FakeProvider does, and it carries the same hazard: a stage with no
     branch here answers with lesson JSON, the caller fails to parse it, and a cost
     test for that stage exercises the FAILURE path while still passing, because a
-    failed call is metered too. The tutor branch below exists for that reason.
+    failed call is metered too. The remediation and tutor branches below exist for
+    that reason. Remediation had no branch here for as long as the stage has
+    existed; nothing was passing for the wrong reason yet only because no
+    remediation cost test had been written, which is not a property to rely on.
     """
 
     name = "anthropic"
@@ -64,6 +67,13 @@ class StubPaidProvider:
                     "modules": [
                         {"title": "Module 1", "lessons": [{"title": "Lesson A", "summary": "s"}]}
                     ],
+                }
+            )
+        elif "re-teaching one concept" in system:
+            text = json.dumps(
+                {
+                    "restatement": "Stub restatement in plainer words.",
+                    "worked_example": "Stub worked example, one step at a time.",
                 }
             )
         elif "answering a learner's question" in system:
