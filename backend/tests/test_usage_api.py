@@ -102,6 +102,7 @@ def test_usage_endpoint_contract(client, monkeypatch):
         "output_tokens",
         "estimated_cost_usd",
         "approximate",
+        "approximate_note",
     }
     assert totals["calls"] >= 7  # 5 from the fake run + 2 from the failing run
 
@@ -109,13 +110,17 @@ def test_usage_endpoint_contract(client, monkeypatch):
     assert course_id in per_course_ids
     assert None in per_course_ids  # unattributed bucket for the never-backfilled run
 
-    null_bucket = next(b for b in usage["per_course"] if b["course_id"] is None)
+    null_bucket = next(b for b in usage["per_course"] if b["group"] == "failed_run")
+    assert null_bucket["course_id"] is None
     assert null_bucket["title"] is None
     assert null_bucket["calls"] >= 2
 
     course_bucket = next(b for b in usage["per_course"] if b["course_id"] == course_id)
+    assert course_bucket["group"] == "course"
     assert course_bucket["calls"] == 5
     assert course_bucket["title"]
+    assert course_bucket["label"] == course_bucket["title"]
+    assert course_bucket["note"] is None
 
     assert len(usage["recent_calls"]) <= 10
     for call in usage["recent_calls"]:

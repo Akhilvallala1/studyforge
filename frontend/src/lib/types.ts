@@ -106,12 +106,29 @@ export interface UsageTotals {
   estimated_cost_usd: number;
   /** True if any recorded call's cost is an estimate rather than a precise figure. */
   approximate: boolean;
+  /**
+   * Why, in the server's words: a token count was estimated, the model's price was,
+   * or both. Null when nothing was approximated. The server owns this sentence
+   * because only it knows which of the two causes actually applies.
+   */
+  approximate_note: string | null;
 }
 
+/**
+ * Which kind of row this is: one course, re-teaching that no single course owns, or
+ * a generation run that failed before its course could be saved.
+ */
+export type SpendGroup = "course" | "remediation" | "failed_run";
+
 export interface PerCourseUsage {
-  /** Null for LLM calls from a run that failed before the course was saved. */
+  group: SpendGroup;
+  /** Null for every group except "course". */
   course_id: number | null;
   title: string | null;
+  /** What the leftmost column shows, for courses and non-course groups alike. */
+  label: string;
+  /** The group's explanation, or null for a course row, which needs none. */
+  note: string | null;
   calls: number;
   input_tokens: number;
   output_tokens: number;

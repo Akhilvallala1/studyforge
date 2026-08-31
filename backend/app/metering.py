@@ -80,9 +80,15 @@ def _format_threshold(threshold: float) -> str:
 class MeteredLLM:
     """Wraps an LLMProvider so every call is cost-estimated, persisted, and cap-checked."""
 
-    def __init__(self, provider: LLMProvider, run_id: str):
+    def __init__(self, provider: LLMProvider, run_id: str, course_id: int | None = None):
+        """course_id is the course every call on this meter is charged to, when the
+        caller already knows it. Course generation does not: it is discovering the
+        course as it goes, so it leaves this None and backfills the run's rows once
+        the course has an id. Re-teaching does know, or knows that no single course
+        can honestly be named, and either way nothing backfills its rows later."""
         self.provider = provider
         self.run_id = run_id
+        self.course_id = course_id
 
     def generate(self, stage: str, system: str, prompt: str, max_tokens: int = 64000) -> str:
         self._check_cap()
@@ -120,7 +126,7 @@ class MeteredLLM:
             old_state = alert_state(session)
             row = models.LlmCall(
                 run_id=self.run_id,
-                course_id=None,
+                course_id=self.course_id,
                 provider=self.provider.name,
                 model=self.provider.model,
                 stage=stage,
@@ -136,8 +142,10 @@ class MeteredLLM:
             session.close()
 
         logger.info(
-            # No course id here: it is backfilled onto the run's rows only after the
-            # course is saved, so logging one at call time would always say "pending".
+            # No course id on this line, which is not the same as none on the row.
+            # A generation run has no course until its course is saved and its rows
+            # are backfilled, so the calls that make up most of the spend would log
+            # "pending" here whatever the row they wrote ends up saying.
             "LLM call: provider=%s model=%s stage=%s in=%s out=%s cost=$%.4f total=$%.2f run=%s",
             self.provider.name,
             self.provider.model,

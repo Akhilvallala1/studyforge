@@ -96,6 +96,15 @@ class Meter(Protocol):
     def generate(self, stage: str, system: str, prompt: str, max_tokens: int = 64000) -> str: ...
 
 
+# The stage names this pipeline records in llm_calls. /usage reads them: a row with
+# one of these stages and no course id is a run that failed before its course could
+# be saved, and the page says so in those words. Adding a stage here means checking
+# that sentence is still true of it, or giving the new stage its own.
+OUTLINE_STAGE = "outline"
+LESSON_STAGE = "lesson"
+STAGES = frozenset({OUTLINE_STAGE, LESSON_STAGE})
+
+
 def _balanced_objects(text: str) -> list[str]:
     """Every top-level {...} span in `text`, longest first.
 
@@ -196,7 +205,7 @@ def generate_outline(meter: Meter, chunks: list[str]) -> dict:
         # No segment numbering either: labels the model is told nothing about are
         # noise in the middle of the text it is meant to be reading.
         prompt = "Source material:\n\n" + "\n\n".join(chunks)
-    outline = generate_json(meter, "outline", outline_system(len(chunks)), prompt)
+    outline = generate_json(meter, OUTLINE_STAGE, outline_system(len(chunks)), prompt)
     if not outline.get("modules"):
         raise ValueError("Outline has no modules")
     return outline
@@ -282,7 +291,7 @@ def generate_lesson(
         f"Lesson summary: {lesson_summary}\n\n"
         f"Source material:\n\n{label_segments(chunks, indexes)}"
     )
-    lesson = generate_json(meter, "lesson", LESSON_SYSTEM, prompt)
+    lesson = generate_json(meter, LESSON_STAGE, LESSON_SYSTEM, prompt)
     lesson["content"] = lesson.get("content") or ""
     lesson["concepts"] = _clean_concepts(lesson.get("concepts"))
     lesson["quiz"] = _clean_quiz(lesson.get("quiz"))

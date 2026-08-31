@@ -193,10 +193,10 @@ def _moment(now: datetime | None) -> datetime:
 # --------------------------------------------------------------------------
 
 
-def concept_material(
+def teaching_lessons(
     session: Session, concept_key: str
-) -> tuple[list[models.Lesson], list[models.QuizItem]]:
-    """The lessons that taught this concept and the quiz items that test it.
+) -> list[tuple[models.Lesson, list[models.QuizItem]]]:
+    """Every lesson that teaches this concept, paired with its items that test it.
 
     A lesson counts if it lists the concept or if one of its quiz items tests it.
     The two are written by separate model calls, and either one alone can be the
@@ -205,9 +205,13 @@ def concept_material(
     Matched in Python rather than in SQL for the reason review.py gives: the
     grouping key is normalize_concept() of a stored label, which SQLite can neither
     compute nor index.
+
+    Untrimmed on purpose. The grounding budget belongs to the prompt, and the other
+    caller, sole_course_id, is asking which courses teach this concept: an answer
+    that changed with how many lessons happened to fit in a prompt would not be an
+    answer about courses at all.
     """
-    lessons: list[models.Lesson] = []
-    items: list[models.QuizItem] = []
+    matches: list[tuple[models.Lesson, list[models.QuizItem]]] = []
     rows = session.query(models.Lesson).options(selectinload(models.Lesson.quiz_items)).all()
     for lesson in rows:
         matching = [
@@ -220,9 +224,52 @@ def concept_material(
         )
         if not matching and not listed:
             continue
-        lessons.append(lesson)
-        items.extend(matching)
+        matches.append((lesson, matching))
+    return matches
+
+
+def trim_material(
+    matches: list[tuple[models.Lesson, list[models.QuizItem]]],
+) -> tuple[list[models.Lesson], list[models.QuizItem]]:
+    """The teaching_lessons matches cut down to the prompt's grounding budget."""
+    lessons = [lesson for lesson, _ in matches]
+    items = [item for _, matching in matches for item in matching]
     return lessons[:MAX_LESSONS], items[:MAX_ITEMS]
+
+
+def concept_material(
+    session: Session, concept_key: str
+) -> tuple[list[models.Lesson], list[models.QuizItem]]:
+    """The lessons that taught this concept and the quiz items that test it."""
+    return trim_material(teaching_lessons(session, concept_key))
+
+
+def sole_course_id(
+    session: Session, matches: list[tuple[models.Lesson, list[models.QuizItem]]]
+) -> int | None:
+    """The one course this re-teaching call can honestly be charged to, or None.
+
+    Review cards are keyed on concept_key globally and carry no course (see
+    models.ReviewCard), because a learner who meets a concept in two courses has one
+    memory of it rather than two. That is the right shape for scheduling, and it
+    means a re-teaching call does not arrive with a course already attached.
+
+    When exactly one course teaches the concept there is no ambiguity, and the spend
+    belongs against that course because that is where the learner will look for it.
+    When several do, choosing one would put a real dollar figure against a course
+    that did not earn it, which is a different false statement rather than a fix, so
+    the call stays unattributed and /usage explains that group in its own words.
+    """
+    module_ids = {lesson.module_id for lesson, _ in matches}
+    if not module_ids:
+        return None
+    course_ids = {
+        course_id
+        for (course_id,) in session.query(models.Module.course_id)
+        .filter(models.Module.id.in_(module_ids))
+        .distinct()
+    }
+    return course_ids.pop() if len(course_ids) == 1 else None
 
 
 def _as_data(text: str) -> str:
@@ -437,14 +484,19 @@ def generate_note(
     Nothing about the card is written: not stability, not lapses, not due.
     """
     moment = _moment(now)
-    lessons, items = concept_material(session, card.concept_key)
+    matches = teaching_lessons(session, card.concept_key)
+    lessons, items = trim_material(matches)
     if not lessons and not items:
         raise NoMaterial(f"No lesson material for concept {card.concept_key!r}")
 
     label = card.concept_label or card.concept_key
     prompt = build_prompt(label, lessons, items)
     run_id = uuid.uuid4().hex
-    meter = MeteredLLM(provider, run_id)
+    # The course this call is charged to is decided here, at call time, and not by a
+    # backfill after the fact: unlike a generation run there is no course being saved
+    # afterwards to backfill from, so a call recorded with no course would stay that
+    # way forever and /usage would report the learner's re-teaching as unattributed.
+    meter = MeteredLLM(provider, run_id, course_id=sole_course_id(session, matches))
 
     # Parsed before the row is built, so a reply that will not parse leaves no row
     # at all rather than half an explanation the learner would read and trust. The
