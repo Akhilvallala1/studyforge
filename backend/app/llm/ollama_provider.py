@@ -82,13 +82,9 @@ CHARS_PER_TOKEN = 4
 # read as a comfortable fit, since it never touched num_ctx. 2500 is the top of an
 # ESTIMATED 1,200-2,500 token range for a lesson and its quiz; nobody has measured
 # what a lesson really costs to write. It only has to be roughly right, since it
-# governs a warning and never a failure.
+# governs a warning and never a failure. It doubles as the least room worth capping
+# num_predict to, since a cap smaller than a reply is not a cap; see _num_predict.
 OUTPUT_RESERVE_TOKENS = 2500
-
-# A request must ask for at least one token to be a request. Reached only when the
-# prompt estimate already fills the window, which is a call that will fail its
-# post-call check anyway; this just keeps the body valid until it gets there.
-MIN_NUM_PREDICT = 1
 
 _REQUEST_TIMEOUT = 600
 
@@ -278,12 +274,31 @@ class OllamaProvider:
         as an unterminated JSON object and a visible failure.
 
         The estimate used here is the optimistic one, which makes the cap an upper
-        bound on the real room: it can never cut a reply shorter than the window
-        would have. Denser material means the cap is simply not the binding
-        constraint, and _reject_if_window_filled catches that case from the counts.
+        bound on the real room for DENSE material: it can never cut a reply shorter
+        than the window would have. Denser material means the cap is simply not the
+        binding constraint, and _reject_if_window_filled catches it from the counts.
+
+        SPARSE material inverts that, which is why there is a floor at all. BPE
+        packs runs of whitespace hard, so deeply indented code, ASCII tables and log
+        dumps can run to 10 chars per token, and then the estimate OVER-counts.
+        `available` goes negative on a prompt that comfortably fits, and an earlier
+        version clamped num_predict to 1 and asked the model for a one-token reply.
+        Nothing caught it: the real prompt was well under the ceiling, so both
+        post-call checks stayed quiet, and the run died in parse_json_response on a
+        reply that was a single "{". A 60,000-char whitespace-heavy document
+        estimates at 15,000 tokens and really is 6,000, which fits 8192 with 2,192
+        to spare.
+
+        So the cap is applied only when the estimate leaves room worth having. Below
+        that the estimate is not evidence of anything: either the prompt really is
+        oversized, and the prompt-end check raises on Ollama's own count, or the
+        estimate is wrong and capping would be the only thing breaking the call.
+        Deferring to the reported counts is what this module does everywhere else.
         """
         available = self.num_ctx - self._estimated_prompt_tokens(system, prompt)
-        return min(max_tokens, max(available, MIN_NUM_PREDICT))
+        if available < OUTPUT_RESERVE_TOKENS:
+            return max_tokens
+        return min(max_tokens, available)
 
     def _warn_if_prompt_looks_too_long(self, system: str, prompt: str) -> None:
         """Say so before the call when the material plainly will not fit.

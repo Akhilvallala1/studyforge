@@ -92,6 +92,12 @@ def test_default_num_ctx_fits_a_routed_lesson_call():
     Both sides of this are ESTIMATED tokens, so it guards the constants growing
     (raising MAX_CHUNK_CHARS past ~10,500 turns it red) and not the estimate being
     wrong. The checks that catch a wrong estimate are the reported-count ones below.
+
+    It is also weaker than it looks in one specific way, recorded so nobody reads it
+    as more: comparing against OUTPUT_RESERVE_TOKENS rather than a literal made it
+    partly self-referential, and shrinking that constant to 500 leaves this test
+    GREEN. What actually pins the reserve is
+    test_prompt_that_fits_but_crowds_the_reply_still_warns, which goes red at 500.
     """
     estimated_input = _routed_lesson_prompt_chars() // CHARS_PER_TOKEN
     assert DEFAULT_NUM_CTX > 4096
@@ -275,11 +281,70 @@ def test_num_predict_never_exceeds_what_the_caller_asked_for(monkeypatch):
     assert sent[0]["json"]["options"]["num_predict"] == 4000
 
 
-def test_num_predict_stays_positive_when_the_prompt_fills_the_window(monkeypatch):
-    """A doomed call still has to be a valid request; the counts fail it afterwards."""
-    sent = _stub_post(monkeypatch, _response(json=_chat_body(prompt_eval_count=1)))
-    OllamaProvider(num_ctx=100).generate("sys", "x" * 40_000)
-    assert sent[0]["json"]["options"]["num_predict"] >= 1
+# The estimate cuts both ways. CHARS_PER_TOKEN=4 under-counts dense material, which
+# is what the cap is designed around. It OVER-counts whitespace-heavy material,
+# because BPE packs runs of spaces hard: deeply indented code, ASCII tables and log
+# dumps can reach 10 chars per token. Capping on an over-count is the one way this
+# cap can do damage, and nothing here covered it until it shipped broken.
+
+SPARSE_PROMPT = "x" + " " * 59_999  # 60,000 chars, ~6,000 real tokens at 10 c/t
+
+
+def test_sparse_material_is_not_capped_to_a_single_token(monkeypatch):
+    """The regression. 60,000 chars estimates to 15,000 tokens and really is 6,000,
+    which fits an 8,192 window with 2,192 to spare.
+
+    The old floor asked the model for one token, got back "{", and died in
+    parse_json_response. Neither post-call check could see it: the real prompt was
+    6,000 against a ceiling of 8,192, and 6,000 + 1 is nowhere near it either.
+    """
+    sent = _stub_post(monkeypatch, _response(json=_chat_body(prompt_eval_count=6000)))
+    provider = OllamaProvider(num_ctx=8192)
+    estimated = provider._estimated_prompt_tokens("sys", SPARSE_PROMPT)
+    assert estimated > provider.num_ctx, "the estimate does over-count this prompt"
+
+    provider.generate("sys", SPARSE_PROMPT, max_tokens=64000)
+    assert sent[0]["json"]["options"]["num_predict"] == 64000
+
+
+def test_sparse_material_generates_normally(monkeypatch):
+    """End to end: the prompt fits, the reply is whole, nothing raises."""
+    _stub_post(
+        monkeypatch,
+        _response(json=_chat_body("the outline", prompt_eval_count=6000, eval_count=800)),
+    )
+    result = OllamaProvider(num_ctx=8192).generate("sys", SPARSE_PROMPT)
+    assert result.text == "the outline"
+
+
+def test_dropping_the_cap_does_not_drop_the_guard(monkeypatch):
+    """The same uncapped call, where the prompt really was too big.
+
+    Removing the cap cannot cost anything, because the thing that catches an
+    oversized prompt was never the cap: it is Ollama's own reported count.
+    """
+    _stub_post(monkeypatch, _response(json=_chat_body(prompt_eval_count=8192)))
+    with pytest.raises(LLMCallError) as caught:
+        OllamaProvider(num_ctx=8192).generate("sys", SPARSE_PROMPT)
+    assert "truncated" in str(caught.value)
+
+
+def test_cap_is_skipped_when_the_room_left_is_too_small_to_reply_in(monkeypatch):
+    """A cap smaller than a reply is not a cap, it is a different way to truncate.
+
+    Positive but tiny `available` is the same bug as the negative case, just
+    shallower, so the threshold is the reserve rather than zero. The window filling
+    for real is still caught, by the sum check, on the reported counts.
+    """
+    sent = _stub_post(monkeypatch, _response(json=_chat_body(prompt_eval_count=10)))
+    provider = OllamaProvider(num_ctx=8192)
+    # Sized so the estimate leaves room, but less than a lesson needs.
+    chars = (provider.num_ctx - OUTPUT_RESERVE_TOKENS + 100) * CHARS_PER_TOKEN
+    available = provider.num_ctx - provider._estimated_prompt_tokens("", "y" * chars)
+    assert 0 < available < OUTPUT_RESERVE_TOKENS
+
+    provider.generate("", "y" * chars, max_tokens=64000)
+    assert sent[0]["json"]["options"]["num_predict"] == 64000
 
 
 # --------------------------------------------------------------------------
