@@ -373,8 +373,8 @@ def complete_lesson(lesson_id: int, session: Session = Depends(get_session)):
 
     Completion is also where a lesson's concepts enter the review schedule. Grading
     here rather than on each answer means the learner chose the boundary, and it is
-    idempotent for the same reason the timestamp is: review.grade_lesson only reads
-    attempts newer than the card's last review, so a repeat POST rates nothing.
+    idempotent for the same reason the timestamp is: review.grade_lesson skips every
+    attempt some rating already counted, so a repeat POST rates nothing.
     """
     lesson = session.get(models.Lesson, lesson_id)
     if not lesson:

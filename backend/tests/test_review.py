@@ -164,8 +164,8 @@ class TestLessonSeeding:
         second = client.post(f"/lessons/{lesson_id}/complete").json()
 
         assert first["scheduled_concepts"] == 2
-        # The exposure window is "attempts newer than the card's last review", so the
-        # repeat finds nothing left to rate.
+        # Every attempt is already inside a rating, so the repeat has nothing left
+        # to rate. This is the guard the shared-concept fix had to keep intact.
         assert second["scheduled_concepts"] == 0
         assert len(_logs()) == 2
 
