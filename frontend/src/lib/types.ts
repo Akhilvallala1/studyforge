@@ -274,6 +274,136 @@ export type RemediationConflict =
 
 export type RemediationConflictCode = RemediationConflict["error"];
 
+/**
+ * One question in a practice run. Same shape as ReviewItem, and withheld of its answer
+ * key for the same reason: practice is still retrieval, and an item that arrives with
+ * its answer attached tests nothing.
+ */
+export interface PracticeItem {
+  id: number;
+  question: string;
+  kind: "mcq" | "short";
+  options: string[];
+}
+
+/**
+ * One answer already given in today's run. It carries `expected`, which is safe here
+ * because the retrieval that answer key would spoil has already happened.
+ */
+export interface PracticeResult {
+  item_id: number;
+  /** Empty when the item has since been regenerated away. The attempt row outlives it. */
+  question: string;
+  submitted: string;
+  expected: string;
+  correct: boolean;
+  created_at: string;
+}
+
+/** What every practice state carries, whichever of the four it is. */
+interface PracticeSessionBase {
+  card_id: number;
+  concept_key: string;
+  concept_label: string;
+  answered: number;
+  correct: number;
+  /** Right answers that finish the run. From the server, not hardcoded in the UI. */
+  target_correct: number;
+  /** Answers the run may spend in total. */
+  max_answers: number;
+  results: PracticeResult[];
+}
+
+/**
+ * Today's practice run for one concept, discriminated on `status`.
+ *
+ * The server partitions `reason` by `status` and the two vocabularies never cross:
+ * `done` means the learner finished a run, `unavailable` means there was no run to
+ * have. Encoding that partition is the point of the union. Conflating them would tell
+ * a learner they completed something that never existed, and the compiler now refuses
+ * to let a `done` branch read `no_items`.
+ *
+ * `ready` and `in_progress` stay separate members even though both carry an item,
+ * because the copy genuinely differs. Deriving that difference from `answered > 0`
+ * would reintroduce the shape test this union exists to forbid.
+ */
+export type PracticeState =
+  | (PracticeSessionBase & {
+      status: "ready";
+      reason: null;
+      item: PracticeItem;
+      resets_at: null;
+    })
+  | (PracticeSessionBase & {
+      status: "in_progress";
+      reason: null;
+      item: PracticeItem;
+      resets_at: null;
+    })
+  | (PracticeSessionBase & {
+      status: "done";
+      reason: "target_reached" | "attempts_spent" | "pool_exhausted";
+      item: null;
+      /**
+       * When today's run resets, which the server sends only on a finished one. Typed
+       * nullable rather than required so the renderer guards it instead of trusting
+       * it: the partition above is load-bearing, this field is decoration.
+       */
+      resets_at: string | null;
+    })
+  | (PracticeSessionBase & {
+      status: "unavailable";
+      reason: "no_note" | "no_items";
+      item: null;
+      resets_at: null;
+    });
+
+export type PracticeStatus = PracticeState["status"];
+
+/**
+ * What POSTing one practice answer produced. Nothing here is an assessment: no review
+ * log is written, no column of the card moves, and the schedule is untouched.
+ */
+export interface PracticeAnswer {
+  correct: boolean;
+  /**
+   * The reference answer, to show beside the learner's own. The grader is exact
+   * case-insensitive comparison, so this is a comparison and not a verdict.
+   */
+  expected: string;
+  submitted: string;
+  attempt_id: number;
+  /**
+   * The run AFTER this answer. Its `item` is the next question, or null when this
+   * answer ended the run. There is deliberately no separate `next` key: a second copy
+   * of the next question is a copy that could disagree with this one.
+   */
+  state: PracticeState;
+}
+
+/**
+ * Why the server would not take a practice answer. Its own union, not an extension of
+ * RemediationConflict.
+ *
+ * RemediationConflict is switched exhaustively in exactly one place. Folding these
+ * codes into it would force that switch to handle codes its endpoint can never send:
+ * the exhaustiveness check would still compile, but it would stop meaning "every code
+ * this endpoint can send is handled" and start meaning "every code any remediation
+ * endpoint can send is mentioned somewhere". Two endpoints, two unions, two exhaustive
+ * switches, composed in the component tree rather than in the type.
+ *
+ * Every code carries the run the answer could not join, because the only sensible
+ * thing a UI can do about "not that answer" is redraw the run it should have been
+ * looking at.
+ */
+export type PracticeConflict =
+  | { error: "item_already_answered"; message: string; state: PracticeState }
+  | { error: "session_complete"; message: string; state: PracticeState }
+  | { error: "no_note"; message: string; state: PracticeState }
+  | { error: "no_items"; message: string; state: PracticeState };
+
+export type PracticeConflictCode = PracticeConflict["error"];
+
 export type RatingName = "again" | "hard" | "good" | "easy";
 
 /**
