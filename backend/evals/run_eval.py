@@ -11,6 +11,11 @@ spends real money, and it is run by hand, never from pytest.
 The preflight refuses to start against the developer's own database, or with a
 paid provider and no hard cap configured, because the failure mode of getting
 either wrong is measured in dollars and lost data rather than a stack trace.
+
+Everything about money here is conditional on the provider actually charging for
+the run. Against a free provider (ollama, fake) the runner quotes no price and
+asks for no spending confirmation: there is no price to quote, and a confirmation
+that appears on every run is one nobody reads on the run where it counts.
 """
 
 import argparse
@@ -101,24 +106,41 @@ def preflight(require_cap: bool = True) -> dict:
     }
 
 
-def project_cost(model: str, text: str, lessons: int = PROJECTED_LESSONS) -> dict:
+def project_cost(
+    model: str, text: str, lessons: int = PROJECTED_LESSONS, is_paid: bool = True
+) -> dict:
     """Order-of-magnitude cost projection for one course, before running it.
 
     Deliberately pessimistic in the way the pipeline actually is: `generate_course`
     re-sends every chunk of the document with every single lesson call, so input
     cost scales with lessons x whole document, not with the document once.
+
+    A free provider is quoted no price at all. estimate_cost falls back to the
+    configured default rates for any model id it does not recognize, and no local
+    model is in the pricing table, so asking it about "llama3.1:8b" cheerfully
+    returns a dollar figure for a run that cannot cost anything. projected_cost_usd
+    is None in that case and the caller reports tokens instead. is_paid defaults to
+    True so that a caller who forgets over-warns rather than under-warns.
     """
     doc_tokens = int(len(text) / CHARS_PER_TOKEN)
     calls = lessons + 1
     input_tokens = doc_tokens * calls
     output_tokens = PROJECTED_OUTPUT_TOKENS_PER_CALL * calls
-    cost, approximate = estimate_cost(model, input_tokens, output_tokens)
-    return {
+    projection = {
         "doc_tokens": doc_tokens,
         "assumed_lessons": lessons,
         "assumed_calls": calls,
         "projected_input_tokens": input_tokens,
         "projected_output_tokens": output_tokens,
+        "priced": is_paid,
+    }
+    if not is_paid:
+        # None rather than 0.0: a zero would be true, but it would read as a price,
+        # and the whole point is that there is no price here to be right or wrong.
+        return {**projection, "projected_cost_usd": None, "approximate_pricing": None}
+    cost, approximate = estimate_cost(model, input_tokens, output_tokens)
+    return {
+        **projection,
         "projected_cost_usd": round(cost, 4),
         "approximate_pricing": approximate,
     }
@@ -246,27 +268,67 @@ def main(argv: list[str] | None = None) -> int:
     env = preflight(require_cap=not args.dry_run)
     print(f"Provider: {env['provider']} / {env['model']} (paid={env['is_paid']})")
     print(f"Database: {env['db']}")
-    print(f"Cost cap: {env['cost_limit_usd']}, alert at {env['cost_alert_usd']}")
+    if env["is_paid"]:
+        print(f"Cost cap: {env['cost_limit_usd']}, alert at {env['cost_alert_usd']}")
+    else:
+        print(f"Cost: none. {env['provider']} is a free provider, so the spend cap and the "
+              f"cost alert do not apply to this run.")
 
     keys = args.source_keys or list(available_sources())
     loaded = load_sources(keys)
+    projections = [
+        (source, project_cost(env["model"], source.text, is_paid=env["is_paid"]))
+        for source in loaded
+    ]
 
-    total_projected = 0.0
-    for source in loaded:
-        projection = project_cost(env["model"], source.text)
-        total_projected += projection["projected_cost_usd"]
+    if env["is_paid"]:
+        total_projected = 0.0
+        guessed_price = False
+        for source, projection in projections:
+            total_projected += projection["projected_cost_usd"]
+            guessed_price = guessed_price or projection["approximate_pricing"]
+            print(
+                f"  {source.key}: ~{projection['doc_tokens']:,} tokens/doc, "
+                f"projected ${projection['projected_cost_usd']:.2f} "
+                f"({projection['assumed_calls']} calls)"
+            )
+        print(f"Projected total: ~${total_projected:.2f} (cap ${env['cost_limit_usd']})")
+        if guessed_price:
+            # The same state /usage grew a notice for: exact token counts against a
+            # price nobody has. Saying it here costs one line and stops a confident
+            # figure being read as a quote.
+            print(
+                f"  NOTE: {env['model']} has no entry in the pricing table, so that figure "
+                f"uses the STUDYFORGE_PRICE_DEFAULT_IN_USD / _OUT_USD fallback rates. The "
+                f"token estimate is the usual one; the price is a guess."
+            )
+    else:
+        # Tokens and calls are real numbers about a free run. A dollar figure is not.
+        total_calls = 0
+        total_tokens = 0
+        for source, projection in projections:
+            total_calls += projection["assumed_calls"]
+            total_tokens += (
+                projection["projected_input_tokens"] + projection["projected_output_tokens"]
+            )
+            print(
+                f"  {source.key}: ~{projection['doc_tokens']:,} tokens/doc, "
+                f"~{projection['projected_input_tokens']:,} in + "
+                f"~{projection['projected_output_tokens']:,} out "
+                f"({projection['assumed_calls']} calls)"
+            )
         print(
-            f"  {source.key}: ~{projection['doc_tokens']:,} tokens/doc, "
-            f"projected ${projection['projected_cost_usd']:.2f} "
-            f"({projection['assumed_calls']} calls)"
+            f"Projected total: ~{total_tokens:,} tokens over {total_calls} calls. "
+            f"No cost: {env['provider']} is free."
         )
-    print(f"Projected total: ~${total_projected:.2f} (cap ${env['cost_limit_usd']})")
 
     if args.dry_run:
         print("Dry run: no model calls made.")
         return 0
 
-    if not args.yes:
+    # Only a paid provider is asked to consent. Asking on a free run trains the
+    # answer to a question that matters, and there is nothing to consent to.
+    if env["is_paid"] and not args.yes:
         answer = input("Spend real money on this run? [y/N] ").strip().lower()
         if answer != "y":
             print("Aborted.")

@@ -832,3 +832,219 @@ def test_dry_run_makes_no_provider_calls(monkeypatch, tmp_path):
         lambda: {"stub": lambda: run_eval.sources.from_text("stub", "stub", SOURCE)},
     )
     assert run_eval.main(["--dry-run", "--out", str(tmp_path)]) == 0
+
+
+# --- run_eval tells the truth about whichever provider it is pointed at ----
+#
+# Both defects below were found on a real Ollama run. The runner quoted "projected
+# $0.53" for a provider that cannot charge anything, because project_cost looked
+# "llama3.1:8b" up in the pricing table, missed, and fell back to the default rate.
+# Then it asked "Spend real money on this run?" about that same free run. The second
+# is the worse of the two: a confirmation that appears when there is nothing to
+# confirm is a confirmation that gets waved through on the run where it matters.
+
+
+class _Paid:
+    name, model, is_paid = "anthropic", "claude-opus-5", True
+
+    def generate(self, *args, **kwargs):
+        raise AssertionError("these tests must not call a provider")
+
+
+class _Free:
+    name, model, is_paid = "ollama", "llama3.1:8b", False
+
+    def generate(self, *args, **kwargs):
+        raise AssertionError("these tests must not call a provider")
+
+
+def _stubbed_run(monkeypatch, tmp_path, provider):
+    """Wire main() up so it can run end to end without a provider or a real course."""
+    from evals import run_eval
+
+    monkeypatch.setenv("STUDYFORGE_DB", str(tmp_path / "scratch.sqlite3"))
+    monkeypatch.setattr(run_eval, "get_provider", lambda: provider)
+    monkeypatch.setattr(
+        run_eval,
+        "available_sources",
+        lambda: {"stub": lambda: run_eval.sources.from_text("stub", "stub", SOURCE)},
+    )
+    monkeypatch.setattr(run_eval, "run_course_eval", lambda *a, **k: _result_fixture())
+    monkeypatch.setattr(run_eval, "usage_snapshot", lambda: {"totals": {}})
+    return run_eval
+
+
+def _refuse_input(monkeypatch, why: str):
+    def boom(*args, **kwargs):
+        raise AssertionError(why)
+
+    monkeypatch.setattr("builtins.input", boom)
+
+
+def _record_input(monkeypatch, answer: str) -> list[str]:
+    asked: list[str] = []
+
+    def fake_input(prompt: str = "") -> str:
+        asked.append(prompt)
+        return answer
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    return asked
+
+
+# --- the projection ---
+
+
+def test_free_provider_is_quoted_no_price(monkeypatch):
+    """A dollar figure for a free run is invented, not estimated."""
+    from evals import run_eval
+
+    projection = run_eval.project_cost("llama3.1:8b", "word " * 4000, is_paid=False)
+    assert projection["projected_cost_usd"] is None
+    assert projection["priced"] is False
+    # The tokens are still real, and still worth reporting.
+    assert projection["projected_input_tokens"] > 0
+    assert projection["assumed_calls"] == run_eval.PROJECTED_LESSONS + 1
+
+
+def test_paid_provider_is_still_quoted_a_price(monkeypatch):
+    from evals import run_eval
+
+    projection = run_eval.project_cost("claude-opus-5", "word " * 4000, is_paid=True)
+    assert projection["projected_cost_usd"] > 0
+    assert projection["priced"] is True
+    assert projection["approximate_pricing"] is False
+
+
+def test_projection_defaults_to_pricing_when_nobody_says(monkeypatch):
+    """Forgetting the flag must over-warn, not under-warn."""
+    from evals import run_eval
+
+    assert run_eval.project_cost("claude-opus-5", "word " * 100)["projected_cost_usd"] > 0
+
+
+def test_free_run_prints_tokens_and_calls_instead_of_dollars(monkeypatch, tmp_path, capsys):
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Free())
+    assert run_eval.main(["--dry-run", "--out", str(tmp_path)]) == 0
+
+    out = capsys.readouterr().out
+    assert "projected $" not in out
+    assert "Projected total: ~$" not in out
+    assert "cap $" not in out
+    # No cap line either: a cap that cannot apply reads as a cap someone forgot.
+    assert "Cost cap:" not in out
+    # What it says instead: the numbers that are real about a free run.
+    assert "tokens over" in out
+    assert "calls" in out
+    assert "ollama is free" in out
+
+
+def test_paid_run_still_prints_the_dollar_projection(monkeypatch, tmp_path, capsys):
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Paid())
+    monkeypatch.setenv("STUDYFORGE_COST_LIMIT_USD", "3.00")
+    assert run_eval.main(["--dry-run", "--out", str(tmp_path)]) == 0
+
+    out = capsys.readouterr().out
+    assert "projected $" in out
+    assert "Projected total: ~$" in out
+    assert "(cap $3.0)" in out
+    assert "Cost cap: 3.0" in out
+
+
+def test_paid_run_on_an_unpriced_model_says_the_price_was_guessed(monkeypatch, tmp_path, capsys):
+    """The other half of project_cost's silent fallback, on the paid side.
+
+    /usage already grew a notice for exactly this state: a model with no entry in
+    the pricing table gets exact token counts against a price nobody has. The
+    runner printed the figure with no such qualifier.
+    """
+
+    class PaidUnpriced(_Paid):
+        model = "claude-something-unreleased"
+
+    run_eval = _stubbed_run(monkeypatch, tmp_path, PaidUnpriced())
+    assert run_eval.main(["--dry-run", "--out", str(tmp_path)]) == 0
+
+    out = capsys.readouterr().out
+    assert "projected $" in out
+    assert "no entry in the pricing table" in out
+    assert "STUDYFORGE_PRICE_DEFAULT_IN_USD" in out
+
+
+def test_priced_model_gets_no_guessed_price_note(monkeypatch, tmp_path, capsys):
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Paid())
+    run_eval.main(["--dry-run", "--out", str(tmp_path)])
+    assert "no entry in the pricing table" not in capsys.readouterr().out
+
+
+# --- the consent prompt ---
+
+
+def test_free_run_is_not_asked_to_approve_spending(monkeypatch, tmp_path, capsys):
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Free())
+    _refuse_input(monkeypatch, "a free provider must not be asked to approve spending")
+
+    assert run_eval.main(["--out", str(tmp_path)]) == 0
+    assert "Spend real money" not in capsys.readouterr().out
+
+
+def test_paid_run_is_still_asked_to_approve_spending(monkeypatch, tmp_path):
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Paid())
+    monkeypatch.setenv("STUDYFORGE_COST_LIMIT_USD", "3.00")
+    asked = _record_input(monkeypatch, "n")
+
+    assert run_eval.main(["--out", str(tmp_path)]) == 1
+    assert asked and "Spend real money" in asked[0]
+
+
+def test_paid_run_declined_aborts_before_any_generation(monkeypatch, tmp_path, capsys):
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Paid())
+    monkeypatch.setenv("STUDYFORGE_COST_LIMIT_USD", "3.00")
+    monkeypatch.setattr(
+        run_eval,
+        "run_course_eval",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("declined run must not generate")),
+    )
+    _record_input(monkeypatch, "n")
+
+    assert run_eval.main(["--out", str(tmp_path)]) == 1
+    assert "Aborted." in capsys.readouterr().out
+
+
+def test_paid_run_with_yes_flag_still_skips_the_prompt(monkeypatch, tmp_path):
+    run_eval = _stubbed_run(monkeypatch, tmp_path, _Paid())
+    monkeypatch.setenv("STUDYFORGE_COST_LIMIT_USD", "3.00")
+    _refuse_input(monkeypatch, "--yes must not prompt")
+
+    assert run_eval.main(["--yes", "--out", str(tmp_path)]) == 0
+
+
+# --- the cap guard, unweakened ---
+
+
+def test_free_provider_does_not_need_a_cost_cap(monkeypatch, tmp_path):
+    """The other side of test_preflight_refuses_without_a_cost_cap.
+
+    A cap on a free provider would be a cap on nothing, and MeteredLLM does not
+    apply one to an unpaid provider anyway. Pinned so that making the free path
+    honest cannot drift into refusing to run it.
+    """
+    from evals import run_eval
+
+    monkeypatch.setenv("STUDYFORGE_DB", str(tmp_path / "scratch.sqlite3"))
+    monkeypatch.delenv("STUDYFORGE_COST_LIMIT_USD", raising=False)
+    monkeypatch.setattr(run_eval, "get_provider", lambda: _Free())
+
+    env = run_eval.preflight()
+    assert env["is_paid"] is False
+    assert env["cost_limit_usd"] is None
+
+
+def test_free_run_without_a_cap_still_refuses_the_real_database(monkeypatch):
+    """The database guard is not about money and must not follow the price out."""
+    from evals import run_eval
+
+    monkeypatch.setenv("STUDYFORGE_DB", str(run_eval.BACKEND_DIR / "studyforge.sqlite3"))
+    monkeypatch.setattr(run_eval, "get_provider", lambda: _Free())
+    with pytest.raises(SystemExit):
+        run_eval.preflight()
