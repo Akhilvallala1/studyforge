@@ -14,7 +14,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import create_engine, event, or_
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from app import fsrs, generation, main, models, remediation, review
@@ -269,6 +269,11 @@ def test_reteach_is_charged_to_the_one_course_that_teaches_the_concept(client, m
     monkeypatch.setattr(main, "get_provider", lambda: provider)
     card_id, _, (course_id,) = _seed_struggling_concept(1)
 
+    # Counted before, because the group is a total over the whole database and other
+    # tests legitimately put their own re-teaches in it. What this test claims is that
+    # ITS call did not land there, which is a delta, not an absence.
+    unattributed_before = _calls_in(_group(client.get("/usage").json(), "remediation"))
+
     assert client.post(f"/review/cards/{card_id}/remediation").status_code == 200
     assert provider.calls == 1
 
@@ -281,7 +286,7 @@ def test_reteach_is_charged_to_the_one_course_that_teaches_the_concept(client, m
     assert charged["calls"] == 1  # this course was never generated, only re-taught
     assert charged["label"] == charged["title"]
     assert charged["note"] is None  # a course row needs no explaining
-    assert _group(usage, "remediation") is None
+    assert _calls_in(_group(usage, "remediation")) == unattributed_before
 
 
 def test_reteach_across_two_courses_stays_unattributed_and_is_not_called_a_failure(
@@ -754,31 +759,36 @@ def test_no_approximate_notice_when_every_call_was_exact_and_priced():
 def test_usage_blames_the_pricing_table_not_the_token_counts(client, monkeypatch):
     """End to end, against the real endpoint, for the case QA hit.
 
-    Left last in the file on purpose: it is the first thing in the suite to record an
-    approximate call, and the shared test database keeps it for good.
+    Scoped to the rows this run wrote, because the notice is a total over the whole
+    database and this test only owns the calls it made.
     """
     monkeypatch.delenv("STUDYFORGE_COST_LIMIT_USD", raising=False)
     monkeypatch.setattr(main, "get_provider", lambda: UnpricedPaidProvider())
 
     generated = client.post("/courses/generate", json={"text": "Priced by no table."})
     assert generated.status_code == 200
+    course_id = generated.json()["id"]
 
+    # This run's own rows. Counting missing token counts across the whole table would
+    # be a claim about every other test in the suite, and one of them adding a call
+    # with no token count would fail this test without touching what it is about.
     session = SessionLocal()
     try:
-        missing_counts = (
-            session.query(models.LlmCall)
-            .filter(
-                or_(
-                    models.LlmCall.input_tokens.is_(None),
-                    models.LlmCall.output_tokens.is_(None),
-                )
-            )
-            .count()
+        mine = (
+            session.query(models.LlmCall).filter(models.LlmCall.course_id == course_id).all()
         )
     finally:
         session.close()
-    assert missing_counts == 0, "no recorded call is missing a token count"
+    assert mine, "the generation recorded no calls"
+    for row in mine:
+        assert row.input_tokens is not None and row.output_tokens is not None
+        # Flagged approximate, with exact counts, which leaves the price as the only
+        # thing that can have been estimated. That is the whole of QA's finding.
+        assert row.approximate is True
 
     totals = client.get("/usage").json()["totals"]
     assert totals["approximate"] is True
-    assert totals["approximate_note"] == main.APPROXIMATE_NOTES[(False, True)]
+    # Names the cause this run introduced. Whether it ALSO names a missing token count
+    # depends on rows other tests wrote, so that half is not this test's to assert; the
+    # exact note for each combination of causes is pinned on isolated sessions above.
+    assert "pricing table" in totals["approximate_note"]
