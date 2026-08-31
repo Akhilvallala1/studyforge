@@ -1267,7 +1267,7 @@ GROUP_NOTES = {
         "at the time they were charged, commonly because several courses teach that "
         "concept, or because the lessons teaching it belong to no course. Whether the "
         "call succeeded is a separate question this group does not answer: a tutor call "
-        "that failed still records the tokens it spent, when the provider reported any, "
+        "that failed still records the tokens it spent, when the provider reported them, "
         "and is grouped by the same rule as one that worked."
     ),
     # "or from one still running" is not padding. Generation is synchronous and can take
