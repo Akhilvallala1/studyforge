@@ -13,22 +13,6 @@ const FIELD_CLASS =
 /** Which control should hold focus once the request has landed and the tree is committed. */
 type DeadlineFocus = "day" | "label" | "submit";
 
-/**
- * Where focus belongs after this form has been rebuilt, held OUTSIDE the component.
- *
- * A ref would be the house pattern and it cannot work here. The page keys this form on
- * the saved deadline, so that clearing a date empties the inputs rather than leaving the
- * learner staring at the value they just removed. That key is correct, and it means
- * every successful save and every clear UNMOUNTS this component and mounts a new one:
- * the instance that made the request is gone by the time focus needs placing, and any
- * ref it was holding died with it.
- *
- * One module variable is the smallest thing that survives that, and it is safe because
- * there is never more than one of these mounted. It is one form, on one course's plan
- * page. The failure path does not remount, and reads the same variable from the same
- * instance, so both routes share one mechanism instead of two.
- */
-let focusAfterRebuild: DeadlineFocus | null = null;
 
 /**
  * Setting, moving and clearing the one date this feature knows about.
@@ -58,22 +42,49 @@ export function DeadlineForm({ plan }: { plan: CoursePlan }) {
   const dayRef = useRef<HTMLInputElement>(null);
   const labelRef = useRef<HTMLInputElement>(null);
   const submitRef = useRef<HTMLButtonElement>(null);
+  const pendingFocus = useRef<DeadlineFocus | null>(null);
+
+  /*
+   * Reseed the inputs when the SAVED deadline changes, so clearing a date empties them
+   * rather than leaving the learner staring at the value they just removed.
+   *
+   * This is the behaviour the page used to get by keying this component on
+   * `plan.deadline`, and it is deliberately no longer implemented that way. A key
+   * implements a reset by DESTROYING the component, which meant every successful save
+   * unmounted the instance that had just made the request, taking its refs with it and
+   * forcing the focus intent into a module variable that outlived every instance that
+   * could clear it. Adjusting state during render is React's own answer to exactly this
+   * and gives the identical reset with the component left alive, so a plain ref works
+   * and dies with its own instance.
+   *
+   * COMPARES PROPS TO PROPS, never props to input state. Marking a day off refreshes
+   * this route too, so this component is re-rendered with an unchanged deadline while
+   * the learner may be part-way through typing a new one. Only a change in what the
+   * SERVER holds resets anything.
+   */
+  const [saved, setSaved] = useState({ day: plan.deadline, label: plan.deadline_label });
+  if (saved.day !== plan.deadline || saved.label !== plan.deadline_label) {
+    setSaved({ day: plan.deadline, label: plan.deadline_label });
+    setDay(plan.deadline ?? "");
+    setLabel(plan.deadline_label ?? "");
+    // The deadline moved, so whatever this said is about a request that is now history.
+    setError(null);
+  }
 
   /**
    * Put focus back once the response has landed and React has committed the new tree.
    *
    * GATED ON `pending`, which is the part that is easy to get wrong. A successful save
-   * starts a transition, and during it this instance is still mounted while the tree
-   * that replaces it is being built. Placing focus then would land it on a node about to
-   * be thrown away, and clearing the variable would leave the instance that actually
-   * needs it with nothing to read. So nothing happens until both flags are down, which
-   * on the success path is the first render of the rebuilt form.
+   * starts a transition, and this instance keeps rendering while the tree it is being
+   * updated into is built. Acting then would place focus against a half-updated screen
+   * and clear the intent before the render that needs it. So nothing happens until both
+   * flags are down.
    */
   useEffect(() => {
     if (pending) return;
-    const wanted = focusAfterRebuild;
+    const wanted = pendingFocus.current;
     if (!wanted) return;
-    focusAfterRebuild = null;
+    pendingFocus.current = null;
     // Only when the blur left focus nowhere. A learner who tabbed away mid-request is
     // where they want to be, and yanking them back is worse than the problem being
     // fixed. Same guard, and the same reason, as ReteachConcept's recovered branch.
@@ -92,7 +103,12 @@ export function DeadlineForm({ plan }: { plan: CoursePlan }) {
   }
 
   async function run(action: () => Promise<unknown>, after: DeadlineFocus) {
-    focusAfterRebuild = after;
+    // The explicit re-entry check the inputs' comment relies on. The disabled submit
+    // button already stops a second Enter, but a guarantee stated in a comment should
+    // not depend on the reader reconstructing that argument, and should survive the
+    // refactor that changes how the button is disabled. Same shape as ConceptTutor.send.
+    if (pending) return;
+    pendingFocus.current = after;
     setSaving(true);
     setError(null);
     try {
@@ -124,8 +140,8 @@ export function DeadlineForm({ plan }: { plan: CoursePlan }) {
             Date
           </label>
           {/* Never disabled, mid-request included. Disabling the focused control blurs
-              it to the body, and pressing Enter here again is already refused by the
-              pending flag in `run`. Same rule the tutor's composer follows. */}
+              it to the body, and a second submit from here is refused by the `pending`
+              check at the top of `run`. Same rule the tutor's composer follows. */}
           <input
             id="deadline-day"
             ref={dayRef}

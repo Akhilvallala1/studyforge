@@ -315,11 +315,14 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
             : "Changing the date works out a new weekly rate. It moves no review and un-completes no lesson, and clearing it puts the course back to where it was."}
         </p>
         {/*
-          Keyed on the saved deadline so that clearing it, or moving it from another tab,
-          resets the inputs. Without the key the form would keep showing the date the
-          learner just cleared, because its state was seeded once on first render.
+          NOT keyed on the deadline, and that is a deliberate reversal. The form does
+          still reseed its inputs when the saved deadline changes, so clearing a date
+          empties them; it now does that by adjusting its own state during render rather
+          than by being destroyed and rebuilt. The reset is identical and the component
+          survives its own mutations, which is what lets it hold the focus it has to
+          restore in an ordinary ref. See the comment on that reset in DeadlineForm.
         */}
-        <DeadlineForm key={plan.deadline ?? "none"} plan={plan} />
+        <DeadlineForm plan={plan} />
       </section>
 
       <CalendarSection plan={plan} />

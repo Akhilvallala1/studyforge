@@ -80,6 +80,11 @@ export function DaysOffControl({ daysOff }: { daysOff: DayOff[] }) {
     afterMessage: string | null,
     after: DayOffFocus,
   ) {
+    // The explicit re-entry check the inputs' comment relies on. The disabled submit
+    // button already stops a second Enter, but a guarantee stated in a comment should
+    // not depend on the reader reconstructing that argument, and should survive the
+    // refactor that changes how the button is disabled. Same shape as ConceptTutor.send.
+    if (pending) return false;
     pendingFocus.current = after;
     setSaving(true);
     setError(null);
@@ -125,8 +130,9 @@ export function DaysOffControl({ daysOff }: { daysOff: DayOff[] }) {
               Date
             </label>
             {/* Never disabled, mid-request included. Disabling the focused control
-                blurs it to the body, and a second submit is already refused by the
-                pending flag in `run`. Same rule the tutor's composer follows. */}
+                blurs it to the body, and a second submit from here is refused by the
+                `pending` check at the top of `run`. Same rule the tutor's composer
+                follows. */}
             <input
               id="day-off-day"
               ref={dayRef}
