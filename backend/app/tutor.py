@@ -92,9 +92,27 @@ BEYOND_MAX_SENTENCES = 3
 BEYOND_MAX_CHARS = 400
 
 # The bound on `ask`, the withheld move handed back in guided mode. Shorter than `beyond`
-# because it is one question rather than an aside, and it is rendered as plain text beside
-# `check` rather than as markdown. Cut through _hard_cut like everything else, so a long
-# one is trimmed instead of costing the learner the grounded explanation above it.
+# because it is one question rather than an aside. Cut through _hard_cut like everything
+# else, so a long one is trimmed instead of costing the learner the grounded explanation
+# above it.
+#
+# RENDERED AS MARKDOWN, through LessonMarkdown, exactly as `answer` and `beyond` are. This
+# said "as plain text beside `check`" and that was written before any UI existed, so it
+# described a decision nobody had taken; ConceptTutor.tsx took the other one.
+#
+# THE ASYMMETRY WITH `check` IS THE POINT, and it follows from what each field is rather
+# than from how much it is trusted. `ask` is the move withheld from the explanation
+# directly above it, so it is whatever that reasoning needs: a formula, a term, a step of
+# a list, a line of code. Rendering it flat would strip exactly the notation the move is
+# expressed in, which is the one thing the learner has to read precisely. `check` is one
+# recall question about the reply as a whole, prose by construction, and a text node is
+# the least an untrusted string can be given.
+#
+# BOTH ARE SAFE AND NEITHER IS SAFE BY ACCIDENT. react-markdown runs without rehype-raw,
+# so raw HTML in `ask` is inert, and React escapes a text node on its own. They are two
+# renderings of untrusted model output, chosen for what the field carries, not two trust
+# levels. A new field on this reply is exactly how one slips past sanitisation, so anything
+# added here needs the same decision made deliberately.
 ASK_MAX_CHARS = 300
 
 # The two reply modes. Answer mode explains and optionally ends with a recall question;
