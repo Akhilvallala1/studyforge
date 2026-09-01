@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
@@ -11,6 +11,15 @@ import type { DayOff } from "@/lib/types";
 const FIELD_CLASS =
   "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 " +
   "focus:border-zinc-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
+
+/**
+ * Which control should hold focus once the request has landed.
+ *
+ * "day" is where Unmark sends it, because the row that button lived on is gone by then:
+ * the refresh removes it from the list, so there is no control to return to. The form's
+ * date field is the nearest thing the learner would act on next.
+ */
+type DayOffFocus = "day" | "submit";
 
 /**
  * Marking and unmarking the days the learner will not be studying.
@@ -40,9 +49,38 @@ export function DaysOffControl({ daysOff }: { daysOff: DayOff[] }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const pending = saving || refreshing;
+  const dayRef = useRef<HTMLInputElement>(null);
+  const submitRef = useRef<HTMLButtonElement>(null);
+  const pendingFocus = useRef<DayOffFocus | null>(null);
+
+  /**
+   * Put focus back once the response has landed and React has committed the new tree.
+   *
+   * A ref is enough here, unlike the deadline form: nothing keys this component, so it
+   * survives its own mutations and the ref survives with it. The `pending` gate is still
+   * needed for the same reason, though. Unmarking removes a row from a list that only
+   * changes when the refresh commits, so acting before then would place focus while the
+   * row the learner was standing on is still there.
+   */
+  useEffect(() => {
+    if (pending) return;
+    const wanted = pendingFocus.current;
+    if (!wanted) return;
+    pendingFocus.current = null;
+    // Only when the blur left focus nowhere. A learner who moved on during the request
+    // is where they want to be, and yanking them back is worse than the problem.
+    if (document.activeElement !== document.body) return;
+    const target = wanted === "day" ? dayRef.current : submitRef.current;
+    target?.focus();
+  }, [pending, error, notice]);
 
   /** Returns whether the call succeeded, so a caller can clear its inputs only then. */
-  async function run(action: () => Promise<unknown>, afterMessage: string | null) {
+  async function run(
+    action: () => Promise<unknown>,
+    afterMessage: string | null,
+    after: DayOffFocus,
+  ) {
+    pendingFocus.current = after;
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -69,6 +107,7 @@ export function DaysOffControl({ daysOff }: { daysOff: DayOff[] }) {
       already
         ? `${formatDayKey(day)} was already marked off, so nothing changed. Its note is left as it was.`
         : null,
+      "submit",
     );
     // Keep what the learner typed when the call failed, so they can simply press again.
     if (ok && !already) setNote("");
@@ -85,12 +124,15 @@ export function DaysOffControl({ daysOff }: { daysOff: DayOff[] }) {
             >
               Date
             </label>
+            {/* Never disabled, mid-request included. Disabling the focused control
+                blurs it to the body, and a second submit is already refused by the
+                pending flag in `run`. Same rule the tutor's composer follows. */}
             <input
               id="day-off-day"
+              ref={dayRef}
               type="date"
               value={day}
               onChange={(event) => setDay(event.target.value)}
-              disabled={pending}
               className={`mt-1 ${FIELD_CLASS}`}
             />
           </div>
@@ -109,13 +151,13 @@ export function DaysOffControl({ daysOff }: { daysOff: DayOff[] }) {
               maxLength={200}
               placeholder="Travelling"
               onChange={(event) => setNote(event.target.value)}
-              disabled={pending}
               className={`mt-1 ${FIELD_CLASS}`}
             />
           </div>
         </div>
         <button
           type="submit"
+          ref={submitRef}
           disabled={pending || !day}
           className="mt-3.5 rounded-lg border border-zinc-300 px-4 py-2 text-[13px] font-medium transition-colors hover:border-zinc-500 disabled:opacity-60 dark:border-zinc-700 dark:hover:border-zinc-500"
         >
@@ -158,6 +200,7 @@ export function DaysOffControl({ daysOff }: { daysOff: DayOff[] }) {
                   void run(
                     () => removeDayOff(entry.day),
                     `${formatDayKey(entry.day)} counts as a study day again.`,
+                    "day",
                   )
                 }
                 aria-label={`Unmark ${formatDayKey(entry.day)} as a day off`}

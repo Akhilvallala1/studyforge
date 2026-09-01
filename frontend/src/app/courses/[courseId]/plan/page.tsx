@@ -35,10 +35,33 @@ export const dynamic = "force-dynamic";
  * client components that refresh this route when they land.
  */
 
-/** A weekly rate as one decimal, matching the figure the .ics description quotes. */
+/**
+ * A weekly rate as one decimal, matching the figure the .ics description quotes.
+ *
+ * A SMALL NONZERO RATE DOES NOT ROUND TO ZERO. One lesson left and a deadline six months
+ * out is 0.04 a week, and toFixed(1) renders that as "0.0", so the prose read "you need
+ * about 0.0 lessons a week to get through the remaining 1 lesson": a number telling the
+ * learner they need to do nothing, about work they still have to do. Zero itself is a
+ * real answer and keeps its own spelling, reachable only when no lessons remain.
+ */
+const RATE_FLOOR = 0.05;
+
 function formatRate(value: number): string {
   if (value === 0) return "0";
+  if (value < RATE_FLOOR) return "less than 0.1";
   return value.toFixed(1);
+}
+
+/**
+ * The same rate as it reads inside a sentence.
+ *
+ * "about" has to come off the floor case or the prose says "about less than 0.1", which
+ * hedges a bound that is already exact. Everything else keeps it, because a figure
+ * rounded to one decimal is an approximation and should say so.
+ */
+function ratePhrase(value: number): string {
+  if (value !== 0 && value < RATE_FLOOR) return "less than 0.1";
+  return `about ${formatRate(value)}`;
 }
 
 /** "your Midterm" when they named it, "your deadline" when they did not. */
@@ -143,7 +166,7 @@ function paceSentences(plan: CoursePlan): string[] {
     );
   } else if (plan.required_per_week !== null) {
     lines.push(
-      `You need about ${formatRate(plan.required_per_week)} lessons a week to get through the remaining ${lessonCount(plan.lessons_remaining)} before ${deadlineName(plan)}.`,
+      `You need ${ratePhrase(plan.required_per_week)} lessons a week to get through the remaining ${lessonCount(plan.lessons_remaining)} before ${deadlineName(plan)}.`,
     );
   } else {
     lines.push(requiredDashNote(plan));
@@ -151,7 +174,7 @@ function paceSentences(plan: CoursePlan): string[] {
 
   if (plan.observed_per_week !== null) {
     lines.push(
-      `Over the last 30 days you have averaged ${formatRate(plan.observed_per_week)} lessons a week in this course.`,
+      `Over the last 30 days you have averaged ${ratePhrase(plan.observed_per_week)} lessons a week in this course.`,
     );
   } else if (plan.observed_sample === 0) {
     lines.push(
@@ -309,8 +332,18 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
           Days off apply to every course, not just this one. A day marked here stops counting
           as a study day everywhere, so the weekly rate on your other courses moves too. It
           changes no review: your concepts still come back when they come back.
+          {/*
+            "between today and" rather than "before", and the difference is the whole
+            correctness of the sentence. `days_off_in_window` counts only days inside the
+            study window, which is today INCLUSIVE to the deadline EXCLUSIVE. The list
+            underneath comes from an endpoint with no date filter at all, and nothing
+            prunes it, so a day marked off last month sits there in plain view, falls
+            before the deadline in plain English, and is not in this count. "Before" made
+            the sentence contradict the list directly beneath it, permanently rather than
+            transiently. The count is right; the preposition was wrong.
+          */}
           {plan.status === "active" && offInWindow > 0
-            ? ` ${offInWindow} of the days below ${offInWindow === 1 ? "falls" : "fall"} before ${deadlineName(plan)}.`
+            ? ` ${offInWindow} of the days below ${offInWindow === 1 ? "falls" : "fall"} between today and ${deadlineName(plan)}.`
             : ""}
         </p>
         <DaysOffControl daysOff={daysOff} />
