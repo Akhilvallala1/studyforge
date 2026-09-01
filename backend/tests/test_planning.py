@@ -23,6 +23,8 @@ from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise
 
 import pytest
+from sqlalchemy import inspect
+from sqlalchemy.orm import Session
 
 from app import ics, models, planning
 from app.db import SessionLocal
@@ -810,3 +812,88 @@ def test_reading_a_plan_writes_nothing_to_the_scheduler():
         session.close()
 
     assert after == before
+
+
+# --------------------------------------------------------------------------
+# A course that predates the deadline columns
+# --------------------------------------------------------------------------
+#
+# BEHAVIOUR, NOT SCHEMA, which is why these live here rather than in
+# test_tutor_migration.py. That file proves the columns ARRIVE on an upgraded database
+# and compares shapes; these two prove the FEATURE answers correctly for a course that
+# was written before the columns existed. They read through the ORM and through
+# course_plan, so they would catch a migration that produced the right schema and the
+# wrong values, which a schema comparison cannot see.
+#
+# There is deliberately no third migration test file. Once the base in
+# test_tutor_migration.py is seeded and pinned at both revisions, a sibling file has no
+# independent claim left to make, and near-duplicate migration files go stale in exactly
+# the way that file's own header warns about.
+
+PRE_DEADLINE_COMMIT = "d453f50505a2e3fbd3171bde8f4deed1a6b194dc"
+
+
+@pytest.fixture
+def pre_deadline_database(tmp_path, monkeypatch):
+    """A populated database created before `deadline` existed, then upgraded by init_db.
+
+    Built from the same helpers test_tutor_migration.py uses, rather than a second copy
+    of them: one definition of "the schema at a pin" and one of "a realistic legacy
+    database". Skips on its own if the pin is unreachable in a shallow clone.
+    """
+    from sqlalchemy import create_engine
+
+    from app import db as db_module
+    from tests.test_tutor_migration import base_metadata, seed_base_rows
+
+    metadata = base_metadata(PRE_DEADLINE_COMMIT)
+    engine = create_engine(f"sqlite:///{tmp_path / 'legacy.sqlite3'}")
+    metadata.create_all(engine)
+    seed_base_rows(engine, metadata)
+
+    assert "deadline" not in {
+        column["name"] for column in inspect(engine).get_columns("courses")
+    }, "the pin no longer predates the deadline columns, so this fixture proves nothing"
+
+    monkeypatch.setattr(db_module, "engine", engine)
+    db_module.init_db()
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
+def test_a_course_written_before_the_upgrade_reads_back_with_no_deadline(pre_deadline_database):
+    """NULL, not "" and not a sentinel.
+
+    The columns were added with no default precisely so that "this course has no
+    deadline" has one spelling. A DEFAULT '' on the ALTER would give an old course an
+    empty-string deadline, which is falsy in Python and would mostly work, right up to
+    the first query that filters on deadline IS NOT NULL.
+    """
+    with Session(pre_deadline_database) as session:
+        course = session.query(models.Course).one()
+        assert course.title == "Optimization"
+        assert course.deadline is None
+        assert course.deadline_label is None
+
+
+def test_the_plan_of_a_pre_upgrade_course_is_the_no_deadline_shape(pre_deadline_database):
+    """The feature answering for a course older than itself, rather than raising.
+
+    This is the path that would actually break in front of the learner: course_plan reads
+    the course row and its lessons through mappers that now name two columns the original
+    database was created without. Without the migration step it raises OperationalError
+    here and, worse, on GET /courses, which has nothing to do with deadlines.
+    """
+    with Session(pre_deadline_database) as session:
+        course = session.query(models.Course).one()
+        plan = planning.course_plan(session, course)
+
+    assert plan["status"] == "none"
+    assert plan["deadline"] is None
+    assert plan["deadline_label"] is None
+    assert plan["required_per_week"] is None
+    assert plan["reason"] == "no_deadline"
+    assert plan["lessons_total"] == 1
+    assert plan["lessons_remaining"] == 1
