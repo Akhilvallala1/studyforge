@@ -91,6 +91,23 @@ DAY_TURNS = 40
 BEYOND_MAX_SENTENCES = 3
 BEYOND_MAX_CHARS = 400
 
+# The bound on `ask`, the withheld move handed back in guided mode. Shorter than `beyond`
+# because it is one question rather than an aside, and it is rendered as plain text beside
+# `check` rather than as markdown. Cut through _hard_cut like everything else, so a long
+# one is trimmed instead of costing the learner the grounded explanation above it.
+ASK_MAX_CHARS = 300
+
+# The two reply modes. Answer mode explains and optionally ends with a recall question;
+# guided mode explains up to the last move and hands that move back. See "Guided mode"
+# below for what the difference is and where it is defensible.
+#
+# The mode a reply was produced under is not a property the reply carries, which is why
+# these are passed to parse_reply explicitly. See parse_reply for why that argument has no
+# default.
+MODE_ANSWER = "answer"
+MODE_GUIDED = "guided"
+TUTOR_MODES = (MODE_ANSWER, MODE_GUIDED)
+
 # How many recent wrong answers the tutor is shown. Three is enough to see a pattern
 # and few enough that the tutor cannot recite the learner's whole failure history back
 # at them, which is the version of "personalized" nobody wants.
@@ -715,6 +732,129 @@ TUTOR_SYSTEM = TUTOR_SHARED.format(schema=_ANSWER_SCHEMA, mode_rules=_ANSWER_RUL
 # criterion depends on it.
 
 
+# --------------------------------------------------------------------------
+# Guided mode
+# --------------------------------------------------------------------------
+
+# WHAT GUIDED MODE IS, and more importantly what it is not. It is NOT a tutor that answers
+# a question with a question. That was ruled against and still is: asking someone to
+# retrieve what they have just said they cannot retrieve adds a failed attempt and teaches
+# nothing, which is the sentence answer mode opens with.
+#
+# What it is, is A PARTIAL ANSWER WITH THE LAST MOVE WITHHELD. The reply sets out
+# everything in the course that bears on the question, applies it up to but not including
+# the single move that produces the answer, and hands that move back. Every way it can
+# degrade goes TOWARD the shipped behaviour, a complete answer, rather than away from it
+# into a riddle: no `ask`, and the learner has an ordinary answer.
+#
+# WHY IT IS DEFENSIBLE HERE AND NOT IN GENERAL. ConceptTutor is mounted inside the
+# re-teaching panel, after ConceptPractice, so every learner who reaches it has been
+# flagged by needs_attention, read a plainer restatement and a worked example, and
+# probably taken a practice run. That is the example-to-problem transition, which is where
+# the completion effect and faded worked examples have specific evidence behind them. It
+# is not the moment of raw confusion, and if this ever moves somewhere that IS that
+# moment, the argument above does not move with it.
+#
+# THE LAST MOVE IS NOT ALWAYS A STEP. "The last step" means nothing for a concept that is
+# not a procedure, so the prompt names three shapes and lets the model pick the one that
+# fits what was asked. A prompt that only knew about procedures would produce its best
+# work on arithmetic and a riddle on everything else.
+#
+# THE RUNGS ARE A FADE, not a difficulty dial. Rung 1 withholds the final move itself.
+# Rung 2 states the method for that move outright and withholds only the specific value,
+# term or name it produces. There is no rung 3: below rung 2 there is nothing left to
+# withhold that is still worth asking for, and the honest move at that point is answer
+# mode, which is where the endpoint is expected to fall back to.
+GUIDED_RUNGS = (1, 2)
+
+_GUIDED_SCHEMA = """{
+  "answer": str,            # required, never empty; only what the supplied material supports
+  "beyond": str or null,    # optional; general knowledge the material does not cover
+  "ask": str or null        # optional; the one move you withheld, handed back as a question
+}
+All values are markdown strings, escaped the way JSON requires. Leave "beyond" or "ask" out, or \
+set them to null, when they do not apply. A reply with no non-empty "answer" is thrown away and \
+the learner is shown an error, so never send one."""
+
+# The rung sentence, which is the only text that differs between the two rungs. Kept as one
+# sentence each rather than as two whole rule blocks, so that the rungs cannot drift apart
+# on anything except the amount they withhold.
+_RUNG_RULES = {
+    1: """THIS TURN, WITHHOLD THE FINAL MOVE ITSELF. Give the method and the reasoning that lead \
+up to it, and leave the learner to make the move.""",
+    2: """THIS TURN, STATE THE METHOD FOR THE FINAL MOVE EXPLICITLY, and withhold only the \
+specific value, term or name that it produces. Name the operation to perform or the rule to \
+apply, and let "ask" request just the result of it.""",
+}
+
+# The four rules at the bottom of this block are PROMPT-LEVEL REQUESTS WITH NO DETECTION
+# BEHIND THEM, in the same position as the "handed in somewhere" line in the shared body.
+# They are worth asking for, the model will usually honour them, and nothing anywhere
+# checks that it did. No test asserts that any of them hold, and none should be written:
+# a test that passed against the fake provider would say only that the fixture was written
+# to agree with the prompt.
+#
+#   - The quiz-question rule. A still-open item asked in chat, answered by the learner,
+#     then confirmed by the tutor is one step away from the leak open_answer_item_ids
+#     exists to prevent. That function withholds the answer KEY; it cannot stop the model
+#     re-asking the question and grading the reply.
+#   - The case 3 rule. Withholding a step of something the course never taught is a riddle
+#     with no source, which is the failure mode this whole feature has to avoid.
+#   - The correct-attempt rule. A learner who has already made the move and is asked to
+#     make it again has been told their answer did not register.
+#   - The "handed in somewhere" line, which is in the shared body and unchanged.
+_GUIDED_RULES_TEMPLATE = """GIVE EVERYTHING BUT THE LAST MOVE. The learner has already been shown \
+a plainer restatement of this concept and a worked example, so a complete answer here would be the \
+third telling of it. In "answer", set out everything in the material that bears on their question \
+and carry it forward until exactly one move is left. Then stop, and put that one move in "ask" as \
+a single short question. The explanation comes first and the question comes last; do not open with \
+the question.
+
+WHICH MOVE IS THE LAST ONE depends on what was asked, so pick the shape that fits:
+- for a procedure, it is the final step;
+- for a definition or a classification, it is applying the definition to the case they asked about;
+- for a "why" question, it is the causal link between the two things you have just set side by side.
+
+WHATEVER YOU WITHHOLD MUST BE ANSWERABLE FROM THE EXPLANATION YOU JUST GAVE. Everything the learner \
+needs in order to make the move is in "answer", directly above it. A question they would have to \
+guess at, recall from elsewhere, or look up is a riddle rather than a step, and it is worse for \
+them than being told the answer outright.
+
+{rung}
+
+"check" is not used in this mode. Leave it out, or set it to null. The one question in this reply \
+is "ask", and there is never a second question underneath it.
+
+THREE MORE RULES FOR THIS MODE:
+- Do not use a quiz question from the material word for word as "ask". Ask about the step as it \
+arises in the explanation you just gave, in your own words.
+- If the material does not cover what was asked, which is case 3 above, answer it normally and \
+leave "ask" out. Withholding a step of something the course never taught is a riddle, not a lesson.
+- If the learner's message already contains a correct attempt at the move you were going to \
+withhold, say plainly that they have it and finish the explanation. Do not hand a further question \
+back to someone who has just made the move."""
+
+
+def guided_system(rung: int) -> str:
+    """The guided-mode system prompt at one rung, off the same body as answer mode.
+
+    A function rather than two constants because the rung is chosen per turn, and because
+    two constants would invite a third that shares only some of the body. Everything
+    except the schema and the rules block above comes from TUTOR_SHARED, so the injection
+    rules, the register split and the tone rules cannot fork.
+
+    Raises on an unknown rung rather than falling back to rung 1. A caller that computed a
+    rung this module does not know about has a bug in the fade, and quietly serving the
+    most withholding prompt is the wrong direction to fail in.
+    """
+    if rung not in _RUNG_RULES:
+        raise ValueError(f"Unknown guided rung: {rung!r}")
+    return TUTOR_SHARED.format(
+        schema=_GUIDED_SCHEMA,
+        mode_rules=_GUIDED_RULES_TEMPLATE.format(rung=_RUNG_RULES[rung]),
+    )
+
+
 def _scrub(text: str) -> str:
     """Untrusted text with all three fences and the separators defused."""
     return as_data(text, TUTOR_MARKERS)
@@ -869,17 +1009,29 @@ def build_prompt(
 
 
 class TutorReply(NamedTuple):
-    """A parsed reply. `beyond` and `check` are empty strings when absent.
+    """A parsed reply. `beyond`, `check` and `ask` are empty strings when absent.
 
-    The three fields map one to one onto TutorMessage.content, .beyond and
-    .check_question, which is the point: the grounded/ungrounded split survives from the
-    model's JSON into the row and back out into the next prompt's replay, and there is
-    no step where the two registers are flattened into one string.
+    The fields map one to one onto TutorMessage.content, .beyond, .check_question and
+    .ask, which is the point: the grounded/ungrounded split survives from the model's JSON
+    into the row and back out into the next prompt's replay, and there is no step where
+    the two registers are flattened into one string.
+
+    TWO DIFFERENT SPLITS RUN THROUGH THIS TUPLE and they are orthogonal. `answer` against
+    `beyond` is about PROVENANCE, course or not-course, and it is what the learner sees
+    two separate headings for. `check` against `ask` is about FORM, telling against
+    handing back, and it is what the mode decides. `ask` is grounded, so it sits on the
+    same side of the provenance split as `answer`: the move it asks for has to be
+    answerable from the explanation directly above it, or it is a riddle.
+
+    EXACTLY ONE of `check` and `ask` is ever non-empty, and the SERVER decides which,
+    never the model. parse_reply blanks the wrong one before this is constructed, so
+    nothing downstream has to consider a row carrying both.
     """
 
     answer: str
     beyond: str = ""
     check: str = ""
+    ask: str = ""
 
 
 # A sentence is everything up to and including its terminator, plus the whitespace that
@@ -935,27 +1087,53 @@ def truncate_beyond(text: str) -> str:
     return _hard_cut("".join(pieces).strip(), BEYOND_MAX_CHARS)
 
 
-def parse_reply(text: str) -> TutorReply:
-    """The model's reply as a TutorReply, or ValueError.
+def parse_reply(text: str, mode: str) -> TutorReply:
+    """The model's reply as a TutorReply, or ValueError. `mode` is the EFFECTIVE mode.
 
-    `answer` is required, and its absence is a parse failure rather than something to
-    salvage, exactly as remediation.parse_note treats a missing restatement. A reply
-    carrying only a `beyond` is a confident paragraph of general knowledge with the one
-    heading that would have told the learner it was not from their course now standing
-    over nothing. Raising here is what lets the caller answer 502 and write no rows,
-    rather than persisting half a reply whose halves can no longer be told apart.
+    `answer` is required in both modes, and its absence is a parse failure rather than
+    something to salvage, exactly as remediation.parse_note treats a missing restatement.
+    A reply carrying only a `beyond` is a confident paragraph of general knowledge with
+    the one heading that would have told the learner it was not from their course now
+    standing over nothing. Raising here is what lets the caller answer 502 and write no
+    rows, rather than persisting half a reply whose halves can no longer be told apart.
 
-    `beyond` and `check` are optional and come back as empty strings, so callers branch
-    on truthiness and never on None, and so they can be written straight into
+    `beyond`, `check` and `ask` are optional and come back as empty strings, so callers
+    branch on truthiness and never on None, and so they can be written straight into
     TutorMessage columns that default to "". `beyond` is truncated on the way through,
-    which is the only place that cap is applied.
+    which is the only place that cap is applied, and `ask` is cut to ASK_MAX_CHARS in the
+    same spirit.
+
+    WHY `mode` HAS NO DEFAULT, and this is the whole design rather than a style choice. A
+    default of MODE_ANSWER lets a call site forget to pass one and parse a guided reply in
+    answer mode: `ask` is dropped, `answer` is kept, the learner who asked to work it out
+    is handed a finished answer instead, and NOTHING ANYWHERE FAILS. There is no exception,
+    no log line, and no field on the row to notice afterwards that the reply was rendered
+    in the wrong form. With no default that same omission is a TypeError at the call site,
+    at import-time-adjacent speed, in the caller's own test run.
+
+    That is also why the argument is the effective mode and never the requested one. What
+    was asked for and what was served come apart whenever the fade falls back, and the
+    field the server blanks has to be decided by what the model was actually PROMPTED
+    with. Passing the request through here would blank `check` on a reply produced by the
+    answer-mode prompt.
+
+    THE SERVER DECIDES which of `check` and `ask` survives; the model only proposes. A
+    model that emits both, or emits the wrong one for its mode, cannot produce a row
+    carrying two questions, so nothing downstream needs to rank them.
     """
+    if mode not in TUTOR_MODES:
+        # A caller bug rather than a model failure, and worth separating from the schema
+        # errors below: those mean the model answered badly, this means nothing valid was
+        # ever asked for. effective_mode is the only intended source of this argument.
+        raise ValueError(f"Unknown tutor mode: {mode!r}")
     parsed = generation.parse_json_response(text)
     answer = _clean_text(parsed.get("answer"))
     if not answer:
         raise ValueError("Tutor reply is missing answer")
+    guided = mode == MODE_GUIDED
     return TutorReply(
         answer=answer,
         beyond=truncate_beyond(_clean_text(parsed.get("beyond"))),
-        check=_clean_text(parsed.get("check")),
+        check="" if guided else _clean_text(parsed.get("check")),
+        ask=_hard_cut(_clean_text(parsed.get("ask")), ASK_MAX_CHARS) if guided else "",
     )
