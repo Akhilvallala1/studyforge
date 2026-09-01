@@ -200,6 +200,49 @@ def clear_days_off() -> None:
         session.close()
 
 
+def clear_lesson_completions() -> None:
+    """Clear completed_at on every lesson. Call before anything that reads the observed pace.
+
+    THE RULE THIS EXISTS FOR: any test whose assertion depends on observed_per_week,
+    observed_sample or finish_projection needs this first, and it became necessary the
+    moment planning.observed_pace started counting completions ACROSS EVERY COURSE.
+
+    Note what changed rather than what broke. While the pace was scoped to one course, a
+    test got isolation for free: it built its own course, and no other course's lessons
+    could reach its numbers. Widening the query deleted that guarantee without deleting
+    anything else, so every course any test has ever completed a lesson in now feeds the
+    denominator of every later pace assertion, in one shared SQLite file. A test asserting
+    "sample == 4" quietly becomes 4 plus whatever ran before it, which is not a failure
+    anyone would trace back to the test that caused it.
+
+    Here in conftest for the reason clear_days_off is here: it is the same hazard in a new
+    costume, and writing it out per file is how two copies drift apart.
+
+    A BLANKET UPDATE, like clear_days_off and unlike clear_todays_tutor_turns. Nothing
+    seeds a completion at a fixed past date to prove where a boundary falls, so there is
+    no fixture here for a scoped version to protect, and a window-scoped clear would be
+    worse than useless because the row that poisons a sample is precisely the one another
+    test left OUTSIDE the window under test.
+
+    Rows are UPDATED, not deleted. Lessons, courses and attempts all survive; only the
+    completion timestamps reset. Deleting the courses would cascade into quiz items and
+    attempts and take out data other files rely on, to fix a problem that is entirely
+    about one column.
+    """
+    from app import models
+    from app.db import SessionLocal, init_db
+
+    init_db()
+    session = SessionLocal()
+    try:
+        session.query(models.Lesson).filter(models.Lesson.completed_at.isnot(None)).update(
+            {models.Lesson.completed_at: None}
+        )
+        session.commit()
+    finally:
+        session.close()
+
+
 @pytest.fixture
 def client():
     from fastapi.testclient import TestClient
