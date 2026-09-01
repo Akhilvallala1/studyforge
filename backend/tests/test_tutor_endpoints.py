@@ -1076,6 +1076,117 @@ def test_a_mode_nobody_answers_in_is_refused_before_the_provider_is_called(
     assert _rows(key) == []
 
 
+def _post_mode(client, key: str, mode):
+    """POST with `mode` PRESENT and set to exactly this JSON value, whatever its type.
+
+    Not _ask, which omits the key when mode is None. Omission and an explicit null are
+    different requests and this file has to be able to send both.
+    """
+    return client.post(
+        "/tutor/messages",
+        json={"concept_key": key, "message": "I do not understand this", "mode": mode},
+    )
+
+
+# A mode of the wrong TYPE. Several types rather than one, because the interesting
+# implementations of this fix are the ones that handle SOME of them: an annotation widened
+# to str | int passes the integer case and fails every other row here, and that is exactly
+# the mutation a single-case test would wave through. Containers and null are in for the
+# same reason, since a hand-rolled isinstance check is easy to write for scalars alone.
+_WRONG_TYPE_MODES = [7, None, [], {}, True, 1.5, ["guided"], {"mode": "guided"}]
+
+
+@pytest.mark.parametrize("mode", _WRONG_TYPE_MODES, ids=repr)
+def test_a_mode_of_the_wrong_type_is_refused_exactly_like_one_of_the_wrong_value(
+    client, monkeypatch, mode
+):
+    """QA's finding, and the assertion is the EQUIVALENCE rather than the status code.
+
+    A wrong type and a wrong value are the same mistake from the caller's side, so the two
+    refusals are compared body to body rather than each being checked against a shape.
+    That is the property the fix is for: before it, a `mode` of the wrong type never
+    reached this endpoint's code at all, because pydantic rejected it first, and the
+    learner would have been shown "Input should be a valid string" out of a raw array of
+    validation objects.
+
+    A shape check alone would pass against a fix that produced a DIFFERENT well-formed
+    error for the type case, which would still leave a client with two paths to write.
+    """
+    provider = TutorProvider()
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, _, _ = _seed()
+
+    wrong_type = _post_mode(client, key, mode)
+    wrong_value = _post_mode(client, key, "socratic")
+
+    assert wrong_type.status_code == wrong_value.status_code == 422
+    assert wrong_type.json() == wrong_value.json()
+    detail = wrong_type.json()["detail"]
+    assert detail == {"error": "invalid_mode", "message": main.INVALID_MODE_MESSAGE}
+    assert provider.calls == 0
+    assert _rows(key) == []
+
+
+def test_omitting_mode_and_sending_null_are_different_requests(client, monkeypatch):
+    """The third case, and the one where treating null as absent would be wrong.
+
+    Omission is a client that predates guided mode, and it has to keep working untouched:
+    answer mode, a complete reply, no withheld move. An explicit null is a client that
+    meant to say something and said nothing, which is a bug in the caller worth reporting
+    rather than a request to be quietly defaulted. Coercing null to "answer" would make
+    that bug invisible for exactly as long as it took to ship.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: TutorProvider())
+    key, _, _ = _seed()
+
+    omitted = _ask(client, key)
+    explicit_null = _post_mode(client, key, None)
+
+    assert omitted.status_code == 200, omitted.json()
+    assert omitted.json()["mode"] == tutor.MODE_ANSWER
+    assert omitted.json()["reply"]["ask"] is None
+
+    assert explicit_null.status_code == 422
+    assert explicit_null.json()["detail"] == {
+        "error": "invalid_mode",
+        "message": main.INVALID_MODE_MESSAGE,
+    }
+
+
+@pytest.mark.parametrize("field", ["concept_key", "message"])
+def test_other_fields_keep_the_frameworks_validation_shape(client, monkeypatch, field):
+    """THE BOUNDARY OF THIS FIX, asserted so that moving it is a decision and not a diff.
+
+    Every string field on every hand-validated body in main.py has the gap `mode` had: a
+    wrong TYPE is rejected by pydantic before the endpoint runs and comes back as the raw
+    array, while a wrong VALUE reaches the hand-rolled check and comes back in the good
+    shape. Measured across concept_key, message, day, note, deadline and label; all six
+    behave the same way.
+
+    Only `mode` was widened, because it is the field the guided UI is about to start
+    sending and because doing all six is a decision about this API's error shape rather
+    than a bug fix. This test pins the other two on THIS route so the narrow fix cannot
+    silently become a wide one, and so that widening it later is a deliberate edit here
+    rather than a change nobody notices. It asserts today's behaviour; it does not argue
+    that today's behaviour is right.
+    """
+    provider = TutorProvider()
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, _, _ = _seed()
+    body = {"concept_key": key, "message": "I do not understand this"}
+    body[field] = 7
+
+    answered = client.post("/tutor/messages", json=body)
+
+    assert answered.status_code == 422
+    assert isinstance(answered.json()["detail"], list), (
+        f"{field} now answers a wrong type in the hand-rolled shape. If that was "
+        f"deliberate, this test is where the decision gets recorded; if it was a side "
+        f"effect of widening `mode`, the fix reached further than it was scoped to."
+    )
+    assert provider.calls == 0
+
+
 def test_the_mode_check_sits_third_in_the_precedence_and_not_first(client, monkeypatch):
     """The order the endpoint fixes, at the two boundaries the new entry created.
 

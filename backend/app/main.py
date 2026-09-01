@@ -3,6 +3,7 @@ import os
 import uuid
 from collections import defaultdict
 from datetime import UTC, date, datetime
+from typing import Any
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile
@@ -1000,16 +1001,38 @@ class TutorQuestion(BaseModel):
     Guided mode is opt in per request, never inferred from the learner's message, their
     mastery bucket, or how many times they have missed the concept.
 
-    A plain `str` rather than a Literal, deliberately. Pydantic would reject an unknown
-    value with its own 422 whose detail is a list of validation objects, and every other
-    tutor refusal is {"error": ..., "message": ...}. A client parsing this endpoint's
-    errors would meet two unrelated shapes from one route, so the check is hand rolled
-    below and takes its place in the precedence list with the others.
+    `mode` IS TYPED Any AND VALIDATED BY HAND, which looks like giving up on the schema
+    and is the opposite. A Literal would reject an unknown value with pydantic's own 422,
+    whose detail is a list of validation objects, and every other tutor refusal is
+    {"error": ..., "message": ...}; a client parsing this route's errors would meet two
+    unrelated shapes from one route. So the check was hand rolled from the start.
+
+    A plain `str` only got that half right, and QA found the other half. Pydantic rejects a
+    mode of the wrong TYPE before this endpoint's code runs at all, so {"mode": 7} and
+    {"mode": null} escaped the hand-rolled check and came back as exactly the raw array it
+    exists to avoid, with "Input should be a valid string" as the sentence a learner would
+    have been shown. A wrong type and a wrong value are THE SAME MISTAKE from the caller's
+    side, and they now produce the same refusal, because widening the annotation is what
+    lets both reach one code path and one message.
+
+    THIS IS A NARROW FIX ON A WIDE HOLE, and the boundary is deliberate rather than an
+    oversight. Every string field on every hand-validated body in this file has the same
+    gap: concept_key, message, day, note, deadline and label all answer a wrong TYPE with
+    the raw array while answering a wrong VALUE in the good shape. `mode` is fixed alone
+    because it is the field the guided UI is about to start sending, and widening the rest
+    is an API-wide decision about error shape rather than a bug fix.
+    test_other_fields_keep_the_frameworks_validation_shape records that boundary, so
+    changing it later is a decision someone makes rather than a diff nobody notices.
+
+    Explicit null is a wrong value here, not an absent one: omitting `mode` gives answer
+    mode, and sending null gives invalid_mode. That asymmetry is right. Omission is a
+    client that predates the feature, and null is a client that meant to say something and
+    said nothing, which is worth telling it about.
     """
 
     concept_key: str
     message: str
-    mode: str = tutor.MODE_ANSWER
+    mode: Any = tutor.MODE_ANSWER
 
 
 def _tutor_invalid(code: str, message: str) -> HTTPException:
