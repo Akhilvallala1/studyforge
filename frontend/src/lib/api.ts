@@ -521,6 +521,20 @@ export function coursePlanIcsUrl(id: number): string {
   return `${BASE_URL}/courses/${id}/plan.ics`;
 }
 
+/**
+ * What the downloaded calendar file will be called, so the screen can say so.
+ *
+ * MIRRORS ics.download_filename, which owns this shape. Restating it rather than reading
+ * it back off the response is safe for the same reason the server hardcodes it: the only
+ * variable in the name is an integer primary key. The course title is deliberately not in
+ * it, because a title is LLM output and a title in a Content-Disposition header is header
+ * injection rather than a badly named file. That is what makes the shape stable enough to
+ * mirror; if the server ever changes it, this changes with it.
+ */
+export function coursePlanIcsFilename(id: number): string {
+  return `studyforge-course-${id}.ics`;
+}
+
 /** Every day the learner has marked off, oldest first. Global, not per course. */
 export function listDaysOff(): Promise<DaysOff> {
   return get("/plan/days-off");

@@ -4,8 +4,15 @@ import { notFound } from "next/navigation";
 import { CourseTabs } from "@/components/CourseTabs";
 import { DaysOffControl } from "@/components/DaysOffControl";
 import { DeadlineForm } from "@/components/DeadlineForm";
-import { ApiError, coursePlanIcsUrl, getCoursePlan, listDaysOff } from "@/lib/api";
+import {
+  ApiError,
+  coursePlanIcsFilename,
+  coursePlanIcsUrl,
+  getCoursePlan,
+  listDaysOff,
+} from "@/lib/api";
 import { formatDayKey } from "@/lib/copy";
+import { serverToday, splitDaysOff } from "@/lib/plan";
 import type { CoursePlan, DayOff } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -111,6 +118,36 @@ function studyDaysSentence(plan: CoursePlan): string | null {
     return `${head}, once the ${dayCount(off)} you have marked off are taken out. The deadline day itself is not counted, since that is the day you need to already know it.`;
   }
   return `${head}. The deadline day itself is not counted, since that is the day you need to already know it.`;
+}
+
+/**
+ * How many of the learner's upcoming days off the weekly rate actually counts.
+ *
+ * THE COUNT AND THE VISIBLE LIST ARE DIFFERENT SETS, and this sentence exists to keep
+ * that from being a contradiction. `days_off_in_window` counts [today, deadline). The
+ * list defaults to today onward, which is a SUPERSET: a day marked after the deadline is
+ * upcoming and uncounted. So the sentence never says "the days below" are the counted
+ * ones. It names the subset out of the total, and when the two sets happen to coincide it
+ * says so rather than printing "3 of 3".
+ *
+ * "your upcoming days off" rather than "the days below", deliberately: opening the
+ * earlier-days disclosure puts more days below without changing which ones are counted,
+ * and a sentence that said "below" would quietly go false the moment it was opened.
+ *
+ * Empty when nothing is counted. A learner whose only days off are after the deadline has
+ * a denominator this feature never touched, and the paragraph above already says what a
+ * day off does.
+ */
+function daysOffCountSentence(plan: CoursePlan, upcomingCount: number): string {
+  const counted = plan.days_off_in_window ?? 0;
+  if (plan.status !== "active" || counted === 0) return "";
+  const name = deadlineName(plan);
+  if (counted === upcomingCount) {
+    return upcomingCount === 1
+      ? ` Your one upcoming day off falls between today and ${name}.`
+      : ` All ${upcomingCount} of your upcoming days off fall between today and ${name}.`;
+  }
+  return ` ${counted} of your ${upcomingCount} upcoming days off ${counted === 1 ? "falls" : "fall"} between today and ${name}.`;
 }
 
 /**
@@ -239,10 +276,11 @@ function CalendarSection({ plan }: { plan: CoursePlan }) {
         <div className="mt-3 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-zinc-200 px-5 py-4 dark:border-zinc-800">
           <p className="max-w-lg text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-400">
             One all-day event on {formatDayKey(plan.deadline)}, with where you stand written
-            into it. This is a file you download and open once, not an address your calendar
-            keeps checking: a calendar provider on the internet cannot reach a server running
-            on your own machine. Download it again after changing the date and it updates the
-            same entry rather than adding a second one.
+            into it. It saves as {coursePlanIcsFilename(plan.course_id)}. This is a file you
+            download and open once, not an address your calendar keeps checking: a calendar
+            provider on the internet cannot reach a server running on your own machine.
+            Download it again after changing the date and it updates the same entry rather
+            than adding a second one.
           </p>
           <a
             href={coursePlanIcsUrl(plan.course_id)}
@@ -258,7 +296,10 @@ function CalendarSection({ plan }: { plan: CoursePlan }) {
 
 function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) {
   const studyDays = studyDaysSentence(plan);
-  const offInWindow = plan.days_off_in_window ?? 0;
+  // The same split the list renders, so the sentence and the list can never be counting
+  // different things. One definition, two callers.
+  const today = serverToday(plan);
+  const upcomingDaysOff = splitDaysOff(daysOff, today).upcoming.length;
 
   return (
     <>
@@ -335,21 +376,9 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
           Days off apply to every course, not just this one. A day marked here stops counting
           as a study day everywhere, so the weekly rate on your other courses moves too. It
           changes no review: your concepts still come back when they come back.
-          {/*
-            "between today and" rather than "before", and the difference is the whole
-            correctness of the sentence. `days_off_in_window` counts only days inside the
-            study window, which is today INCLUSIVE to the deadline EXCLUSIVE. The list
-            underneath comes from an endpoint with no date filter at all, and nothing
-            prunes it, so a day marked off last month sits there in plain view, falls
-            before the deadline in plain English, and is not in this count. "Before" made
-            the sentence contradict the list directly beneath it, permanently rather than
-            transiently. The count is right; the preposition was wrong.
-          */}
-          {plan.status === "active" && offInWindow > 0
-            ? ` ${offInWindow} of the days below ${offInWindow === 1 ? "falls" : "fall"} between today and ${deadlineName(plan)}.`
-            : ""}
+          {daysOffCountSentence(plan, upcomingDaysOff)}
         </p>
-        <DaysOffControl daysOff={daysOff} />
+        <DaysOffControl daysOff={daysOff} today={today} />
       </section>
     </>
   );
