@@ -76,6 +76,21 @@ class StubPaidProvider:
                     "worked_example": "Stub worked example, one step at a time.",
                 }
             )
+        elif "GIVE EVERYTHING BUT THE LAST MOVE" in system:
+            # Guided mode reaches here through the SAME phrase the answer-mode branch
+            # below matches, because both modes are built off one shared prompt body, so
+            # this has to be tested first. Without it a guided cost test would meter a
+            # reply in answer-mode shape: it parses, `ask` is empty because the model
+            # never sent one, and the test passes while exercising the degraded path.
+            # That is the failure this class's docstring describes, one level subtler,
+            # because here there is not even a parse error to notice.
+            text = json.dumps(
+                {
+                    "answer": "Stub guided answer, carried up to the last move.",
+                    "beyond": "Stub aside your course does not cover.",
+                    "ask": "What is the last move?",
+                }
+            )
         elif "answering a learner's question" in system:
             text = json.dumps(
                 {
