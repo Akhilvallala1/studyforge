@@ -90,7 +90,11 @@ BASE_COMMITS = (
     "d453f50505a2e3fbd3171bde8f4deed1a6b194dc",
 )
 
+# Named rather than indexed at the point of use, so a reader does not have to count.
 TUTOR_BASE = BASE_COMMITS[0]
+# The pin before courses.deadline. Imported by test_planning.py, which builds a
+# pre-upgrade database to test how the feature answers for a course older than itself.
+DEADLINE_BASE = BASE_COMMITS[1]
 
 MODELS_PATH = "backend/app/models.py"
 
@@ -279,31 +283,51 @@ def _row_counts(engine, tables) -> dict[str, int]:
         }
 
 
-def _schema(engine) -> dict[str, list[tuple]]:
-    """Every table's columns, in a form where any change to any of them compares unequal.
+def _schema(engine) -> dict[str, dict[str, tuple]]:
+    """Every table's columns KEYED BY NAME, so any change to any of them compares unequal.
 
-    Name, type, nullability, default, and primary-key membership. A widened String or a
-    column that quietly became nullable is as much of an ALTER that create_all cannot
-    perform as a brand new column is.
+    Type, nullability, default, and primary-key membership. A widened String or a column
+    that quietly became nullable is as much of an ALTER that create_all cannot perform as
+    a brand new column is.
 
-    THIS IS ALSO WHAT ENFORCES app/db.py's ONE INVARIANT, that an ALTER's DDL reflects
+    THIS IS WHAT ENFORCES app/db.py's ONE INVARIANT, that an ALTER's DDL reflects
     identically to what create_all emits for its mapped_column. It does that per column,
     for free, for every entry anyone ever appends to ADDED_COLUMNS, which is why the
-    `default` field is in this tuple and why loosening any of it to make a comparison
-    pass would quietly retire the only check on the whole mechanism.
+    `default` field is in the tuple and why loosening any of THOSE FOUR to make a
+    comparison pass would quietly retire the only check on the whole mechanism.
+
+    KEYED BY NAME RATHER THAN AN ORDERED LIST, WHICH IS A DELIBERATE LOOSENING, AND THE
+    ONLY ONE. This returned a list, so it compared physical column ORDER as well, and
+    that made the whole ADDED_COLUMNS mechanism quietly placement-dependent.
+    ALTER TABLE ADD COLUMN always APPENDS a column physically; create_all uses DECLARATION
+    order. Declare a new column beside the fields it relates to, as anyone naturally
+    would, and an upgraded database gets it last while a fresh one gets it in the middle,
+    with every per-column property byte-identical:
+
+        upgraded: [..., check_question, run_id, model, created_at, ask]
+        fresh:    [..., check_question, ask, run_id, model, created_at]
+
+    Same names, same shapes, different order. The real rule would then have been "append
+    your mapped_column at the END of its class", which was written down nowhere, and the
+    failure message pointed at the DDL string, which was correct. Nothing in this codebase
+    reads a column by position (ORM everywhere; the seeding above uses Core inserts with
+    named values), so ordinal position is cosmetic and is not compared.
+
+    DO NOT "RESTORE" STRICTNESS HERE without reintroducing that hidden rule and documenting
+    it as a fourth rule in app/db.py. The SET of column names is still compared, so a
+    missing or extra column fails exactly as loudly as before; only the order is free.
     """
     inspector = inspect(engine)
     return {
-        table: [
-            (
-                column["name"],
+        table: {
+            column["name"]: (
                 str(column["type"]),
                 bool(column["nullable"]),
                 str(column.get("default")),
                 bool(column.get("primary_key")),
             )
             for column in inspector.get_columns(table)
-        ]
+        }
         for table in inspector.get_table_names()
     }
 
@@ -430,11 +454,21 @@ def test_an_upgraded_database_ends_up_identical_to_a_fresh_one(databases):
     does not reflect what create_all emits (a stray DEFAULT '', a NOT NULL that the
     mapped_column does not carry, a mismatched width) fails here and nowhere else.
     """
+    # Names first, so a missing or extra column is reported as that column rather than
+    # as a diff of two large dictionaries.
+    for table in sorted(set(databases.upgraded) | set(databases.fresh)):
+        assert set(databases.upgraded.get(table, {})) == set(databases.fresh.get(table, {})), (
+            f"measured from {databases.ref[:12]}: {table} has a different SET of columns "
+            f"on an upgraded install than on a fresh one. A column added to an existing "
+            f"table needs an entry in ADDED_COLUMNS in app/db.py."
+        )
+
     assert databases.upgraded == databases.fresh, (
-        f"measured from {databases.ref[:12]}: an upgraded database and a fresh one "
-        f"disagree. Either a column was added to an existing table with no entry in "
-        f"ADDED_COLUMNS in app/db.py, or an entry there does not reflect what create_all "
-        f"emits for its mapped_column."
+        f"measured from {databases.ref[:12]}: an upgraded database and a fresh one agree "
+        f"on which columns exist but not on their shape, so an entry in ADDED_COLUMNS in "
+        f"app/db.py does not reflect what create_all emits for its mapped_column. Compare "
+        f"type, nullability, default and primary-key membership; physical column ORDER is "
+        f"deliberately not compared and cannot be the cause."
     )
 
 
@@ -460,12 +494,16 @@ def test_no_existing_table_gains_or_loses_a_column(databases):
     migration entry now passes, which is the right answer.
     """
     for table in databases.base:
+        assert set(databases.upgraded[table]) == set(databases.fresh[table]), (
+            f"{table} has a different SET of columns on an upgraded install (from "
+            f"{databases.ref[:12]}) than on a fresh one. create_all cannot ALTER, so a "
+            f"column added to this table needs an entry in ADDED_COLUMNS in app/db.py."
+        )
         assert databases.upgraded[table] == databases.fresh[table], (
-            f"{table} has a different shape on an upgraded install (from "
-            f"{databases.ref[:12]}) than on a fresh one. create_all cannot ALTER, so "
-            f"either this branch changed the table without adding an entry to "
-            f"ADDED_COLUMNS in app/db.py, or the entry it added does not reflect what "
-            f"create_all builds."
+            f"{table} has the same columns on an upgraded install (from "
+            f"{databases.ref[:12]}) as on a fresh one but not the same shapes, so an "
+            f"ADDED_COLUMNS entry in app/db.py does not reflect what create_all builds. "
+            f"Physical column ORDER is deliberately not compared and cannot be the cause."
         )
 
 
@@ -535,7 +573,7 @@ def test_beyond_and_check_question_are_separate_columns(databases):
     check_question rather than `check` because CHECK is reserved SQL. SQLAlchemy quotes it
     correctly; a raw-SQL session or a future Postgres path would not.
     """
-    names = [name for name, *_ in databases.upgraded[NEW_TABLE]]
+    names = databases.upgraded[NEW_TABLE]
 
     assert "beyond" in names
     assert "check_question" in names
@@ -563,7 +601,7 @@ def test_the_deadline_columns_reach_an_upgraded_database(databases):
     a green suite and an install that will not boot. Do not read this test as making the
     seeding optional.
     """
-    columns = {name: rest for name, *rest in databases.upgraded["courses"]}
+    columns = databases.upgraded["courses"]
 
     for name, expected_type in (("deadline", "VARCHAR(10)"), ("deadline_label", "VARCHAR(200)")):
         column_type, nullable, default, primary_key = columns[name]

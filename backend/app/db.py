@@ -30,21 +30,44 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False)
 # `deadline` to courses without a step here breaks GET /courses, not the deadline
 # feature, because every read through the Course mapper emits every mapped column.
 #
-# HOW TO ADD A COLUMN: append one line to ADDED_COLUMNS below, and seed its table in
-# backend/tests/test_tutor_migration.py if nothing seeds it yet (a guard test there will
-# tell you if so). That is the whole procedure. It is a table rather than a function
-# body precisely so that the next person copies a LINE and not a TECHNIQUE.
+# HOW TO ADD A COLUMN: declare the mapped_column in models.py wherever it belongs, then
+# append one line to ADDED_COLUMNS below. Seed its table in
+# backend/tests/test_tutor_migration.py if nothing seeds it yet; a guard test there will
+# tell you if so, and every table currently named here is already seeded. It is a table
+# rather than a function body precisely so that the next person copies a LINE and not a
+# TECHNIQUE.
+#
+# WHEREVER IT BELONGS is meant literally: put the column next to the fields it relates
+# to, not at the end of the class. Physical column order is not compared; see the note on
+# ordinal position below. Two smaller things the one-line promise does not cover, so that
+# nobody discovers them mid-change: a server_default needs `text` imported from sqlalchemy
+# in models.py, and a NOT NULL column needs that server_default to keep upgraded == fresh.
 #
 # THE ONE INVARIANT EVERY ENTRY MUST SATISFY:
 #
 #     THE ALTER'S DDL MUST REFLECT IDENTICALLY TO WHAT create_all EMITS FOR THAT
-#     mapped_column.
+#     mapped_column: same type, same nullability, same default, same primary-key
+#     membership.
 #
 # Nobody has to enforce that by hand. test_tutor_migration.py's upgraded == fresh
 # comparison already does it per column, automatically, for every entry anyone ever
-# appends. That is also why _schema() over there compares name, type, nullability,
-# DEFAULT and primary-key membership rather than something looser: DO NOT LOOSEN IT TO
-# MAKE A COMPARISON PASS. The comparison failing is the mechanism working.
+# appends. That is also why _schema() over there compares type, nullability, DEFAULT and
+# primary-key membership rather than something looser: DO NOT LOOSEN IT TO MAKE A
+# COMPARISON PASS. The comparison failing is the mechanism working.
+#
+# ORDINAL POSITION IS THE ONE THING DELIBERATELY EXCLUDED, and it has to be, or this
+# whole table would carry a hidden rule. ALTER TABLE ADD COLUMN always APPENDS the
+# column physically, while create_all lays columns out in DECLARATION order. So a column
+# declared in the middle of its class (which is where it usually belongs, next to the
+# fields it relates to) lands last on an upgraded database and mid-table on a fresh one,
+# with every per-column property identical. If the comparison were order-sensitive, the
+# real rule would be "append your mapped_column at the END of its class", which appears
+# nowhere, is invisible until the entry is uncommented, and would fail in the PR of
+# whoever added the column rather than in the commit that introduced the rule.
+# `deadline` and `deadline_label` satisfy it only by the accident of sitting after
+# created_at. Nothing in this codebase reads a column by position: it is ORM everywhere,
+# and the test seeding uses Core inserts with named values. See _schema in
+# test_tutor_migration.py.
 #
 # There is deliberately NO rule here about whether to use a server default, because the
 # right answer depends on the column and a rule either way would be wrong half the time.

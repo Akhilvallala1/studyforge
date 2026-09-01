@@ -953,9 +953,6 @@ def test_an_unreadable_stored_deadline_does_not_take_an_endpoint_down(client):
 # independent claim left to make, and near-duplicate migration files go stale in exactly
 # the way that file's own header warns about.
 
-PRE_DEADLINE_COMMIT = "d453f50505a2e3fbd3171bde8f4deed1a6b194dc"
-
-
 @pytest.fixture
 def pre_deadline_database(tmp_path, monkeypatch):
     """A populated database created before `deadline` existed, then upgraded by init_db.
@@ -967,9 +964,13 @@ def pre_deadline_database(tmp_path, monkeypatch):
     from sqlalchemy import create_engine
 
     from app import db as db_module
-    from tests.test_tutor_migration import base_metadata, seed_base_rows
 
-    metadata = base_metadata(PRE_DEADLINE_COMMIT)
+    # The pin comes from the migration file rather than being restated here. One
+    # definition of "the schema before the deadline columns", and the append-a-pin
+    # rule lives next to it.
+    from tests.test_tutor_migration import DEADLINE_BASE, base_metadata, seed_base_rows
+
+    metadata = base_metadata(DEADLINE_BASE)
     engine = create_engine(f"sqlite:///{tmp_path / 'legacy.sqlite3'}")
     metadata.create_all(engine)
     seed_base_rows(engine, metadata)
