@@ -318,6 +318,34 @@ def test_fake_guided_drops_the_ask_when_the_course_does_not_cover_it():
     assert not reply.check
 
 
+def test_fake_guided_reaches_the_shape_that_carries_both_blocks():
+    """Case 2, which nothing else offline can reach, and the panel has to draw it.
+
+    The case 3 switch drops `ask` by design, so with only that switch `beyond` and `ask`
+    never appear together anywhere offline, and the one layout that shows the aside AND
+    the withheld move is a rendering branch nobody could get to by typing. That is how a
+    branch ships having never been looked at. "partly" is the switch that reaches it.
+
+    The rung still varies inside this shape, which is the other half of what it is for:
+    case 2 is where a fade and an aside coexist, and a fixture that flattened the rungs
+    here would say the two are exclusive.
+    """
+    provider = FakeProvider()
+
+    one = _guided_reply(provider, "does this partly hold?", rung=1)
+    two = _guided_reply(provider, "does this partly hold?", rung=2)
+
+    for reply in (one, two):
+        assert reply.answer and reply.beyond and reply.ask
+        assert not reply.check
+        assert len(reply.beyond) <= tutor.BEYOND_MAX_CHARS
+        assert len(reply.ask) <= tutor.ASK_MAX_CHARS
+    assert one.ask != two.ask
+    # "partly" wins over "beyond", so a question carrying both is still case 2.
+    both = _guided_reply(provider, "what is partly beyond this?")
+    assert both.beyond and both.ask
+
+
 def test_fake_guided_is_deterministic_and_concept_sensitive():
     provider = FakeProvider()
     first = _guided_reply(provider, "explain", concept="Backpropagation")

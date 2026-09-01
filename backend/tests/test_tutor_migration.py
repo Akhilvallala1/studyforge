@@ -97,6 +97,11 @@ MODELS_PATH = "backend/app/models.py"
 NEW_TABLE = "tutor_messages"
 NEW_INDEXES = {"ix_tutor_messages_concept_created", "ix_tutor_messages_created"}
 
+# Work-it-out mode's column on that table. The only ADDED_COLUMNS entry so far that is NOT
+# NULL with a constant default, and therefore the only one for which a row already in the
+# base has to come back reading something rather than NULL.
+ASK_COLUMN = "ask"
+
 
 def _git(*args: str) -> subprocess.CompletedProcess:
     here = Path(__file__).resolve().parent
@@ -524,23 +529,88 @@ def test_upgrading_twice_is_a_no_op(databases, monkeypatch):
     assert _schema(databases.upgraded_engine) == databases.upgraded
 
 
-def test_beyond_and_check_question_are_separate_columns(databases):
+def test_beyond_check_question_and_ask_are_separate_columns(databases):
     """The one decision here that cannot be fixed later.
 
-    beyond is what the tutor said that its material did not support, and check_question
-    is the question it asked back. Flattened into content as markdown, every row written
-    afterwards loses the grounded/ungrounded boundary permanently: the information is not
-    in the text, so no migration can recover it.
+    beyond is what the tutor said that its material did not support, check_question is the
+    question it asked back, and ask is the move a guided reply deliberately stopped short
+    of. Flattened into content as markdown, every row written afterwards loses the
+    boundary permanently: the information is not in the text, so no migration can recover
+    it. Flattening ask into check_question is the same loss one step smaller, and it takes
+    tutor.guided_run with it, since a run is counted by asking each row which of the two
+    it carries.
 
     check_question rather than `check` because CHECK is reserved SQL. SQLAlchemy quotes it
-    correctly; a raw-SQL session or a future Postgres path would not.
+    correctly; a raw-SQL session or a future Postgres path would not. `ask` needs no such
+    dodge and gets none, so the column name is the JSON key.
     """
     names = [name for name, *_ in databases.upgraded[NEW_TABLE]]
 
     assert "beyond" in names
     assert "check_question" in names
     assert "check" not in names
+    assert ASK_COLUMN in names
     assert "content" in names
+
+
+def test_the_ask_column_reaches_an_upgraded_database(databases):
+    """Work-it-out mode's own entry, and the DELIBERATE OPPOSITE of the deadline one.
+
+    The two columns took opposite decisions on both nullability and the default clause,
+    and each is right for its own case, which is why app/db.py refuses to have a rule
+    either way. An absent deadline means something, so it is NULL with no default. An
+    absent `ask` means the reply withheld nothing, which is a fact about the reply rather
+    than a gap in it, so it is '' and never NULL, and on an upgrade that is only reachable
+    if the ALTER carries the default with it.
+
+    WRITTEN BECAUSE THE GENERIC COMPARISONS DEMONSTRABLY DO NOT SEE THIS, and the
+    measurement is in test_the_deadline_columns_reach_an_upgraded_database's docstring:
+    with the base unseeded and a column mutated to NOT NULL with no default in models.py
+    and ADDED_COLUMNS together, upgraded == fresh passes, the per-table loop passes, the
+    mapped-column loop passes, and upgrading twice passes. Only the seeding guard and that
+    test caught it, and that test catches it by naming study planning's OWN two columns.
+    `ask` had no equivalent, so this is it. It is still a NARROW NET and still not a
+    substitute for the seeded base, which is the only thing that makes the bad ALTER fail
+    at all.
+    """
+    columns = {name: rest for name, *rest in databases.upgraded[NEW_TABLE]}
+    column_type, nullable, default, primary_key = columns[ASK_COLUMN]
+
+    assert column_type == "TEXT"
+    assert nullable is False
+    assert default == "''", "the server_default is what keeps upgraded equal to fresh"
+    assert primary_key is False
+
+
+def test_an_existing_conversation_backfills_to_empty_string(databases):
+    """The value a row that predates the column reads afterwards, which is '' and not NULL.
+
+    Two things are on trial and the fixture proves the first by reaching the assertions at
+    all: the ALTER has to RUN against a table with a row in it, which NOT NULL with no
+    default would not. What is asserted here is the second, and it is the reason the
+    default is a constant rather than NULL: a conversation written before guided mode
+    existed reads back as an unbroken run of answer-mode turns, so tutor.guided_run counts
+    it correctly with no special case for legacy rows. A NULL there would make every
+    pre-existing row a three-valued question for a column whose entire job is to be
+    checked for emptiness.
+
+    Skipped where the base predates tutor_messages, on the CONDITION rather than on a pin,
+    so appending a pin never has to touch this test.
+    """
+    from app import models
+
+    if NEW_TABLE not in databases.base:
+        pytest.skip(f"{databases.ref[:12]} predates {NEW_TABLE}, so it seeds no conversation")
+
+    with Session(databases.upgraded_engine) as session:
+        rows = session.query(models.TutorMessage).all()
+        assert rows, "the seeder for tutor_messages put no rows in the base"
+        for row in rows:
+            assert row.ask is not None, "an upgraded row must never read NULL"
+            assert row.ask == ""
+        # The rest of the row is untouched, so this is a backfill and not a rewrite.
+        assert rows[0].content == "Why downhill?"
+        assert rows[0].role == "learner"
 
 
 def test_the_deadline_columns_reach_an_upgraded_database(databases):

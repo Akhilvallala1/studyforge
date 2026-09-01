@@ -81,6 +81,10 @@ class TutorProvider:
     def __init__(self, payload: dict | None = None):
         self.calls = 0
         self.prompts: list[str] = []
+        # Every system prompt this provider was handed, in order. The mode a turn was
+        # SERVED in is not visible in the reply, so this is the only place a test can see
+        # which of the two prompts the endpoint actually chose.
+        self.systems: list[str] = []
         self.payload = payload if payload is not None else {
             "answer": "Grounded answer from your course.",
             "beyond": "A short aside your course does not cover.",
@@ -90,6 +94,7 @@ class TutorProvider:
     def generate(self, system: str, prompt: str, max_tokens: int = 64000):
         self.calls += 1
         self.prompts.append(prompt)
+        self.systems.append(system)
         return LLMResult(text=json.dumps(self.payload), input_tokens=90, output_tokens=40)
 
 
@@ -180,8 +185,14 @@ def _seed_turns(key: str, count: int, when=None) -> None:
         session.close()
 
 
-def _ask(client, key: str, message: str = "I do not understand this"):
-    return client.post("/tutor/messages", json={"concept_key": key, "message": message})
+def _ask(client, key: str, message: str = "I do not understand this", mode=None):
+    """One turn. `mode` OMITTED from the body entirely when it is None, not sent as
+    "answer", because the default on the wire is what a client predating guided mode
+    relies on and sending the value explicitly would never exercise it."""
+    body = {"concept_key": key, "message": message}
+    if mode is not None:
+        body["mode"] = mode
+    return client.post("/tutor/messages", json=body)
 
 
 def _rows(key: str) -> list[models.TutorMessage]:
@@ -453,6 +464,51 @@ def test_a_provider_that_never_answers_writes_no_rows_either(client, monkeypatch
     assert answered.status_code == 502
     assert provider.calls == 1
     assert _message_count() == messages_before
+
+
+class ProgrammingErrorProvider:
+    """A provider that raises the way a BUG raises, rather than the way a network does."""
+
+    name = "fake"
+    model = "buggy-model"
+    is_paid = False
+
+    def __init__(self):
+        self.calls = 0
+
+    def generate(self, system: str, prompt: str, max_tokens: int = 64000):
+        self.calls += 1
+        raise TypeError("parse_reply() missing 1 required positional argument: 'mode'")
+
+
+def test_a_programming_error_is_not_reported_as_a_provider_failure(client, monkeypatch):
+    """The broad `except Exception` around the provider call used to swallow this.
+
+    It answered 502 and logged "the provider call failed", which sends whoever reads it to
+    the network for a bug three lines above. That is not hypothetical: parse_reply takes
+    `mode` with NO DEFAULT precisely so a call site that forgets it fails loudly, and the
+    TypeError that produces is raised inside that try block. The mechanism worked in the
+    test suite, where the caller's own tests went red, and degraded to a misleading 502 in
+    production, which is the half nobody would have seen.
+
+    TypeError, AttributeError and NameError are re-raised now, so the error reaches the
+    framework with its traceback. TestClient re-raises server exceptions, so this asserts
+    the exception rather than a status code, which IS the behaviour under test.
+
+    Nothing has been added to the session at that point, so "a failed turn writes nothing"
+    is unaffected by which of the two paths a failure takes; the row counts below say so.
+    """
+    provider = ProgrammingErrorProvider()
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, _, _ = _seed()
+    before = _message_count()
+
+    with pytest.raises(TypeError):
+        _ask(client, key)
+
+    assert provider.calls == 1
+    assert _message_count() == before
+    assert _rows(key) == []
 
 
 def test_a_failed_turn_does_not_spend_one(client, monkeypatch):
@@ -907,6 +963,523 @@ def test_the_tutor_request_path_writes_only_tutor_messages(client, monkeypatch):
     after = _table_counts()
     moved = {name: after[name] - before[name] for name in after if after[name] != before[name]}
     assert moved == {"tutor_messages": 2, "llm_calls": 1}
+
+
+# --------------------------------------------------------------------------
+# Guided mode: the run, the fade, and the one place the mode is decided
+# --------------------------------------------------------------------------
+#
+# WHAT IS ON TRIAL HERE. Guided mode is a partial answer with the last move withheld, and
+# every way it can be got wrong is silent. A reply prompted to withhold but parsed in
+# answer mode drops `ask` and hands the learner a finished answer, which renders perfectly.
+# A run counted as "guided replies today" rather than as CONSECUTIVE ones caps the wrong
+# thing and nothing raises. A guided-state block computed before the insert is off by one
+# for exactly the request the learner is about to make. None of the three has a symptom
+# that a person looking at the panel would recognise as a bug.
+#
+# Written as mutation tests where it matters. Confirmed by making the change and watching
+# the right test go red:
+#   - count non-consecutive guided replies -> test_an_answered_turn_in_the_middle_...
+#   - decide the mode a second time from body.mode instead of threading the one value ->
+#     both halves of test_every_consumer_follows_the_one_mode_decision
+#   - compute the guided block before the insert -> test_the_guided_block_is_computed_...
+
+GUIDED_REPLY = {
+    "answer": "Everything your course gives you, carried up to the last move.",
+    "ask": "What is the last move?",
+}
+
+
+def _guided_run(key: str) -> int:
+    session = SessionLocal()
+    try:
+        return tutor.guided_run(session, key)
+    finally:
+        session.close()
+
+
+def _seed_reply(key: str, ask: str, when=None) -> None:
+    """One tutor row with (or without) a withheld move, at `when`.
+
+    A tutor row rather than a learner one, because the run is counted off replies. Seeded
+    directly so a test can put a run BEFORE the study-day boundary, which no sequence of
+    requests can do.
+    """
+    moment = days.day_bounds()[0] + timedelta(hours=1) if when is None else when
+    session = SessionLocal()
+    try:
+        session.add(
+            models.TutorMessage(
+                concept_key=key,
+                concept_label=key,
+                role=tutor.TUTOR_ROLE,
+                content="a grounded answer",
+                beyond="",
+                check_question="" if ask else "what does it take in?",
+                ask=ask,
+                run_id="",
+                model="",
+                created_at=moment,
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+
+def test_the_run_cap_is_the_number_of_rungs():
+    """One fact written twice, pinned together. A third rung added to the fade with
+    GUIDED_RUN_MAX left at 2 would stop the fade one rung short of itself, and nothing
+    else in the suite compares the two."""
+    assert tutor.GUIDED_RUN_MAX == len(tutor.GUIDED_RUNGS)
+
+
+def test_a_request_with_no_mode_is_answered_exactly_as_it_was_before(client, monkeypatch):
+    """AC 12, and the compatibility promise this whole feature rests on.
+
+    A client written before guided mode existed sends no `mode` key at all. It has to get
+    the behaviour it already had: an answer-mode prompt, a `check` question, no `ask`, and
+    a response that says so. Sending "answer" explicitly would not test this, which is why
+    _ask omits the key entirely when it is not asked for.
+    """
+    provider = TutorProvider()
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, _, _ = _seed()
+
+    body = _ask(client, key).json()
+
+    assert body["mode"] == tutor.MODE_ANSWER
+    assert body["reply"]["check"] == "What does it take in?"
+    assert body["reply"]["ask"] is None
+    assert provider.systems[-1] == tutor.TUTOR_SYSTEM
+
+
+@pytest.mark.parametrize("mode", ["socratic", "", "ANSWER", "guided ", "hint"])
+def test_a_mode_nobody_answers_in_is_refused_before_the_provider_is_called(
+    client, monkeypatch, mode
+):
+    """Hand rolled rather than a Pydantic Literal, so the detail shape matches the other
+    tutor errors. A Literal would answer 422 too, with a list of validation objects under
+    `detail`, and a client parsing this route's errors would meet two unrelated shapes."""
+    provider = TutorProvider()
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, _, _ = _seed()
+
+    answered = _ask(client, key, mode=mode)
+
+    assert answered.status_code == 422
+    detail = answered.json()["detail"]
+    assert detail["error"] == "invalid_mode"
+    assert detail["message"] == main.INVALID_MODE_MESSAGE
+    assert set(detail) == {"error", "message"}
+    assert provider.calls == 0
+    assert _rows(key) == []
+
+
+def test_the_mode_check_sits_third_in_the_precedence_and_not_first(client, monkeypatch):
+    """The order the endpoint fixes, at the two boundaries the new entry created.
+
+    An empty message and an over-long one are both wrong about the MESSAGE, and they are
+    decided first because they are cheaper and because a client that sent both a bad mode
+    and no message needs to hear about the message. A concept with no material is decided
+    AFTER, because that takes a read, and a request naming a mode this server does not
+    have is malformed whatever the concept turns out to hold.
+    """
+    provider = TutorProvider()
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, _, _ = _seed()
+
+    empty = _ask(client, key, "  ", mode="socratic").json()["detail"]
+    too_long = _ask(client, key, "q" * (tutor.MAX_MESSAGE_CHARS + 1), mode="socratic")
+    untaught = _ask(client, normalize_concept(f"Untaught {uuid4().hex[:8]}"), mode="socratic")
+
+    assert empty["error"] == "message_empty"
+    assert too_long.json()["detail"]["error"] == "message_too_long"
+    assert untaught.json()["detail"]["error"] == "invalid_mode"
+    assert provider.calls == 0
+
+
+def test_a_guided_turn_withholds_a_move_and_carries_no_check(client, monkeypatch):
+    """AC 1 and AC 2 on the served path: the answer is non-empty, `ask` is populated, and
+    `check` is empty because parse_reply blanks it in this mode rather than because the
+    prompt asked nicely. The provider sends both."""
+    provider = TutorProvider({**GUIDED_REPLY, "check": "a recall question"})
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, _, _ = _seed()
+
+    body = _ask(client, key, "walk me through it", mode=tutor.MODE_GUIDED).json()
+
+    assert body["mode"] == tutor.MODE_GUIDED
+    reply = body["reply"]
+    assert reply["answer"] == GUIDED_REPLY["answer"]
+    assert reply["ask"] == GUIDED_REPLY["ask"]
+    assert reply["check"] is None
+    # And the model was actually prompted to withhold, rather than the field being
+    # accepted off an answer-mode reply.
+    assert "GIVE EVERYTHING BUT THE LAST MOVE" in provider.systems[-1]
+
+
+def test_a_guided_reply_with_no_answer_is_a_502_that_writes_no_rows(client, monkeypatch):
+    """AC 1's other half. A guided reply that is ONLY a question is the thing this whole
+    feature must not become, so a reply carrying `ask` and no `answer` is refused exactly
+    as an answer-mode reply with no answer is, and the learner's message is not left in
+    the transcript with nothing under it."""
+    provider = TutorProvider({"ask": "what is the last move?"})
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, _, _ = _seed()
+    before = _message_count()
+
+    answered = _ask(client, key, mode=tutor.MODE_GUIDED)
+
+    assert answered.status_code == 502
+    assert provider.calls == 1
+    assert _message_count() == before
+    assert _rows(key) == []
+
+
+def test_an_answer_mode_reply_never_carries_a_withheld_move(client, monkeypatch):
+    """AC 2 mirrored, and the off-diagonal cell that matters here. A model that sends
+    `ask` in answer mode is handing a withheld move to a learner who was just given the
+    complete answer, and the server drops it rather than rendering a non sequitur."""
+    provider = TutorProvider({"answer": "The whole answer.", "ask": "and the last move?"})
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, _, _ = _seed()
+
+    body = _ask(client, key, mode=tutor.MODE_ANSWER).json()
+
+    assert body["mode"] == tutor.MODE_ANSWER
+    assert body["reply"]["ask"] is None
+    assert _rows(key)[-1].ask == ""
+
+
+def test_the_run_grows_by_one_a_turn_and_the_third_request_is_answered(client, monkeypatch):
+    """AC 3, end to end, which is the acceptance criterion this section exists for.
+
+    The third guided request on the same concept in the same day is a 200 carrying a
+    complete answer and mode "answer", NOT a refusal. The learner asked for help and gets
+    help; below rung 2 there is nothing left to withhold that is still worth asking for.
+    """
+    provider = TutorProvider(GUIDED_REPLY)
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, _, _ = _seed()
+    assert _guided_run(key) == 0
+
+    first = _ask(client, key, "one", mode=tutor.MODE_GUIDED).json()
+    assert first["mode"] == tutor.MODE_GUIDED
+    assert _guided_run(key) == 1
+
+    second = _ask(client, key, "two", mode=tutor.MODE_GUIDED).json()
+    assert second["mode"] == tutor.MODE_GUIDED
+    assert _guided_run(key) == 2
+
+    third_response = _ask(client, key, "three", mode=tutor.MODE_GUIDED)
+    third = third_response.json()
+
+    assert third_response.status_code == 200, third
+    assert third["mode"] == tutor.MODE_ANSWER
+    assert third["reply"]["ask"] is None
+    assert third["reply"]["answer"]
+    # The forced answer was prompted in answer mode, not merely parsed in it.
+    assert "GIVE EVERYTHING BUT THE LAST MOVE" not in provider.systems[-1]
+    # And it breaks the run, so the next guided request starts a fresh fade.
+    assert _guided_run(key) == 0
+
+
+def test_the_fade_advances_a_rung_per_turn(client, monkeypatch):
+    """The two rungs are a fade, and serving rung 1 twice would be invisible in the reply.
+
+    Rung 2 states the method for the final move outright and withholds only what it
+    produces, so the two prompts differ by exactly one sentence and only the system prompt
+    the provider was handed can say which one was sent.
+    """
+    provider = TutorProvider(GUIDED_REPLY)
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, _, _ = _seed()
+
+    _ask(client, key, "one", mode=tutor.MODE_GUIDED)
+    _ask(client, key, "two", mode=tutor.MODE_GUIDED)
+
+    assert provider.systems[0] == tutor.guided_system(1)
+    assert provider.systems[1] == tutor.guided_system(2)
+    assert provider.systems[0] != provider.systems[1]
+
+
+def test_an_answered_turn_in_the_middle_resets_the_run(client, monkeypatch):
+    """MUTATION TARGET. Count guided replies today rather than CONSECUTIVE ones and this
+    is the test that goes red.
+
+    Two guided turns with an answer-mode turn between them is a run of ONE, not two, and
+    the difference is the whole definition. The naive count would put the learner on rung
+    2 for a fade they restarted, and would cap them after two guided turns spread across
+    an afternoon of ordinary questions.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: TutorProvider(GUIDED_REPLY))
+    key, _, _ = _seed()
+
+    _ask(client, key, "one", mode=tutor.MODE_GUIDED)
+    assert _guided_run(key) == 1
+
+    monkeypatch.setattr(main, "get_provider", lambda: TutorProvider())
+    _ask(client, key, "just tell me", mode=tutor.MODE_ANSWER)
+    assert _guided_run(key) == 0, "an answer-mode reply has an empty ask, so it ends a run"
+
+    monkeypatch.setattr(main, "get_provider", lambda: TutorProvider(GUIDED_REPLY))
+    resumed = _ask(client, key, "three", mode=tutor.MODE_GUIDED).json()
+
+    assert resumed["mode"] == tutor.MODE_GUIDED
+    assert _guided_run(key) == 1
+    assert resumed["guided"]["run"] == 1
+
+
+def test_a_guided_turn_the_model_answered_outright_ends_the_run(client, monkeypatch):
+    """AC 5. The run is counted off what was WRITTEN, not off what was requested.
+
+    The guided prompt tells the model to leave `ask` out when the course does not cover
+    the question, because withholding a step of something never taught is a riddle. The
+    reply that comes back is an ordinary answer, so it ends the run, and a run counted off
+    the requested mode would have charged the learner a rung for a turn that withheld
+    nothing.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: TutorProvider(GUIDED_REPLY))
+    key, _, _ = _seed()
+    _ask(client, key, "one", mode=tutor.MODE_GUIDED)
+    assert _guided_run(key) == 1
+
+    monkeypatch.setattr(
+        main,
+        "get_provider",
+        lambda: TutorProvider({"answer": "Your course does not cover that.", "beyond": "An aside."}),
+    )
+    body = _ask(client, key, "two", mode=tutor.MODE_GUIDED).json()
+
+    assert body["mode"] == tutor.MODE_GUIDED, "the turn was still SERVED guided"
+    assert body["reply"]["ask"] is None
+    assert _guided_run(key) == 0
+    assert body["guided"]["run"] == 0
+
+
+def test_a_run_that_ended_before_the_study_day_boundary_does_not_count(client, monkeypatch):
+    """AC 4. The fade does not survive the night, and 04:00 is where the night ends.
+
+    A learner resuming mid-withholding on a concept they last saw yesterday would be asked
+    for a move whose supporting explanation is a day and a scroll away. Seeded rather than
+    driven through requests, because no sequence of requests can put rows before the
+    boundary.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: TutorProvider(GUIDED_REPLY))
+    day_start, _ = days.day_bounds()
+    key, _, _ = _seed()
+
+    _seed_reply(key, ask="yesterday's withheld move", when=day_start - timedelta(seconds=1))
+    _seed_reply(key, ask="and another", when=day_start - timedelta(hours=2))
+
+    assert _guided_run(key) == 0
+    body = _ask(client, key, "today", mode=tutor.MODE_GUIDED).json()
+
+    assert body["mode"] == tutor.MODE_GUIDED
+    assert body["guided"]["run"] == 1
+
+
+def test_the_run_is_scoped_to_its_concept(client, monkeypatch):
+    """A fade on one concept says nothing about another. The learner is not two rungs
+    into an idea they have not asked about yet."""
+    monkeypatch.setattr(main, "get_provider", lambda: TutorProvider(GUIDED_REPLY))
+    first, _, _ = _seed()
+    second, _, _ = _seed()
+
+    _ask(client, first, "one", mode=tutor.MODE_GUIDED)
+    _ask(client, first, "two", mode=tutor.MODE_GUIDED)
+
+    assert _guided_run(first) == tutor.GUIDED_RUN_MAX
+    assert _guided_run(second) == 0
+    assert _ask(client, second, "one", mode=tutor.MODE_GUIDED).json()["mode"] == tutor.MODE_GUIDED
+
+
+def test_learner_rows_between_replies_do_not_break_the_run(client, monkeypatch):
+    """A conversation alternates learner and tutor, so a run counted over EVERY row rather
+    than over tutor rows would cap at one and rung 2 would be unreachable."""
+    monkeypatch.setattr(main, "get_provider", lambda: TutorProvider(GUIDED_REPLY))
+    key, _, _ = _seed()
+
+    _ask(client, key, "one", mode=tutor.MODE_GUIDED)
+    _ask(client, key, "two", mode=tutor.MODE_GUIDED)
+
+    roles = [row.role for row in _rows(key)]
+    assert roles == ["learner", "tutor", "learner", "tutor"]
+    assert _guided_run(key) == 2
+
+
+def test_every_consumer_follows_the_one_mode_decision(client, monkeypatch):
+    """MUTATION TARGET, and the structural claim this design is for.
+
+    tutor.effective_mode is stubbed to DISAGREE with the request, in both directions. Every
+    consumer has to follow the stub: the system prompt sent, the field parse_reply keeps,
+    the row written, and the mode reported. A second computation anywhere, reading
+    body.mode or re-deriving the run, would follow the REQUEST instead and this fails.
+
+    That is what makes "enforced in one place but not the other" structurally unavailable
+    rather than something review has to notice. The specific failure it forecloses: the
+    model is prompted to withhold, the parser is told to expect a complete answer, `ask` is
+    dropped from a reply written around it, and the row that lands renders perfectly.
+    """
+    provider = TutorProvider({**GUIDED_REPLY, "check": "a recall question"})
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    monkeypatch.setattr(tutor, "effective_mode", lambda *a, **k: tutor.MODE_GUIDED)
+    key, _, _ = _seed()
+
+    # Asked for ANSWER, decided GUIDED.
+    forced_guided = _ask(client, key, "one", mode=tutor.MODE_ANSWER).json()
+
+    assert forced_guided["mode"] == tutor.MODE_GUIDED
+    assert forced_guided["reply"]["ask"] == GUIDED_REPLY["ask"]
+    assert forced_guided["reply"]["check"] is None
+    assert "GIVE EVERYTHING BUT THE LAST MOVE" in provider.systems[-1]
+    assert _rows(key)[-1].ask == GUIDED_REPLY["ask"]
+
+    # Asked for GUIDED, decided ANSWER.
+    monkeypatch.setattr(tutor, "effective_mode", lambda *a, **k: tutor.MODE_ANSWER)
+    forced_answer = _ask(client, key, "two", mode=tutor.MODE_GUIDED).json()
+
+    assert forced_answer["mode"] == tutor.MODE_ANSWER
+    assert forced_answer["reply"]["ask"] is None
+    assert forced_answer["reply"]["check"] == "a recall question"
+    assert "GIVE EVERYTHING BUT THE LAST MOVE" not in provider.systems[-1]
+    assert _rows(key)[-1].ask == ""
+
+
+def test_the_withheld_move_replays_under_the_grounded_label(client, monkeypatch):
+    """AC 6. Both halves, and each is a different mistake.
+
+    Dropped from the replay, the learner's next message is their attempt at a question the
+    model can no longer see, and it answers a question nobody asked. Replayed under the
+    BEYOND label, the model is told on the next turn that its own grounded reasoning was
+    an aside its course does not support, which is the one confusion in this conversation
+    that nothing downstream can detect.
+    """
+    provider = TutorProvider(GUIDED_REPLY)
+    monkeypatch.setattr(main, "get_provider", lambda: provider)
+    key, _, _ = _seed()
+
+    _ask(client, key, "one", mode=tutor.MODE_GUIDED)
+    _ask(client, key, "I think it is four", mode=tutor.MODE_GUIDED)
+
+    replay = provider.prompts[-1]
+    assert GUIDED_REPLY["ask"] in replay
+    grounded = f"{tutor.GROUNDED_LABEL} {GUIDED_REPLY['answer']}\n{GUIDED_REPLY['ask']}"
+    assert grounded in replay
+    assert f"{tutor.BEYOND_LABEL} {GUIDED_REPLY['ask']}" not in replay
+
+
+def test_the_guided_block_is_computed_after_the_insert(client, monkeypatch):
+    """AC 7. MUTATION TARGET: read the run before the insert and this goes red.
+
+    The turn just written is part of the run now, so the block the learner is shown has to
+    be what their NEXT request will be measured against. Computed before the insert it is
+    off by one for exactly the request they are about to make, and a panel would offer a
+    third guided turn the server has already decided to answer outright.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: TutorProvider(GUIDED_REPLY))
+    key, _, _ = _seed()
+
+    first = _ask(client, key, "one", mode=tutor.MODE_GUIDED).json()["guided"]
+    assert first == {"run": 1, "run_max": tutor.GUIDED_RUN_MAX, "available": True}
+
+    second = _ask(client, key, "two", mode=tutor.MODE_GUIDED).json()["guided"]
+    assert second == {"run": 2, "run_max": tutor.GUIDED_RUN_MAX, "available": False}
+
+    # And "available: False" is exactly the prediction the next request confirms.
+    third = _ask(client, key, "three", mode=tutor.MODE_GUIDED).json()
+    assert third["mode"] == tutor.MODE_ANSWER
+
+
+def test_the_get_reports_the_guided_state_the_post_serves(client, monkeypatch):
+    """One arithmetic, read by both endpoints, for the reason `limits` is.
+
+    A panel opening on an existing conversation has to know whether the work-it-out button
+    will work before the learner presses it. Counting `ask` fields in the array it happens
+    to hold would be a second definition of the run, living where it cannot be kept right.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: TutorProvider(GUIDED_REPLY))
+    key, _, _ = _seed()
+    _ask(client, key, "one", mode=tutor.MODE_GUIDED)
+    posted = _ask(client, key, "two", mode=tutor.MODE_GUIDED).json()["guided"]
+
+    described = _conversation(client, key).json()["guided"]
+
+    assert described == posted
+    assert described["available"] is False
+
+
+def test_a_conversation_nobody_has_started_reports_guided_available(client):
+    """The empty case, because a panel drawn on a concept nobody has asked about has to
+    offer the button rather than hide it."""
+    body = _conversation(client, normalize_concept(f"Never asked {uuid4().hex[:8]}")).json()
+
+    assert body["guided"] == {"run": 0, "run_max": tutor.GUIDED_RUN_MAX, "available": True}
+
+
+def test_just_tell_me_re_asks_in_answer_mode_and_the_transcript_keeps_both(client, monkeypatch):
+    """AC 14, the server half.
+
+    The learner asks the same question again in answer mode. THE DUPLICATE LEARNER ROW IS
+    WRITTEN AND THE TURN IS SPENT, and both are accepted plainly rather than deduplicated:
+    tutor_messages is append-only, the learner really did ask twice, and the second asking
+    bought a model call that has to be visible on /usage. What the transcript shows
+    afterwards is the guided reply AND the full answer, in order, which is the record of
+    what actually happened.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: TutorProvider(GUIDED_REPLY))
+    key, _, _ = _seed()
+    question = "how do I finish this step"
+    _ask(client, key, question, mode=tutor.MODE_GUIDED)
+
+    monkeypatch.setattr(main, "get_provider", lambda: TutorProvider())
+    told = _ask(client, key, question, mode=tutor.MODE_ANSWER).json()
+
+    assert told["mode"] == tutor.MODE_ANSWER
+    assert told["limits"]["concept_used"] == 2, "the second asking spent a turn"
+    rows = _rows(key)
+    assert [row.role for row in rows] == ["learner", "tutor", "learner", "tutor"]
+    assert rows[0].content == rows[2].content == question
+    assert rows[1].ask == GUIDED_REPLY["ask"]
+    assert rows[3].ask == ""
+    assert rows[3].check_question
+
+
+def test_the_guided_path_writes_only_tutor_messages(client, monkeypatch):
+    """AC 10, counted per table across a whole guided run.
+
+    Nothing in this path writes an attempt, a review log, or any column of a review card.
+    A withheld move is not a quiz question and the learner's next message is not an answer
+    to one, so nothing here is a rating and nothing may reach a schedule. Every column of
+    the card is compared too, because row counts alone would pass against an endpoint that
+    rewrote one in place.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: TutorProvider(GUIDED_REPLY))
+    key, _ = _seed_reviewed_concept()
+
+    session = SessionLocal()
+    try:
+        before_card = _card_columns(session, key)
+    finally:
+        session.close()
+    before = _table_counts()
+
+    assert _ask(client, key, "one", mode=tutor.MODE_GUIDED).status_code == 200
+    assert _ask(client, key, "I think it is four", mode=tutor.MODE_GUIDED).status_code == 200
+
+    after = _table_counts()
+    session = SessionLocal()
+    try:
+        after_card = _card_columns(session, key)
+    finally:
+        session.close()
+
+    moved = {name: after[name] - before[name] for name in after if after[name] != before[name]}
+    assert moved == {"tutor_messages": 4, "llm_calls": 2}
+    assert after_card == before_card
+    for table in ("attempts", "review_logs", "review_cards"):
+        assert after[table] == before[table]
 
 
 def test_the_tutor_endpoint_builds_no_row_but_a_tutor_message(client):

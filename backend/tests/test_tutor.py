@@ -739,6 +739,65 @@ def test_guided_system_rejects_a_rung_it_does_not_know():
 
 
 # --------------------------------------------------------------------------
+# The fade, as arithmetic, with no database in it
+# --------------------------------------------------------------------------
+
+
+def test_the_rung_walks_the_fade_in_order():
+    """A run of n has n rungs behind it, so the next turn takes GUIDED_RUNGS[n]."""
+    assert [tutor.guided_rung(run) for run in range(tutor.GUIDED_RUN_MAX)] == list(
+        tutor.GUIDED_RUNGS
+    )
+
+
+def test_guided_rung_raises_past_the_last_rung_rather_than_clamping():
+    """Clamping would serve rung 2 forever and look like it was working.
+
+    Reaching here with a run at or past the cap means the mode and the prompt were decided
+    separately, which is the split this design removes. effective_mode has already fallen
+    back to answer mode at that point, so the only way to arrive is a bug worth hearing
+    about.
+    """
+    for run in (-1, tutor.GUIDED_RUN_MAX, tutor.GUIDED_RUN_MAX + 5):
+        with pytest.raises(ValueError, match="No guided rung"):
+            tutor.guided_rung(run)
+
+
+def test_the_guided_payload_says_what_the_next_request_will_get():
+    """`available` is a PREDICTION about the next turn, not a description of the last one.
+
+    A panel draws its button off this, so the boundary is the whole of it: at one below
+    the cap the next guided request is still served guided, and at the cap it is not.
+    """
+    assert tutor.guided_payload(0) == {
+        "run": 0,
+        "run_max": tutor.GUIDED_RUN_MAX,
+        "available": True,
+    }
+    assert tutor.guided_payload(tutor.GUIDED_RUN_MAX - 1)["available"] is True
+    assert tutor.guided_payload(tutor.GUIDED_RUN_MAX)["available"] is False
+
+
+def test_system_prompt_consumes_the_mode_and_refuses_one_it_does_not_know():
+    """It branches on the mode; it never decides one. An unknown value is a caller bug,
+    and answering it with the answer-mode prompt would serve a turn the endpoint had
+    already decided to serve guided."""
+    assert tutor.system_prompt(None, "anything", tutor.MODE_ANSWER) == tutor.TUTOR_SYSTEM
+    for mode in ("socratic", "", "GUIDED", None):
+        with pytest.raises(ValueError, match="Unknown tutor mode"):
+            tutor.system_prompt(None, "anything", mode)
+
+
+def test_effective_mode_refuses_a_requested_mode_it_does_not_know():
+    """The endpoint validates the wire value first, so an unknown one here is a caller
+    that skipped that step. Quietly answering would hide it, and this is the only place
+    the mode is decided, so there is nowhere else for the error to surface."""
+    for requested in ("socratic", "", "ANSWER", None):
+        with pytest.raises(ValueError, match="Unknown tutor mode"):
+            tutor.effective_mode(None, "anything", requested)
+
+
+# --------------------------------------------------------------------------
 # Golden transcript, through the real prompt and the real parser
 # --------------------------------------------------------------------------
 
