@@ -46,6 +46,7 @@ between midnight and 04:00 even when it does not.
 import math
 from datetime import UTC, date, datetime, timedelta
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import days, models
@@ -61,6 +62,11 @@ PACE_WINDOW_DAYS = 30
 # would swing by a third every time one more landed. Callers get None and the sample
 # size, and the UI shows a dash. Exactly the discipline review.retention applies with
 # RETENTION_MIN_SAMPLE (review.py:578-601), for exactly the same reason.
+#
+# The sample counted against this is every course's completions, not one course's.
+# Scoped to a single course the threshold was not merely slow to reach, it was
+# UNREACHABLE for any course shorter than five lessons, which turned a sound
+# anti-noise rule into a permanent dash. See observed_pace.
 PACE_MIN_LESSONS = 5
 
 # status values. "passed" is a state the learner reaches by doing nothing at all: a
@@ -167,36 +173,56 @@ def available_days(session: Session, deadline: date, now: datetime | None = None
     }
 
 
-def observed_pace(
-    session: Session,
-    lessons: list[models.Lesson],
-    now: datetime | None = None,
-) -> dict:
-    """Lessons per week the learner has actually been completing, over 30 days.
+def observed_pace(session: Session, now: datetime | None = None) -> dict:
+    """Lessons per week the learner has been finishing, ACROSS EVERY COURSE, over 30 days.
 
-    Scoped to THIS COURSE's lessons, which the spec left open and which matters. The
-    figure sits next to required_per_week and the learner reads them as a pair: "you
-    need 4 a week, you have been doing 2.3". A rate measured across every course they
-    have ever opened is not comparable to a requirement measured on one, and the
-    comparison is the entire point of showing it.
+    WHAT THE NUMBER MEANS, because widening the query changed it and the meaning is the
+    part that leaves this module. It used to be "how fast you got through THIS course".
+    It is now "how fast you get through lessons, whichever course they belong to".
+    Anything rendering it has to say the second thing; the first is no longer true.
 
-    THE WINDOW IS A FIXED 720 HOURS, not thirty local days, and this is the one piece of
-    day arithmetic in this module that is NOT built out of days.py. It copies
-    review.retention (review.py:587-596) exactly: one cutoff at moment - 30 days and a
-    single >= comparison. Because it never decomposes the span into local days, there is
-    no DST transition for it to get wrong, and a rate over a month does not care whether
-    that month contained an hour more or less. Rebuilding it on day_bounds would add a
-    per-day loop, 30 boundary computations, and a class of bug, to move a denominator by
-    one part in 720.
+    WHY IT WIDENED. PACE_MIN_LESSONS is 5, and scoped to one course's own lessons that
+    threshold was not slow to reach, it was UNREACHABLE for any course with fewer than
+    five lessons: a permanent dash and never a finish projection, however much work the
+    learner did. The minimum itself is right and stays, because it is what stops the rate
+    lurching every time one more lesson lands. The SCOPE was the mistake.
+
+    WHAT IT COSTS, stated here so it is not discovered from a surprising date: this rate
+    is the learner's whole throughput, while lessons_remaining is one course's backlog.
+    For someone running several courses at once the two no longer describe the same
+    effort, and finish_projection built from them is a best case. See course_plan.
+
+    A LESSON COUNTS AT MOST ONCE, whatever the learner does to it. completed_at is a
+    single nullable column, not an event log: un-completing sets it back to NULL (see
+    uncomplete_lesson in main.py) and re-completing overwrites it. So there is no double
+    counting to defend against across courses, and a re-completed lesson simply re-enters
+    the window at its new timestamp.
+
+    Lessons of a DELETED course stop counting, because Course cascades to modules and
+    lessons, so the history goes with it and this rate drops retroactively. Nothing
+    deletes a course today, so that is a property to know before an endpoint does rather
+    than a bug to fix now.
+
+    THE WINDOW IS UNCHANGED: a fixed 720 HOURS, and still the one piece of day arithmetic
+    in this module NOT built out of days.py. It copies review.retention
+    (review.py:587-596) exactly, one cutoff at moment - 30 days and a single >=
+    comparison. Because it never decomposes the span into local days there is no DST
+    transition for it to get wrong, and a rate over a month does not care whether that
+    month contained an hour more or less.
+
+    Counted in SQL rather than in Python, which is the other half of the widening. The
+    caller only ever holds one course's lessons, and loading every lesson of every course
+    into memory to count a scalar would be a real cost on a large library.
     """
     moment = _naive_utc(models.utcnow() if now is None else now)
     cutoff = moment - timedelta(days=PACE_WINDOW_DAYS)
-    completed = [
-        lesson
-        for lesson in lessons
-        if lesson.completed_at is not None and _naive_utc(lesson.completed_at) >= cutoff
-    ]
-    sample = len(completed)
+    sample = (
+        session.query(func.count(models.Lesson.id))
+        .filter(models.Lesson.completed_at.isnot(None))
+        .filter(models.Lesson.completed_at >= cutoff)
+        .scalar()
+        or 0
+    )
     if sample < PACE_MIN_LESSONS:
         return {"observed_per_week": None, "observed_sample": sample}
     return {"observed_per_week": sample / PACE_WINDOW_DAYS * 7, "observed_sample": sample}
@@ -216,6 +242,16 @@ def finish_projection(
     thirty days it was measured over already contain whatever days the learner took off
     during them. Removing marked days from a rate that already reflects them would
     penalise the same absence twice.
+
+    THE SCOPES OF THE TWO ARGUMENTS DIFFER and the caller cannot fix it here.
+    observed_per_week now counts completions in EVERY course while lessons_remaining
+    counts this one, so for a learner with several courses in flight this returns the
+    date they would finish IF they spent their whole throughput on this course, and it
+    gets more optimistic the more courses they run. With one course the two scopes are
+    the same set and the projection is exact. Making it exact for the multi-course case
+    means projecting from this course's own share of the throughput, which is a different
+    number from the one the page displays, so it is a product decision rather than an
+    arithmetic fix.
     """
     if observed_per_week is None or observed_per_week <= 0:
         return None
@@ -227,9 +263,17 @@ def course_plan(session: Session, course: models.Course, now: datetime | None = 
     """Everything the plan screen needs, and deliberately nothing else.
 
     NOTE WHAT THIS FUNCTION NEVER TOUCHES: no concept, no card, no mastery bucket, no
-    retrievability. Its whole input is the course's lessons, their completed_at, the
-    deadline and the days off. The feature's boundary is not just documented at the top
-    of this file, it is visible in the call graph.
+    retrievability. Its inputs are this course's lessons, the deadline, the days off, and
+    a count of lesson completions across every course for the observed pace. The feature's
+    boundary is unchanged and still visible in the call graph: no concept data anywhere on
+    this path.
+
+    THE ONE PLACE THE SCOPES DIFFER, worth seeing here rather than inferring it from a
+    surprising date. observed_per_week counts EVERY course; lessons_remaining counts this
+    one. That is deliberate, and observed_pace says why the rate had to widen, but it
+    makes finish_projection a best case for a learner running several courses at once,
+    because it spends their whole throughput on this course's backlog. For a single
+    course the two scopes coincide and every number here is exactly what it was.
 
     A course with no deadline still gets a full answer rather than an error. The
     observed pace is real and worth showing either way, and the endpoint returning 200
@@ -238,7 +282,7 @@ def course_plan(session: Session, course: models.Course, now: datetime | None = 
     lessons = course_lessons(session, course)
     lessons_total = len(lessons)
     lessons_remaining = sum(1 for lesson in lessons if lesson.completed_at is None)
-    pace = observed_pace(session, lessons, now)
+    pace = observed_pace(session, now)
 
     payload = {
         "course_id": course.id,

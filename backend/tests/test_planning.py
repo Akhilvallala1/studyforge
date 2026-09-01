@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 
 from app import fsrs, ics, models, planning, review
 from app.db import SessionLocal
-from tests.conftest import clear_days_off
+from tests.conftest import clear_days_off, clear_lesson_completions
 
 # A fixed instant, so nothing here depends on the day the suite happens to run.
 NOON = datetime(2026, 9, 10, 12, 0, tzinfo=UTC)
@@ -45,11 +45,18 @@ def _completed(days_ago: float) -> datetime:
 
 
 @pytest.fixture(autouse=True)
-def _clean_days_off(monkeypatch):
-    """Every test in this file reads a study-day count, so every one needs a clean table.
+def _clean_planning_state(monkeypatch):
+    """Every test in this file reads a study-day count or a pace, so every one needs both
+    global tables clean.
 
-    Autouse for exactly that reason; see conftest.clear_days_off for why a stray row in a
-    global table is an order-dependent failure that surfaces long after it is introduced.
+    Autouse for exactly that reason; see conftest.clear_days_off and
+    conftest.clear_lesson_completions for why a stray row in a global table is an
+    order-dependent failure that surfaces long after it is introduced.
+
+    THE COMPLETIONS HALF IS NEW and arrived with the cross-course pace. While
+    observed_pace was scoped to one course, each test's own course isolated it for free.
+    Counting every course removed that, so without this a pace assertion here reads its
+    own completions plus every completion any earlier test in this file left behind.
 
     The timezone is pinned too. days.local_tz reads STUDYFORGE_TIMEZONE on every call, so
     a test elsewhere that sets it, or a developer with it set in their shell, would move
@@ -57,8 +64,10 @@ def _clean_days_off(monkeypatch):
     """
     monkeypatch.setenv("STUDYFORGE_TIMEZONE", "UTC")
     clear_days_off()
+    clear_lesson_completions()
     yield
     clear_days_off()
+    clear_lesson_completions()
 
 
 def _make_course(lesson_count=6, completed=(), title="Linear Algebra"):
@@ -369,12 +378,22 @@ def test_completions_older_than_the_window_do_not_count():
     assert plan["observed_per_week"] == pytest.approx(5 / 30 * 7)
 
 
-def test_the_observed_rate_counts_only_this_courses_lessons():
-    """It sits beside required_per_week and the learner reads them as a pair. A rate
-    measured across every course they have open is not comparable to a requirement
-    measured on one."""
+def test_the_observed_rate_counts_lessons_from_every_course():
+    """THE BEHAVIOUR CHANGE. This file asserted the exact opposite until the rate widened.
+
+    The old claim was that a cross-course rate is not comparable to a per-course
+    requirement. True as far as it went, and it cost more than it was worth: with
+    PACE_MIN_LESSONS at 5 and the sample scoped to one course, any course with fewer than
+    five lessons could never reach the threshold at all. The rate was not slow to appear,
+    it was unreachable, and the learner saw a permanent dash however much work they did.
+    """
+    # Twelve lessons with nine finished, so this course also leaves THREE unfinished
+    # elsewhere. That asymmetry is load-bearing: it is what lets the lessons_total and
+    # lessons_remaining assertions below fail if the widening ever leaks out of the rate
+    # and into the course-scoped counts. With the other course fully finished, a
+    # lessons_remaining that counted every course would still read 6 and prove nothing.
     _make_course(
-        lesson_count=9,
+        lesson_count=12,
         completed=[(index, _completed(1)) for index in range(9)],
         title="Some Other Course",
     )
@@ -382,8 +401,68 @@ def test_the_observed_rate_counts_only_this_courses_lessons():
 
     plan = _plan(course_id)
 
-    assert plan["observed_sample"] == 0
+    # THE RATE widens; the counts do not. Nine completions, none of them in this course.
+    assert plan["lessons_total"] == 6
+    assert plan["lessons_remaining"] == 6
+    assert plan["observed_sample"] == 9
+    assert plan["observed_per_week"] == pytest.approx(9 / 30 * 7)
+
+
+def test_a_learner_reaches_the_minimum_only_by_combining_courses():
+    """The case QA hit, in the shape a real learner hits it.
+
+    Three courses of two lessons each. No single one of them can ever reach five
+    completions, so before the widening every one showed a dash forever and no course in
+    this learner's library could produce a finish projection. Together they are a sample
+    of six.
+    """
+    for index in range(3):
+        _make_course(
+            lesson_count=2,
+            completed=[(0, _completed(3)), (1, _completed(2))],
+            title=f"Short Course {index}",
+        )
+    course_id = _make_course(lesson_count=4)
+
+    plan = _plan(course_id)
+
+    assert plan["observed_sample"] == 6
+    assert plan["observed_per_week"] == pytest.approx(6 / 30 * 7)
+    assert plan["finish_projection"] is not None
+
+
+def test_below_the_minimum_across_every_course_is_still_a_dash():
+    """The minimum SURVIVES the widening, which is the half of the decision that is easy
+    to lose. Four completions spread over two courses is still four, and four is still
+    not enough to quote a rate from."""
+    _make_course(
+        lesson_count=3,
+        completed=[(0, _completed(3)), (1, _completed(2))],
+        title="Other",
+    )
+    course_id = _make_course(lesson_count=3, completed=[(0, _completed(1))])
+
+    plan = _plan(course_id)
+
+    assert plan["observed_sample"] == 3
     assert plan["observed_per_week"] is None
+    assert plan["finish_projection"] is None
+
+
+def test_a_single_course_learner_sees_exactly_what_they_saw_before():
+    """AN EXTENSION, NOT A REDEFINITION. With one course in flight the cross-course sample
+    and that course's own sample are the same set, so every number on the page is
+    identical to what it was, including the projected date."""
+    course_id = _make_course(
+        lesson_count=12,
+        completed=[(index, _completed(index * 3)) for index in range(6)],
+    )
+
+    plan = _plan(course_id)
+
+    assert plan["observed_sample"] == 6
+    assert plan["observed_per_week"] == pytest.approx(6 / 30 * 7)
+    assert plan["finish_projection"] == "2026-10-10"
 
 
 def test_finish_projection_reads_from_the_observed_rate():
