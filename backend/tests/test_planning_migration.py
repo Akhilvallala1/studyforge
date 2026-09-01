@@ -7,11 +7,23 @@ the failure it was written for, a new TABLE, and it is blind to the failure this
 can have.
 
 SQLite ACCEPTS `ALTER TABLE ... ADD COLUMN ... NOT NULL` against an EMPTY table and
-REJECTS it against a table holding even one row. So a migration written with NOT NULL
-passes test_tutor_migration.py completely, passes on a developer's scratch database, and
-raises on every install that has ever been used. An empty fixture cannot see that class
-of bug at all. THE BASE DATABASE HERE HAS ROWS IN IT, and that is the whole reason the
-file is separate rather than three more tests over there.
+REJECTS it against a table holding even one row, so an empty fixture never executes the
+statement that fails on a real install.
+
+Be precise about that gap, because it is narrower than it first looks and the narrow
+version is the one worth defending. Both variants below were run as mutations against
+both files. If the ALTER says NOT NULL while the MAPPED COLUMN STAYS NULLABLE,
+test_tutor_migration.py does catch it, though not for the reason you would expect: the
+ALTER succeeds against its empty base, and the upgraded schema then disagrees with the
+fresh one about nullability. The variant it cannot see is the CONSISTENT one, where the
+column is declared NOT NULL in models.py and in _ADDED_COLUMNS together. Then upgraded
+and fresh agree, every comparison over there is satisfied, the suite is green, and every
+install that has ever been used raises "Cannot add a NOT NULL column with default value
+NULL" on its next boot.
+
+THE BASE DATABASE HERE HAS ROWS IN IT, which is what turns that second variant from a
+green suite into a failure during fixture setup, and it is the whole reason this is a
+separate file rather than three more tests over there.
 
 This is also the first change in the project's history to need a migration at all.
 create_all is checkfirst=True and cannot ALTER, so before app/db.py grew _ADDED_COLUMNS,
@@ -220,8 +232,10 @@ def databases(tmp_path, monkeypatch):
     """A POPULATED base-revision database upgraded by this branch, plus a fresh one.
 
     The seeding is what distinguishes this fixture from test_tutor_migration.py's, and
-    it is load-bearing rather than decorative: a NOT NULL variant of the ALTER in
-    app/db.py raises HERE, during setup, and would pass over there forever.
+    it is load-bearing rather than decorative: a column declared NOT NULL consistently in
+    models.py and in _ADDED_COLUMNS raises HERE, during setup, while every assertion in
+    the empty-base file stays green. See this module's docstring for why that particular
+    variant is the one that separates the two.
     """
     from app import db as db_module
 
