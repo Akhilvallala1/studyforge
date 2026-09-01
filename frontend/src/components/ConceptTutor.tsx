@@ -314,6 +314,19 @@ export function ConceptTutor({
    * effect rather than during render, which is where a ref belongs.
    */
   const pressed = useRef<TutorMode>("answer");
+  /**
+   * What was focused at the moment the question was sent.
+   *
+   * The composer is deliberately never disabled, so a Ctrl+Enter send leaves focus
+   * sitting in it and it never reaches the body. Without this, the only sends that
+   * could move focus were the ones whose control disabled itself, which made the
+   * keyboard path the one that did NOT take you to the answer.
+   *
+   * A node reference rather than a flag, because the question being asked is an
+   * identity one: is the thing focused now the same thing that was focused then. A
+   * node that has since unmounted simply stops matching, which is the right answer.
+   */
+  const focusAtSend = useRef<Element | null>(null);
 
   function load() {
     setLoading(true);
@@ -343,11 +356,14 @@ export function ConceptTutor({
   /**
    * Focus, once the response has landed and React has committed the new tree.
    *
-   * Every path through here starts with the send button becoming a real `disabled`,
-   * which blurs it to the body, so focus is never where the learner left it and always
-   * has to be placed. Where it goes says what to do next: onto the reply when there is
-   * one to read, back into the box when the text in it can be edited and sent again, and
-   * onto the send button when it cannot.
+   * Where it goes says what to do next: onto the reply when there is one to read, back
+   * into the box when the text in it can be edited and sent again, and onto the button
+   * that was pressed when it cannot.
+   *
+   * WHETHER it goes anywhere is the guard below, and the two questions are separate on
+   * purpose. A send from a button blurs that button to the body; a send from the
+   * composer with Ctrl+Enter blurs nothing, because the composer is never disabled. Both
+   * are a learner who has not moved, and both should be taken to the answer.
    */
   useEffect(() => {
     const wanted = pendingFocus.current;
@@ -361,15 +377,32 @@ export function ConceptTutor({
           : // Back to the button that was actually pressed, which is why the mode is
             // remembered rather than inferred.
             (pressed.current === "guided" ? guidedRef.current : askRef.current);
-    // Only when the blur left focus nowhere. A learner who tabbed away mid-request is
-    // where they want to be, and yanking them back is worse than the problem being
-    // fixed. Same guard, and the same reason, as ReteachConcept's recovered branch.
-    if (document.activeElement === document.body) target?.focus();
+    // Only when the learner has not moved since they sent. Two things satisfy that and
+    // they are not the same thing:
+    //
+    //   the body          a control disabled itself in flight and dropped focus, which
+    //                     is what both buttons do
+    //   where they sent   nothing took focus away, which is what a Ctrl+Enter send from
+    //                     the composer leaves, because the composer is never disabled
+    //
+    // Testing only the first is what made the two paths disagree: it is a proxy for "the
+    // learner is not somewhere they chose to be", and it is only true when a control
+    // happened to blur itself. Testing both asks that question directly.
+    //
+    // A learner who tabbed away mid-request still matches neither, and is left where
+    // they went. That is the case this guard exists for and it is the one thing here
+    // that must not regress.
+    const active = document.activeElement;
+    if (active === document.body || active === focusAtSend.current) target?.focus();
   }, [messages, notice, error, sending, guided]);
 
   async function send(mode: TutorMode) {
     if (sending) return;
     pressed.current = mode;
+    // Captured for every sender, button and keyboard alike, so the effect never has to
+    // know which one it was. Taken before anything is disabled, which is the only moment
+    // it is still true.
+    focusAtSend.current = document.activeElement;
     const question = draft.trim();
     if (!question) {
       // Announced as well as shown. Focus never leaves the box on this path, and a
