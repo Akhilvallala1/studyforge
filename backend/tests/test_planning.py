@@ -21,12 +21,13 @@ lines instead of inspecting characters.
 
 from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 
-from app import ics, models, planning
+from app import fsrs, ics, models, planning, review
 from app.db import SessionLocal
 from tests.conftest import clear_days_off
 
@@ -784,35 +785,173 @@ def test_an_llm_written_course_title_reaches_the_calendar_escaped(client):
 # --------------------------------------------------------------------------
 
 
-def test_reading_a_plan_writes_nothing_to_the_scheduler():
-    """MUST NOT, asserted rather than assumed. Study planning owns the rate new material
-    enters and touches nothing that is already in: no card is created, moved, or rated by
-    anything on this path."""
+def _table_rows(session, model):
+    """EVERY COLUMN OF EVERY ROW, in id order. Not a count.
+
+    A count cannot see an UPDATE, and an in-place update is exactly the shape the
+    forbidden change takes. Pulling review cards forward to beat a deadline creates
+    nothing, deletes nothing and writes no log; it only moves `due`. This assertion used
+    to compare (card_count, log_count) and a reviewer walked a silent one-day pull-
+    forward of every card straight past it with the whole suite green.
+    """
+    columns = [column.name for column in model.__table__.columns]
+    return [
+        {name: getattr(row, name) for name in columns}
+        for row in session.query(model).order_by(model.id).all()
+    ]
+
+
+def _scheduler_state(now):
+    """Everything the scheduler owns, and everything it would tell the learner.
+
+    The stored rows AND the derived answers. The rows alone would miss a change that
+    left review_cards untouched and still altered what the review screens say, and the
+    derived answers alone would miss a mutation that happens to keep the queue order.
+    """
+    session = SessionLocal()
+    try:
+        cards = _table_rows(session, models.ReviewCard)
+        logs = _table_rows(session, models.ReviewLog)
+        rows = session.query(models.ReviewCard).order_by(models.ReviewCard.id).all()
+        # preview(row, now), which is a pure function of one card, so any change to a
+        # card's stability, difficulty or state shows up here even if `due` survives.
+        previews = {row.concept_key: review.preview(row, now) for row in rows}
+        due = [row.concept_key for row in review.due_cards(session, now)]
+        counts = review.due_counts(session, now)
+    finally:
+        session.close()
+    return {"cards": cards, "logs": logs, "previews": previews, "due": due, "counts": counts}
+
+
+def _seed_cards(count=3):
+    """Real scheduled cards, so the comparison has something to be wrong about.
+
+    Unique concept keys per run because review_cards is keyed globally with a unique
+    constraint and the whole suite shares one database. Rated GOOD, so each card leaves
+    the "new" state and gets a stability, a difficulty and a due date: a card with all
+    three NULL cannot be pulled forward, and seeding those would make this test look
+    populated while still being unable to see the mutation it exists for.
+    """
+    session = SessionLocal()
+    try:
+        for _ in range(count):
+            key = f"planning-isolation-{uuid4().hex[:10]}"
+            review.record_review(session, key, key, fsrs.GOOD)
+        session.commit()
+    finally:
+        session.close()
+
+
+def test_no_planning_endpoint_touches_the_scheduler(client):
+    """THE MUST-NOT, asserted with teeth.
+
+    Study planning owns the rate new material enters. FSRS owns everything already in.
+    app/planning.py's header states it and models.UnavailableDay's docstring repeats it,
+    and prose enforces nothing: the previous version of this test compared row COUNTS,
+    on a course with no completed lessons, around a single call to planning.course_plan.
+    It was vacuous three ways over and a deliberate mutation that moved every card's due
+    date back by a day passed it without a murmur.
+
+    So this compares the FULL ROW SET of review_cards and review_logs, plus preview(),
+    due_cards() and due_counts(), plus the two review endpoints, around EVERY endpoint
+    this feature adds rather than around one module function. The write paths matter more
+    than the read: PUT and DELETE /deadline and the days-off endpoints all commit, and a
+    commit is where an accidental mutation of a card loaded into the same session would
+    actually land.
+    """
+    _seed_cards(3)
+    now = review.now_utc()
+
+    before = _scheduler_state(now)
+    assert len(before["cards"]) >= 3, (
+        "vacuous: with fewer than three scheduled cards this compares almost nothing to "
+        "almost nothing and would pass whatever the endpoints did. _seed_cards is what "
+        "keeps it honest; do not remove it."
+    )
+    # COUNTING IS NOT CHECKING, which is this test's own original mistake one level up.
+    # Three cards in the "new" state have due, stability and difficulty all NULL, so a
+    # mutation that moves every due date leaves them untouched: the count guard passes AND
+    # the test passes with the mutation live. Measured, not reasoned. What actually keeps
+    # this honest is the fsrs.GOOD rating inside _seed_cards, so assert the property that
+    # rating produces instead of trusting a docstring to describe it.
+    #
+    # Deliberately over the WHOLE snapshot rather than only the rows seeded here: every
+    # card the comparison covers ought to be one a mutation could move. If a future test
+    # leaves an unrated card behind and trips this, rate it there rather than narrowing
+    # this back to a count.
+    assert all(card["due"] is not None for card in before["cards"]), (
+        "a card in the snapshot has no due date, so nothing could pull it forward and it "
+        "contributes nothing to what this test can catch. Cards must be RATED, not merely "
+        "created; see _seed_cards."
+    )
+    queue_before = client.get("/review/queue").json()
+    today_before = client.get("/review/today").json()
+
     course_id = _make_course(lesson_count=5)
-    _set_deadline(course_id, "2026-09-20")
+    future = (planning.today() + timedelta(days=14)).isoformat()
+    day_off = (planning.today() + timedelta(days=3)).isoformat()
 
+    responses = [
+        client.put(
+            f"/courses/{course_id}/deadline", json={"deadline": future, "label": "Final"}
+        ),
+        client.get(f"/courses/{course_id}/plan"),
+        client.get(f"/courses/{course_id}/plan.ics"),
+        client.post("/plan/days-off", json={"day": day_off, "note": "travel"}),
+        client.get("/plan/days-off"),
+        client.delete(f"/plan/days-off/{day_off}"),
+        client.delete(f"/courses/{course_id}/deadline"),
+    ]
+    # Every one has to have actually run. A 404 or a 422 would make the comparison below
+    # true for the boring reason that nothing happened.
+    assert [response.status_code for response in responses] == [200] * 7
+
+    assert _scheduler_state(now) == before
+    assert client.get("/review/queue").json() == queue_before
+    assert client.get("/review/today").json() == today_before
+
+
+def test_available_days_reports_the_window_and_the_days_off_together():
+    """The public helper course_plan actually uses, rather than a second copy of it."""
     session = SessionLocal()
     try:
-        before = (
-            session.query(models.ReviewCard).count(),
-            session.query(models.ReviewLog).count(),
-        )
+        assert planning.available_days(session, date(2026, 9, 20), NOON) == {
+            "available_days": 10,
+            "days_off_in_window": 0,
+        }
     finally:
         session.close()
 
-    _plan(course_id)
+    # The third is outside the window and must not be counted.
+    _mark_off("2026-09-12", "2026-09-13", "2026-10-01")
 
     session = SessionLocal()
     try:
-        after = (
-            session.query(models.ReviewCard).count(),
-            session.query(models.ReviewLog).count(),
-        )
+        assert planning.available_days(session, date(2026, 9, 20), NOON) == {
+            "available_days": 8,
+            "days_off_in_window": 2,
+        }
     finally:
         session.close()
 
-    assert after == before
 
+def test_an_unreadable_stored_deadline_does_not_take_an_endpoint_down(client):
+    """parse_deadline promises a hand-edited bad date degrades rather than raising.
+
+    /plan honoured that and /plan.ics did not: it guarded on the RAW column, which is
+    truthy for garbage, and then handed the garbage to date.fromisoformat for a 500.
+    Written straight to the column because PUT would reject it, which is exactly the
+    route by which such a row exists at all.
+    """
+    course_id = _make_course(lesson_count=4)
+    _set_deadline(course_id, "not-a-date")
+
+    plan = client.get(f"/courses/{course_id}/plan")
+    assert plan.status_code == 200
+    assert plan.json()["status"] == "none"
+    assert plan.json()["reason"] == "no_deadline"
+
+    assert client.get(f"/courses/{course_id}/plan.ics").status_code == 404
 
 # --------------------------------------------------------------------------
 # A course that predates the deadline columns
@@ -830,9 +969,6 @@ def test_reading_a_plan_writes_nothing_to_the_scheduler():
 # independent claim left to make, and near-duplicate migration files go stale in exactly
 # the way that file's own header warns about.
 
-PRE_DEADLINE_COMMIT = "d453f50505a2e3fbd3171bde8f4deed1a6b194dc"
-
-
 @pytest.fixture
 def pre_deadline_database(tmp_path, monkeypatch):
     """A populated database created before `deadline` existed, then upgraded by init_db.
@@ -844,9 +980,13 @@ def pre_deadline_database(tmp_path, monkeypatch):
     from sqlalchemy import create_engine
 
     from app import db as db_module
-    from tests.test_tutor_migration import base_metadata, seed_base_rows
 
-    metadata = base_metadata(PRE_DEADLINE_COMMIT)
+    # The pin comes from the migration file rather than being restated here. One
+    # definition of "the schema before the deadline columns", and the append-a-pin
+    # rule lives next to it.
+    from tests.test_tutor_migration import DEADLINE_BASE, base_metadata, seed_base_rows
+
+    metadata = base_metadata(DEADLINE_BASE)
     engine = create_engine(f"sqlite:///{tmp_path / 'legacy.sqlite3'}")
     metadata.create_all(engine)
     seed_base_rows(engine, metadata)

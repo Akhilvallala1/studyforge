@@ -140,15 +140,31 @@ def study_days(deadline: date, now: datetime | None = None) -> list[date]:
     return [start + timedelta(days=offset) for offset in range((deadline - start).days)]
 
 
-def available_days(session: Session, deadline: date, now: datetime | None = None) -> int:
-    """Study days left before the deadline, with the learner's days off removed.
+def available_days(session: Session, deadline: date, now: datetime | None = None) -> dict:
+    """Study days left before the deadline, and how many of them were marked off.
+
+    BOTH, from one pass and one query, because they are one question asked once: the
+    caller needs the denominator and it needs to tell the learner why the denominator
+    shrank. Returned as a dict for the reason review.retention returns one, so course_plan
+    can splat it into the payload under exactly the names the API promises rather than
+    unpacking a tuple and re-labelling it.
+
+    This function previously returned only the count and course_plan re-implemented the
+    whole computation inline to get the second number. Two copies of the same window
+    arithmetic, one of them public and untested, is how the two answers eventually
+    disagree about the same week.
 
     A day off shrinks the denominator, which pushes required_per_week UP. It moves
     nothing: no lesson is assigned to a particular day here, and no review card is ever
     touched by this number.
     """
     off = days_off(session)
-    return sum(1 for day in study_days(deadline, now) if day.isoformat() not in off)
+    window = study_days(deadline, now)
+    marked_off = sum(1 for day in window if day.isoformat() in off)
+    return {
+        "available_days": len(window) - marked_off,
+        "days_off_in_window": marked_off,
+    }
 
 
 def observed_pace(
@@ -248,15 +264,10 @@ def course_plan(session: Session, course: models.Course, now: datetime | None = 
         return payload
 
     start = today(now)
-    window = study_days(deadline, now)
-    off = days_off(session)
-    marked_off = sum(1 for day in window if day.isoformat() in off)
-    open_days = len(window) - marked_off
-
     payload["days_until"] = (deadline - start).days
-    payload["available_days"] = open_days
-    payload["days_off_in_window"] = marked_off
     payload["status"] = PASSED if deadline < start else ACTIVE
+    payload.update(available_days(session, deadline, now))
+    open_days = payload["available_days"]
 
     # AVAILABLE_DAYS == 0 IS A DEFINED STATE, NOT AN ERROR, and it is the likeliest 500
     # in this feature: required = remaining / available * 7 divides by zero. It is

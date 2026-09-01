@@ -437,27 +437,23 @@ class TutorMessage(Base):
     content: Mapped[str] = mapped_column(Text, default="")
     beyond: Mapped[str] = mapped_column(Text, default="")
     check_question: Mapped[str] = mapped_column(Text, default="")
+    # The one move a guided reply withheld, handed back as a question. Empty on a learner
+    # row and on every answer-mode reply, and beside check_question because that is the
+    # field it is a sibling of: exactly one of the two is ever non-empty on a row.
+    #
+    # THE server_default IS NOT POLISH. This column is added to a table that has already
+    # shipped, so app/db.py has to ALTER it into existing databases, and the entry there
+    # and this line are a MATCHED PAIR: half of it is worse than neither half, because
+    # neither half can be caught by reading either file alone. Measured, all three
+    # spellings, reading (nullable, default) off the inspector:
+    #   mapped_column(Text, default="") with ALTER ... TEXT NOT NULL DEFAULT ''
+    #     -> fresh (False, None), upgraded (False, "''"), so they never agree;
+    #   server_default here with ALTER ... TEXT DEFAULT '' and no NOT NULL
+    #     -> upgraded is nullable where fresh is not;
+    #   server_default here with ALTER ... TEXT NOT NULL DEFAULT ''
+    #     -> identical, and every pre-existing row backfills to '' rather than to NULL.
+    # `text` is imported at the top of this file for exactly this.
+    ask: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
     run_id: Mapped[str] = mapped_column(String(32), default="")
     model: Mapped[str] = mapped_column(String(100), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-    # The one move a guided reply withheld, handed back as a question. Empty on a learner
-    # row and on every answer-mode reply.
-    #
-    # IT BELONGS BESIDE check_question AND IT IS DOWN HERE ANYWAY, because a column added
-    # to a table that already shipped has to be declared LAST. SQLite's ALTER TABLE ADD
-    # COLUMN can only append, so a mapped column declared in the middle makes a fresh
-    # database order its columns one way and an upgraded one order them another, and the
-    # migration tests compare the column list in order. Grouping it with the field it is a
-    # sibling of costs a schema that differs between installs. See "ON DECLARING IT
-    # LAST" in app/db.py, where that is measured.
-    #
-    # THE server_default IS NOT POLISH either, and it is the half of this a later edit is
-    # most likely to drop. Only this exact pair makes an upgraded database identical to a
-    # fresh one. Measured, all three variants:
-    #   mapped_column(Text, default="") alone -> fresh is NOT NULL with default None,
-    #     while any ALTER that can run against a populated table has to carry a DEFAULT,
-    #     so the two never agree;
-    #   ALTER ... DEFAULT '' without NOT NULL -> nullable where fresh is not;
-    #   ALTER ... NOT NULL DEFAULT '' against server_default=text("''") -> identical, and
-    #     every pre-existing row backfills to '' rather than to NULL.
-    ask: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))

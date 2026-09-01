@@ -1703,24 +1703,28 @@ def get_course_plan(course_id: int, session: Session = Depends(get_session)):
     WHERE THE CONCEPT COUNTS WENT, since the spec listed concepts_total,
     concepts_not_started and concepts_due_now here and they are deliberately absent.
 
-    They were moved rather than composed in, for three reasons. The first is the
-    feature's boundary: study planning owns the rate new material enters, and FSRS owns
-    everything already in. A plan screen putting "3 concepts due now" beside "your exam
-    is in 4 days" reads as a claim that those three are at risk FOR THE EXAM, and
-    app/planning.py's header proves that claim is never true: a card due after the
-    deadline is predicted at or above ~0.90 recall on the deadline day, by construction.
-    Shipping the number invites the inference.
-
-    The second is cost. review.course_concepts is a Python join that eagerly loads every
-    lesson's quiz items and chunks card lookups across the whole course. This endpoint
-    otherwise reads the lesson rows and one small table, and bolting the concept map's
-    heaviest query onto it would make the cheapest read in the feature the most expensive
-    read in the backend.
-
-    The third is that both numbers already have a home and two sources can disagree.
+    The decisive reason is the ordinary one: BOTH NUMBERS ALREADY HAVE AN OWNER.
     GET /courses/{course_id}/concepts returns `counts` keyed by mastery bucket, including
-    not_started, over exactly this course. GET /review/today returns due_now. A client
-    that wants all three on one screen calls the endpoint that owns each.
+    not_started, over exactly this course, and GET /review/today returns due_now.
+    Reporting them here as well would give one number two owners that can disagree, which
+    is a plain API defect and needs no theory behind it. A client that wants all three on
+    one screen calls the endpoint that owns each.
+
+    The second reason is cost. review.course_concepts is a Python join that eagerly loads
+    every lesson's quiz items and chunks card lookups across the whole course. Everything
+    else on this endpoint is the lesson rows plus one small table, so composing it in
+    would make the cheapest read in the feature the most expensive read in the backend,
+    for three numbers that are already served elsewhere.
+
+    There is a third argument and it is deliberately listed last, because it proves too
+    much to carry the decision. Putting "3 concepts due now" beside "your exam is in 4
+    days" invites reading those three as at risk FOR THE EXAM, which app/planning.py's
+    header shows is never true. That inference comes from JUXTAPOSITION on a screen, and
+    this backend cannot prevent it: a frontend wanting both numbers fetches them from
+    their owners and juxtaposes them anyway. By that argument /review/today should not
+    report due_now either, which nobody believes. The retrievability proof forbids
+    deadline-aware SCHEDULING, which is a real and enforced constraint on this backend;
+    it does not forbid a count, and it should not be stretched into doing so.
     """
     course = session.get(models.Course, course_id)
     if not course:
@@ -1743,7 +1747,15 @@ def get_course_plan_ics(course_id: int, session: Session = Depends(get_session))
     if not course:
         raise HTTPException(404, "Course not found")
     plan = planning.course_plan(session, course)
-    if not plan["deadline"]:
+    # THE PARSED VALUE, not the raw column. planning.parse_deadline deliberately degrades
+    # an unreadable stored date to "this course has no usable deadline", and its docstring
+    # promises that must never take an endpoint down. A truthiness check on the raw string
+    # breaks that promise silently, because garbage is truthy: the guard would let it past
+    # and ics.deadline_calendar would raise ValueError on date.fromisoformat, turning a
+    # bad row into a 500. Only reachable through a row not written by PUT, which is why it
+    # is low severity and not why it is worth fixing: this is the module that is a
+    # security surface, and it should honour its own module's contract.
+    if planning.parse_deadline(plan["deadline"]) is None:
         raise HTTPException(404, NO_DEADLINE_MESSAGE)
     return Response(
         content=ics.deadline_calendar(plan),

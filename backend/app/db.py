@@ -30,53 +30,73 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False)
 # `deadline` to courses without a step here breaks GET /courses, not the deadline
 # feature, because every read through the Course mapper emits every mapped column.
 #
-# HOW TO ADD A COLUMN: append one line to ADDED_COLUMNS below, DECLARE THE
-# mapped_column LAST IN ITS CLASS, and seed its table in
-# backend/tests/test_tutor_migration.py if nothing seeds it yet (a guard test there will
-# tell you if so). That is the whole procedure. It is a table rather than a function
-# body precisely so that the next person copies a LINE and not a TECHNIQUE.
+# HOW TO ADD A COLUMN: declare the mapped_column in models.py wherever it belongs, then
+# append one line to ADDED_COLUMNS below. Seed its table in
+# backend/tests/test_tutor_migration.py if nothing seeds it yet; a guard test there will
+# tell you if so, and every table currently named here is already seeded. It is a table
+# rather than a function body precisely so that the next person copies a LINE and not a
+# TECHNIQUE.
 #
-# ON DECLARING IT LAST, which is the one part of the procedure that is not obvious and
-# is not covered by the invariant below. SQLite's ADD COLUMN can only APPEND, so an
-# upgraded table carries the new column at the END whatever models.py says, while
-# create_all builds a fresh one in DECLARATION order. Put it in the middle, next to the
-# field it is a sibling of, and the two installs order their columns differently: every
-# query still works, and test_tutor_migration.py fails on a column-list comparison whose
-# message says the schemas disagree without saying that the only difference is position.
-# Measured on tutor_messages.ask, which is the first column where readability and this
-# pulled in opposite directions: declared beside check_question, where it belongs, it
-# failed upgraded == fresh and the per-table loop; moved after created_at, it passed. The
-# deadline columns satisfied this by accident, being the newest fields on Course anyway,
-# which is why nobody had met it. It is a rule about models.py rather than about an entry
-# here, so the invariant below cannot state it: that invariant is about what the DDL
-# says, and this is about where the mapped_column sits.
+# WHEREVER IT BELONGS is meant literally: put the column next to the fields it relates
+# to, not at the end of the class. Physical column order is not compared; see the note on
+# ordinal position below. Two smaller things the one-line promise does not cover, so that
+# nobody discovers them mid-change: a server_default needs `text` imported from sqlalchemy
+# in models.py, and a NOT NULL column needs that server_default to keep upgraded == fresh.
 #
 # THE ONE INVARIANT EVERY ENTRY MUST SATISFY:
 #
 #     THE ALTER'S DDL MUST REFLECT IDENTICALLY TO WHAT create_all EMITS FOR THAT
-#     mapped_column.
+#     mapped_column: same type, same nullability, same default, same primary-key
+#     membership.
 #
 # Nobody has to enforce that by hand. test_tutor_migration.py's upgraded == fresh
 # comparison already does it per column, automatically, for every entry anyone ever
-# appends. That is also why _schema() over there compares name, type, nullability,
-# DEFAULT and primary-key membership rather than something looser: DO NOT LOOSEN IT TO
-# MAKE A COMPARISON PASS. The comparison failing is the mechanism working.
+# appends. That is also why _schema() over there compares type, nullability, DEFAULT and
+# primary-key membership rather than something looser: DO NOT LOOSEN IT TO MAKE A
+# COMPARISON PASS. The comparison failing is the mechanism working.
+#
+# ORDINAL POSITION IS THE ONE THING DELIBERATELY EXCLUDED, and it has to be, or this
+# whole table would carry a hidden rule. ALTER TABLE ADD COLUMN always APPENDS the
+# column physically, while create_all lays columns out in DECLARATION order. So a column
+# declared in the middle of its class (which is where it usually belongs, next to the
+# fields it relates to) lands last on an upgraded database and mid-table on a fresh one,
+# with every per-column property identical. If the comparison were order-sensitive, the
+# real rule would be "append your mapped_column at the END of its class", which appears
+# nowhere, is invisible until the entry is uncommented, and would fail in the PR of
+# whoever added the column rather than in the commit that introduced the rule.
+# `deadline` and `deadline_label` satisfy it only by the accident of sitting after
+# created_at. Nothing in this codebase reads a column by position: it is ORM everywhere,
+# and the test seeding uses Core inserts with named values. See _schema in
+# test_tutor_migration.py.
 #
 # There is deliberately NO rule here about whether to use a server default, because the
 # right answer depends on the column and a rule either way would be wrong half the time.
-# Two shapes, both correct:
+# "Columns must be nullable" and "never write a DEFAULT clause" are both true of the only
+# spelling this table happened to contain first, and both false in general: they would
+# forbid the perfectly safe NOT NULL DEFAULT shape outright. Two shapes, both correct:
 #
-#   nullable      mapped_column(String(10), nullable=True)        -> DDL "VARCHAR(10)"
-#   not nullable  mapped_column(Text, server_default=text("''"))  -> DDL "TEXT NOT NULL
-#                                                                    DEFAULT ''"
+#   nullable      mapped_column(String(10), nullable=True)        -> "VARCHAR(10)"
+#   not nullable  mapped_column(Text, server_default=text("''"))  -> "TEXT NOT NULL
+#                                                                     DEFAULT ''"
 #
-# A nullable column with DEFAULT '' in the DDL and no server_default on the model does
-# NOT match: sqlite records dflt_value "''" where create_all records None, and upgraded
-# stops equalling fresh for a reason nobody would guess from the failure message.
+# A SERVER DEFAULT IS A MATCHED PAIR: server_default on the mapped_column AND the same
+# default written into the entry's definition, BOTH OR NEITHER. Half the pair is worse
+# than neither half, because neither half is caught by reading either file alone:
+#
+#   server_default on the model, no DEFAULT in the entry -> fresh records dflt_value
+#       "''" and upgraded records None
+#   DEFAULT in the entry, no server_default on the model -> upgraded records "''" and
+#       fresh records None
+#
+# Both directions fail upgraded == fresh on the `default` field, which is a comparison
+# nobody looks at until it fires, so the pairing is worth knowing before you write the
+# entry rather than after.
 
-# (table, column, ddl), where ddl is EVERYTHING that follows the column name in
-# ALTER TABLE <table> ADD COLUMN <column> <ddl>. The whole definition, not a type name,
-# because a NOT NULL column carries its constraint and default in the same string.
+# (table, column, definition), where `definition` is EVERYTHING that follows the column
+# name in ALTER TABLE <table> ADD COLUMN <column> <definition>. A COLUMN DEFINITION, not
+# a type name, and it is called that everywhere here because thinking of it as a type is
+# what leads to writing "TEXT" and losing the constraint and default a NOT NULL column
+# carries in the same string.
 #
 # APPEND, NEVER EDIT OR REMOVE A ROW. A database in the wild can be at any point in this
 # list, and deleting an entry means the install that never got that column never will.
@@ -88,9 +108,10 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("courses", "deadline_label", "VARCHAR(200)"),
     # Work-it-out mode: the one move a guided reply withheld. The worked example of the
     # shape study planning's own columns do not exercise, a NOT NULL column with a
-    # constant default, and it landed exactly as predicted above: its mapped_column
-    # carries server_default=text("''") and this DDL carries the matching NOT NULL
-    # DEFAULT '', so upgraded == fresh and every pre-existing row backfills to ''.
+    # constant default, and the matched pair above is exactly what it needs:
+    # models.TutorMessage.ask carries server_default=text("''") and this definition
+    # carries the same default, so upgraded == fresh and every row already in the table
+    # backfills to '' rather than to NULL.
     ("tutor_messages", "ask", "TEXT NOT NULL DEFAULT ''"),
 )
 
@@ -132,7 +153,7 @@ def _add_missing_columns() -> None:
     """
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
-    for table, column, ddl in ADDED_COLUMNS:
+    for table, column, definition in ADDED_COLUMNS:
         if table not in tables:
             # create_all just built it from the current models, so it is already the
             # right shape. ALTERing a table that does not exist would raise.
@@ -140,7 +161,9 @@ def _add_missing_columns() -> None:
         if column in {existing["name"] for existing in inspector.get_columns(table)}:
             continue
         with engine.begin() as connection:
-            connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+            connection.execute(
+                text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            )
 
 
 def init_db() -> None:
