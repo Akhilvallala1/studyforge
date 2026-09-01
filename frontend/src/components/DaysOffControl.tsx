@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { ApiError, addDayOff, removeDayOff } from "@/lib/api";
 import { formatDayKey } from "@/lib/copy";
+import { splitDaysOff } from "@/lib/plan";
 import type { DayOff } from "@/lib/types";
 
 const FIELD_CLASS =
@@ -20,6 +21,7 @@ const FIELD_CLASS =
  * date field is the nearest thing the learner would act on next.
  */
 type DayOffFocus = "day" | "submit";
+
 
 /**
  * Marking and unmarking the days the learner will not be studying.
@@ -40,7 +42,15 @@ type DayOffFocus = "day" | "submit";
  * way, this component decides which happened by checking the list it already has, which
  * is the only place that fact exists.
  */
-export function DaysOffControl({ daysOff }: { daysOff: DayOff[] }) {
+export function DaysOffControl({
+  daysOff,
+  today,
+}: {
+  /** Every day off the server holds, which is what the idempotence check has to consult. */
+  daysOff: DayOff[];
+  /** The server's study day, or null when this course has no deadline to derive it from. */
+  today: string | null;
+}) {
   const router = useRouter();
   const [day, setDay] = useState("");
   const [note, setNote] = useState("");
@@ -118,6 +128,37 @@ export function DaysOffControl({ daysOff }: { daysOff: DayOff[] }) {
     if (ok && !already) setNote("");
   }
 
+  const { upcoming, past } = splitDaysOff(daysOff, today);
+
+  /** One row, identical in both lists, so collapsing the earlier half changes nothing else. */
+  function DayOffRow({ entry }: { entry: DayOff }) {
+    return (
+      <li className="flex items-center justify-between gap-4 py-2.5">
+        <div className="min-w-0">
+          <div className="text-[13px]">{formatDayKey(entry.day)}</div>
+          {entry.note && (
+            <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">{entry.note}</div>
+          )}
+        </div>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() =>
+            void run(
+              () => removeDayOff(entry.day),
+              `${formatDayKey(entry.day)} counts as a study day again.`,
+              "day",
+            )
+          }
+          aria-label={`Unmark ${formatDayKey(entry.day)} as a day off`}
+          className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium transition-colors hover:border-zinc-500 disabled:opacity-60 dark:border-zinc-700 dark:hover:border-zinc-500"
+        >
+          Unmark
+        </button>
+      </li>
+    );
+  }
+
   return (
     <div className="mt-4 rounded-lg border border-zinc-200 px-5 py-4 dark:border-zinc-800">
       <form onSubmit={(event) => void submit(event)}>
@@ -188,35 +229,44 @@ export function DaysOffControl({ daysOff }: { daysOff: DayOff[] }) {
           study on.
         </p>
       ) : (
-        <ul className="mt-4 flex flex-col divide-y divide-zinc-200 border-t border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-          {daysOff.map((entry) => (
-            <li key={entry.day} className="flex items-center justify-between gap-4 py-2.5">
-              <div className="min-w-0">
-                <div className="text-[13px]">{formatDayKey(entry.day)}</div>
-                {entry.note && (
-                  <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                    {entry.note}
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() =>
-                  void run(
-                    () => removeDayOff(entry.day),
-                    `${formatDayKey(entry.day)} counts as a study day again.`,
-                    "day",
-                  )
-                }
-                aria-label={`Unmark ${formatDayKey(entry.day)} as a day off`}
-                className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium transition-colors hover:border-zinc-500 disabled:opacity-60 dark:border-zinc-700 dark:hover:border-zinc-500"
-              >
-                Unmark
-              </button>
-            </li>
-          ))}
-        </ul>
+        <div className="mt-4 border-t border-zinc-200 dark:border-zinc-800">
+          {upcoming.length === 0 ? (
+            <p className="pt-4 text-[13px] text-zinc-500 dark:text-zinc-400">
+              No days off coming up.
+            </p>
+          ) : (
+            <ul className="flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
+              {upcoming.map((entry) => (
+                <DayOffRow key={entry.day} entry={entry} />
+              ))}
+            </ul>
+          )}
+
+          {past.length > 0 && (
+            /*
+             * COLLAPSED, NEVER DROPPED. A day the learner marked stays reachable; it is
+             * only out of the way, because a list that grows without bound is what made
+             * the count above hard to read in the first place.
+             *
+             * A native <details>, deliberately, rather than a button and a piece of state.
+             * The browser makes the summary focusable, toggles it on Enter and Space, and
+             * exposes its expanded state to a screen reader without any of that being
+             * this component's code to get wrong. It also cannot lose focus when it
+             * toggles, since nothing unmounts: the summary the learner is standing on is
+             * the same element before and after.
+             */
+            <details className="mt-1 border-t border-zinc-200 pt-2.5 dark:border-zinc-800">
+              <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200">
+                {past.length === 1 ? "1 earlier day off" : `${past.length} earlier days off`}
+              </summary>
+              <ul className="mt-1 flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
+                {past.map((entry) => (
+                  <DayOffRow key={entry.day} entry={entry} />
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
       )}
     </div>
   );
