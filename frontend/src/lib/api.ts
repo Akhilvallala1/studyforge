@@ -5,7 +5,11 @@ import type {
   CompleteResult,
   CourseConcepts,
   CourseDetail,
+  CoursePlan,
   CourseSummary,
+  DayOff,
+  DayOffRemoval,
+  DaysOff,
   GenerateResult,
   LessonDetail,
   PracticeAnswer,
@@ -128,6 +132,14 @@ function postJson<T>(path: string, body: unknown, costLimitConsequence?: string)
     },
     costLimitConsequence,
   );
+}
+
+function putJson<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 export function listCourses(): Promise<CourseSummary[]> {
@@ -439,6 +451,86 @@ export async function sendTutorMessage(
   }
   const fallback = res.statusText || `Request failed with status ${res.status}`;
   throw new ApiError(res.status, messageFromErrorBody(body, fallback, COST_LIMIT_CONSEQUENCE.tutor));
+}
+
+/**
+ * The course's pace figures. Costs nothing and never refuses.
+ *
+ * A COURSE WITH NO DEADLINE ANSWERS 200 with a null-deadline shape, not 404: the
+ * observed pace is real and worth showing either way, and "no deadline" is a state of
+ * this resource rather than the absence of it. Only an unknown course id is a 404.
+ *
+ * None of the planning endpoints has a 409 carrying a payload, so none of them needs
+ * the bespoke fetch that requestRemediation, submitPractice and sendTutorMessage use.
+ * They all go through plain get/postJson/putJson, deliberately.
+ */
+export function getCoursePlan(id: number): Promise<CoursePlan> {
+  return get(`/courses/${id}/plan`);
+}
+
+/**
+ * Set or move the deadline, and get the recomputed plan back.
+ *
+ * THE BODY FIELD IS `deadline`, not `day`, which is the one place this feature's two
+ * date-carrying endpoints disagree: a day off posts `{day}`. Sending the wrong one is a
+ * generic pydantic 422 rather than this feature's own sentence, so it is worth the note.
+ *
+ * Today is accepted and the past is not. A past date throws ApiError carrying the
+ * server's own message; so does a malformed date or an over-long label.
+ */
+export function setCourseDeadline(
+  id: number,
+  deadline: string,
+  label: string,
+): Promise<CoursePlan> {
+  return putJson(`/courses/${id}/deadline`, { deadline, label });
+}
+
+/**
+ * Remove the deadline. Idempotent, and it touches nothing else: no review card moves
+ * and no lesson is un-completed. The course goes back to behaving exactly as one that
+ * never had a deadline.
+ */
+export function clearCourseDeadline(id: number): Promise<CoursePlan> {
+  return request(`/courses/${id}/deadline`, { method: "DELETE" });
+}
+
+/**
+ * Where the deadline's calendar file lives, as a URL for an ordinary link.
+ *
+ * A DOWNLOAD, NOT A SUBSCRIPTION. The response is text/calendar with a
+ * Content-Disposition attachment header, so following the link saves a file; there is
+ * no webcal address to offer, because a calendar provider cannot reach a server running
+ * on the learner's own machine. 404 when the course has no deadline, which is why the
+ * link is only rendered once one is set.
+ */
+export function coursePlanIcsUrl(id: number): string {
+  return `${BASE_URL}/courses/${id}/plan.ics`;
+}
+
+/** Every day the learner has marked off, oldest first. Global, not per course. */
+export function listDaysOff(): Promise<DaysOff> {
+  return get("/plan/days-off");
+}
+
+/**
+ * Mark a day off. IDEMPOTENT: marking an already-marked day returns the existing row
+ * unchanged rather than a 409, and does not overwrite its note. Changing a note means
+ * unmarking the day and marking it again.
+ */
+export function addDayOff(day: string, note: string): Promise<DayOff> {
+  return postJson("/plan/days-off", { day, note });
+}
+
+/**
+ * Unmark a day. Succeeds whether or not it was marked; `removed` says which happened.
+ *
+ * The date travels in the PATH here, unlike the tutor's concept_key, which has to use
+ * the query string because a normalized key can contain a slash. A YYYY-MM-DD cannot,
+ * so the plainer URL is safe.
+ */
+export function removeDayOff(day: string): Promise<DayOffRemoval> {
+  return request(`/plan/days-off/${encodeURIComponent(day)}`, { method: "DELETE" });
 }
 
 export function getUsage(limit?: number): Promise<UsageSummary> {

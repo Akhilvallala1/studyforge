@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export type CourseTab = "lessons" | "concepts";
+export type CourseTab = "lessons" | "concepts" | "plan";
 
 const TAB_CLASS = "-mb-px border-b-2 pb-2.5 text-sm";
 const ACTIVE_CLASS = "border-zinc-900 font-semibold dark:border-zinc-100";
@@ -11,9 +11,11 @@ const INACTIVE_CLASS =
  * The course-level tab bar. `active` is passed in rather than read from the pathname
  * so this stays a server component: each page already knows which tab it is.
  *
- * History is rendered disabled rather than omitted. The artboard shows three tabs and
- * the screen reads wrong with a gap where one was, but the route does not exist yet,
- * so it must not be a link that 404s.
+ * History is rendered disabled rather than omitted. The artboard shows the tab and the
+ * screen reads wrong with a gap where one was, but the route does not exist yet, so it
+ * must not be a link that 404s. Plan sits beside it as a real link precisely because
+ * that route does exist: the disabled treatment is about a missing route, not a house
+ * style, and copying it for a page that ships would be the wrong lesson to take.
  */
 export function CourseTabs({ courseId, active }: { courseId: number; active: CourseTab }) {
   return (
@@ -35,6 +37,15 @@ export function CourseTabs({ courseId, active }: { courseId: number; active: Cou
             className={`${TAB_CLASS} block ${active === "concepts" ? ACTIVE_CLASS : INACTIVE_CLASS}`}
           >
             Concept map
+          </Link>
+        </li>
+        <li>
+          <Link
+            href={`/courses/${courseId}/plan`}
+            aria-current={active === "plan" ? "page" : undefined}
+            className={`${TAB_CLASS} block ${active === "plan" ? ACTIVE_CLASS : INACTIVE_CLASS}`}
+          >
+            Plan
           </Link>
         </li>
         <li>
