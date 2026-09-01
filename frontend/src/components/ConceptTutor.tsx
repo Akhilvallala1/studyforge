@@ -163,6 +163,13 @@ function TutorReply({
           `check` keeps the last slot, which is right for the opposite reason: it is a
           recall question about the whole reply rather than the end of one of its parts.
 
+          THIS ORDERING IS LOAD-BEARING AND THE SHAPE IT GUARDS IS REACHABLE, not a
+          corner case held open on principle: a question the course answers only PARTLY
+          comes back carrying `beyond` AND `ask` together, so the two really do render
+          side by side. Verified against the running server, both blocks present on one
+          reply. Reorder these and that reply puts a grounded handover directly beneath
+          "Not in your course".
+
           It cannot collide with `check`, which the server blanks in this mode, and the
           two are told apart at a glance anyway: a filled panel with an accent bar and a
           bold instruction here, a thin outline and a quiet label there. Amber and never

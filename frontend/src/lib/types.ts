@@ -484,6 +484,11 @@ export type TutorMessage =
        * treatment, which would tell the learner the thing they are being asked to work
        * out came from outside their course.
        *
+       * It CAN arrive alongside `beyond`, which is what makes that constraint bite. A
+       * question the course answers only partly is served with both, so a renderer that
+       * treats "there is a `beyond`" as "there is no `ask`" drops the handover, and one
+       * that appends `ask` after `beyond` mislabels its register.
+       *
        * Markdown from a model, exactly like `answer`, so it gets exactly the same
        * escaping and never a rendering path of its own.
        */
