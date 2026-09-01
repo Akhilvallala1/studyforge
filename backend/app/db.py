@@ -30,10 +30,26 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False)
 # `deadline` to courses without a step here breaks GET /courses, not the deadline
 # feature, because every read through the Course mapper emits every mapped column.
 #
-# HOW TO ADD A COLUMN: append one line to ADDED_COLUMNS below, and seed its table in
+# HOW TO ADD A COLUMN: append one line to ADDED_COLUMNS below, DECLARE THE
+# mapped_column LAST IN ITS CLASS, and seed its table in
 # backend/tests/test_tutor_migration.py if nothing seeds it yet (a guard test there will
 # tell you if so). That is the whole procedure. It is a table rather than a function
 # body precisely so that the next person copies a LINE and not a TECHNIQUE.
+#
+# ON DECLARING IT LAST, which is the one part of the procedure that is not obvious and
+# is not covered by the invariant below. SQLite's ADD COLUMN can only APPEND, so an
+# upgraded table carries the new column at the END whatever models.py says, while
+# create_all builds a fresh one in DECLARATION order. Put it in the middle, next to the
+# field it is a sibling of, and the two installs order their columns differently: every
+# query still works, and test_tutor_migration.py fails on a column-list comparison whose
+# message says the schemas disagree without saying that the only difference is position.
+# Measured on tutor_messages.ask, which is the first column where readability and this
+# pulled in opposite directions: declared beside check_question, where it belongs, it
+# failed upgraded == fresh and the per-table loop; moved after created_at, it passed. The
+# deadline columns satisfied this by accident, being the newest fields on Course anyway,
+# which is why nobody had met it. It is a rule about models.py rather than about an entry
+# here, so the invariant below cannot state it: that invariant is about what the DDL
+# says, and this is about where the mapped_column sits.
 #
 # THE ONE INVARIANT EVERY ENTRY MUST SATISFY:
 #
@@ -70,11 +86,12 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # sentinel that some later query has to remember to exclude.
     ("courses", "deadline", "VARCHAR(10)"),
     ("courses", "deadline_label", "VARCHAR(200)"),
-    # Work-it-out mode appends when it lands, and it is worth leaving here as the worked
-    # example of the shape study planning's own columns do not exercise: a NOT NULL
-    # column with a constant default. Its mapped_column needs server_default=text("''")
-    # to keep upgraded == fresh, per the invariant above.
-    # ("tutor_messages", "ask", "TEXT NOT NULL DEFAULT ''"),
+    # Work-it-out mode: the one move a guided reply withheld. The worked example of the
+    # shape study planning's own columns do not exercise, a NOT NULL column with a
+    # constant default, and it landed exactly as predicted above: its mapped_column
+    # carries server_default=text("''") and this DDL carries the matching NOT NULL
+    # DEFAULT '', so upgraded == fresh and every pre-existing row backfills to ''.
+    ("tutor_messages", "ask", "TEXT NOT NULL DEFAULT ''"),
 )
 
 

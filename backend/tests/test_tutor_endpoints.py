@@ -335,7 +335,7 @@ def test_the_two_rows_come_back_in_the_one_shape_both_endpoints_render(client, m
 
     body = _ask(client, key, "why does this work").json()
 
-    keys = {"id", "role", "content", "answer", "beyond", "check", "model", "created_at"}
+    keys = {"id", "role", "content", "answer", "beyond", "check", "ask", "model", "created_at"}
     assert set(body["learner"]) == keys
     assert set(body["reply"]) == keys
 
@@ -345,6 +345,7 @@ def test_the_two_rows_come_back_in_the_one_shape_both_endpoints_render(client, m
     assert learner["answer"] is None
     assert learner["beyond"] is None
     assert learner["check"] is None
+    assert learner["ask"] is None
     assert learner["model"] is None
 
     reply = body["reply"]
@@ -353,6 +354,9 @@ def test_the_two_rows_come_back_in_the_one_shape_both_endpoints_render(client, m
     assert reply["answer"] == "Grounded answer from your course."
     assert reply["beyond"] == "A short aside your course does not cover."
     assert reply["check"] == "What does it take in?"
+    # Null on an ANSWER-MODE tutor row, not "". The panel draws a heading over this, and
+    # an empty string there would ask the learner to finish a reply that is complete.
+    assert reply["ask"] is None
     assert reply["model"] == "tutor-model"
     assert learner["id"] < reply["id"]
 

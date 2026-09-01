@@ -108,6 +108,14 @@ MESSAGE_TOO_LONG_MESSAGE = (
     f"That message is longer than {tutor.MAX_MESSAGE_CHARS} characters. The tutor answers "
     "questions about one concept; material that long belongs in a course of its own."
 )
+# Addressed to whoever wrote the client rather than to the learner, because no learner can
+# produce this: the request body carries a mode the UI chose, and a wrong one is a bug in
+# the sender. Naming the two accepted values is what makes the message actionable.
+INVALID_MODE_MESSAGE = (
+    "That is not a mode the tutor answers in. Send "
+    f"{tutor.MODE_ANSWER!r} or {tutor.MODE_GUIDED!r}, or leave it out for "
+    f"{tutor.MODE_ANSWER!r}."
+)
 
 # Parse failures (ValueError, including json.JSONDecodeError), refusals, missing
 # keys in a provider response, and transport errors are all "the provider did not
@@ -985,10 +993,23 @@ class TutorQuestion(BaseModel):
     "big-o / complexity" are ordinary keys, and Starlette will not match a path segment
     containing "/": the concept most in need of explaining would be the one URL the
     learner could not reach.
+
+    `mode` DEFAULTS TO ANSWER and the default is the compatibility promise. A client
+    written before guided mode existed sends no mode at all and gets exactly the behaviour
+    it already had, so nothing about this feature reaches a learner who did not ask for it.
+    Guided mode is opt in per request, never inferred from the learner's message, their
+    mastery bucket, or how many times they have missed the concept.
+
+    A plain `str` rather than a Literal, deliberately. Pydantic would reject an unknown
+    value with its own 422 whose detail is a list of validation objects, and every other
+    tutor refusal is {"error": ..., "message": ...}. A client parsing this endpoint's
+    errors would meet two unrelated shapes from one route, so the check is hand rolled
+    below and takes its place in the precedence list with the others.
     """
 
     concept_key: str
     message: str
+    mode: str = tutor.MODE_ANSWER
 
 
 def _tutor_invalid(code: str, message: str) -> HTTPException:
@@ -1041,9 +1062,9 @@ def post_tutor_message(body: TutorQuestion, session: Session = Depends(get_sessi
     """Ask the tutor one question about one concept: one metered call, two rows, one commit.
 
     Hands back the learner's message and the reply, not the whole conversation. The
-    client already drew what it had and appends these two. `limits` is recomputed AFTER
-    the insert, the way answer_remedial_practice recomputes its state, so what the
-    learner is shown is what the next request will be measured against.
+    client already drew what it had and appends these two. `limits` AND `guided` are both
+    recomputed AFTER the insert, the way answer_remedial_practice recomputes its state, so
+    what the learner is shown is what the next request will be measured against.
 
     PRECEDENCE IS FIXED HERE AND NOWHERE ELSE, in this order:
       1. an empty message                  422 message_empty
@@ -1051,13 +1072,24 @@ def post_tutor_message(body: TutorQuestion, session: Session = Depends(get_sessi
          material is read and before any model call, because past that length it is a
          document, and a document belongs in course generation where it is chunked and
          paid for deliberately
-      3. no material for the concept        422 no_material
-      4. the day's turns are gone           409 daily_turn_limit
-      5. this concept's turns are gone      409 concept_turn_limit
-      6. the spend cap is reached           402 cost_limit_exceeded
+      3. a mode nobody answers in          422 invalid_mode, checked here with the other
+         things that are wrong with the REQUEST itself, and before any read, because a
+         request naming a mode this server does not have is malformed whatever the
+         concept turns out to hold
+      4. no material for the concept        422 no_material
+      5. the day's turns are gone           409 daily_turn_limit
+      6. this concept's turns are gone      409 concept_turn_limit
+      7. the spend cap is reached           402 cost_limit_exceeded
     The day cap is checked BEFORE the concept cap because it is the wider fact. Telling
     someone they are out of turns on this concept while they are out for the whole day
     sends them to another concept to be refused there as well.
+
+    A GUIDED REQUEST AT THE END OF ITS RUN IS NOT IN THAT LIST, and that is the design
+    rather than an omission. It is served, with a complete answer, as a 200 reporting mode
+    "answer". The learner asked for help; handing them the help is not a refusal, and the
+    `mode` in the response is how the client knows what it got. tutor.effective_mode is the
+    only place that decision is taken, and the single value it returns is threaded into
+    every consumer below: the system prompt, the parser, the row, and the response.
 
     THERE IS NO 404. This looks up no ReviewCard and needs none: mastery_bucket(None)
     answers not_started, and the material comes from the lessons rather than from a card.
@@ -1091,6 +1123,8 @@ def post_tutor_message(body: TutorQuestion, session: Session = Depends(get_sessi
     # question at the cap followed by trailing newlines is not a longer question.
     if len(message) > tutor.MAX_MESSAGE_CHARS:
         raise _tutor_invalid("message_too_long", MESSAGE_TOO_LONG_MESSAGE)
+    if body.mode not in tutor.TUTOR_MODES:
+        raise _tutor_invalid("invalid_mode", INVALID_MODE_MESSAGE)
 
     now = review.now_utc()
     context = tutor.context(session, concept_key, now=now)
@@ -1119,11 +1153,20 @@ def post_tutor_message(body: TutorQuestion, session: Session = Depends(get_sessi
     meter = MeteredLLM(provider, run_id, course_id=remediation.sole_course_id(session, matches))
     prompt = tutor.build_prompt(context, tutor.history(session, concept_key), message)
 
+    # THE MODE, DECIDED ONCE, and every use below reads this name rather than asking
+    # again. The three consumers are the system prompt, the parser, and the response, and
+    # a second computation in any of them is the bug this shape removes: the model
+    # prompted to withhold while the parser is told to expect a complete answer drops
+    # `ask` from a reply that was written around it, silently, with a well formed row to
+    # show for it.
+    mode = tutor.effective_mode(session, concept_key, body.mode, now)
+    system = tutor.system_prompt(session, concept_key, mode, now)
+
     # Nothing has been added to the session at this point, and nothing is until the reply
     # has parsed, which is what makes every failure below leave zero rows behind.
     try:
         reply = tutor.parse_reply(
-            meter.generate(tutor.TUTOR_STAGE, tutor.TUTOR_SYSTEM, prompt, tutor.MAX_TOKENS)
+            meter.generate(tutor.TUTOR_STAGE, system, prompt, tutor.MAX_TOKENS), mode
         )
     except CostLimitExceeded as exc:
         raise _cost_limit_exceeded(exc) from exc
@@ -1139,6 +1182,27 @@ def post_tutor_message(body: TutorQuestion, session: Session = Depends(get_sessi
             exc,
         )
         raise HTTPException(502, TUTOR_FAILURE_MESSAGE) from exc
+    except (TypeError, AttributeError, NameError):
+        # A BUG IN THIS FILE, re-raised rather than reported as a network failure.
+        #
+        # The handler below is broad on purpose, because a provider adapter can fail in
+        # ways no import here can enumerate. The cost of that breadth is that it also
+        # catches the exceptions that mean the CODE is wrong, and answers them 502 with
+        # "the provider call failed" in the log, which sends whoever reads it to the
+        # network for a problem three lines above.
+        #
+        # This is not hypothetical and it is why these three are named. parse_reply takes
+        # `mode` with no default precisely so that a call site forgetting it fails loudly;
+        # the TypeError that produces is raised INSIDE this try, so before this clause
+        # existed the whole mechanism degraded to a 502 blaming the provider. The tests of
+        # any caller still went red, which is what kept the design working, but a
+        # production install would have shown a network error for a programming one.
+        #
+        # Re-raised bare, so it reaches the framework as an unhandled error with its
+        # traceback intact, exactly as the same bug anywhere outside a try block would.
+        # No rows have been added yet, so the "a failed turn writes nothing" promise is
+        # unaffected by which of these two paths a failure takes.
+        raise
     except Exception as exc:
         logger.exception("Tutor call failed for concept %r: the provider call failed", concept_key)
         raise HTTPException(502, TUTOR_FAILURE_MESSAGE) from exc
@@ -1154,6 +1218,7 @@ def post_tutor_message(body: TutorQuestion, session: Session = Depends(get_sessi
         content=message,
         beyond="",
         check_question="",
+        ask="",
         run_id="",
         model="",
         created_at=now,
@@ -1165,6 +1230,9 @@ def post_tutor_message(body: TutorQuestion, session: Session = Depends(get_sessi
         content=reply.answer,
         beyond=reply.beyond,
         check_question=reply.check,
+        # Whichever of the two the mode allowed; parse_reply has already blanked the
+        # other, so this row can never carry two questions.
+        ask=reply.ask,
         run_id=run_id,
         model=getattr(provider, "model", ""),
         created_at=now,
@@ -1177,15 +1245,27 @@ def post_tutor_message(body: TutorQuestion, session: Session = Depends(get_sessi
     session.add_all([learner_row, reply_row])
     session.commit()
     logger.info(
-        "tutor turn %s answered for concept=%r run=%s", reply_row.id, concept_key, run_id
+        "tutor turn %s answered for concept=%r run=%s mode=%s",
+        reply_row.id,
+        concept_key,
+        run_id,
+        mode,
     )
 
     return {
         "concept_key": concept_key,
         "concept_label": context.concept_label,
+        # What was SERVED, not what was asked for. The two come apart at the end of a run,
+        # and this is the only thing that tells the client which of the two it got.
+        "mode": mode,
         "learner": tutor.message_payload(learner_row),
         "reply": tutor.message_payload(reply_row),
         "limits": tutor.limits_payload(tutor.turn_counts(session, concept_key, now)),
+        # Recomputed after the commit for the same reason `limits` is: the turn that was
+        # just written is part of the run now, so what the client is shown is what its
+        # next request will actually be measured against. Reading it before the insert
+        # would be off by one for exactly the request the learner is about to make.
+        "guided": tutor.guided_payload(tutor.guided_run(session, concept_key, now)),
     }
 
 
@@ -1208,18 +1288,26 @@ def get_tutor_conversation(concept_key: str, session: Session = Depends(get_sess
     panel can tell "we have never spoken about this" from "we spoke last week" without
     reading the array.
 
+    `guided` is here for the reason `limits` is. A panel opening on an existing
+    conversation has to know whether the work-it-out button will actually work before the
+    learner presses it, and the alternative is the client counting `ask` fields in the
+    array it happens to hold, which is a second definition of the run living somewhere it
+    cannot be kept correct. Same function as the POST's, off the same rows.
+
     Writes nothing, deliberately, like get_remedial_practice: this is the read the panel
     makes on open, and a GET that could change what it describes would let one tab move
     another tab's conversation between drawing it and answering in it.
     """
     key = normalize_concept(concept_key)
     rows = tutor.conversation(session, key)
+    now = review.now_utc()
     return {
         "concept_key": key,
         "concept_label": _conversation_label(session, key, rows),
         "messages": [tutor.message_payload(row) for row in rows],
         "last_message_at": iso_utc(rows[-1].created_at) if rows else None,
-        "limits": tutor.limits_payload(tutor.turn_counts(session, key, review.now_utc())),
+        "limits": tutor.limits_payload(tutor.turn_counts(session, key, now)),
+        "guided": tutor.guided_payload(tutor.guided_run(session, key, now)),
     }
 
 
