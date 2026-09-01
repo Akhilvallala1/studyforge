@@ -96,23 +96,30 @@ BEYOND_MAX_CHARS = 400
 # else, so a long one is trimmed instead of costing the learner the grounded explanation
 # above it.
 #
-# RENDERED AS MARKDOWN, through LessonMarkdown, exactly as `answer` and `beyond` are. This
-# said "as plain text beside `check`" and that was written before any UI existed, so it
-# described a decision nobody had taken; ConceptTutor.tsx took the other one.
+# HOW EACH FIELD IS RENDERED IS DECIDED IN ConceptTutor.tsx, and this comment deliberately
+# does not restate it. It used to, and that is the whole reason it does not now: it said
+# `ask` was "rendered as plain text beside `check`", which was written before any UI
+# existed, described a decision nobody had taken, and was outright false the moment one
+# shipped. A frontend fact asserted over here is one no test over here can hold, so it goes
+# stale in silence and the next reader believes it. The rule that follows is not "do not
+# repeat yourself": a duplicated VALUE has a right answer, so copies diverge and one
+# becomes wrong, while a duplicated RATIONALE has no wrong copy and merely rots. Both
+# happened to this comment, and only the second kind is worth keeping anywhere.
 #
-# THE ASYMMETRY WITH `check` IS THE POINT, and it follows from what each field is rather
-# than from how much it is trusted. `ask` is the move withheld from the explanation
-# directly above it, so it is whatever that reasoning needs: a formula, a term, a step of
-# a list, a line of code. Rendering it flat would strip exactly the notation the move is
-# expressed in, which is the one thing the learner has to read precisely. `check` is one
-# recall question about the reply as a whole, prose by construction, and a text node is
-# the least an untrusted string can be given.
+# WHAT THIS FILE DOES OWN is why the two fields differ at all, which is a fact about the
+# FIELDS and survives any renderer. `ask` is the move withheld from the explanation
+# directly above it, so it carries whatever that reasoning needs: a formula, a term, a step
+# of a list, a line of code, and the learner has to read it precisely. `check` is one
+# recall question about the reply as a whole. It can carry notation too, so the difference
+# is one of likelihood rather than of kind, and it is a sound basis for rendering them
+# differently without being a sound basis for calling either one prose.
 #
-# BOTH ARE SAFE AND NEITHER IS SAFE BY ACCIDENT. react-markdown runs without rehype-raw,
-# so raw HTML in `ask` is inert, and React escapes a text node on its own. They are two
-# renderings of untrusted model output, chosen for what the field carries, not two trust
-# levels. A new field on this reply is exactly how one slips past sanitisation, so anything
-# added here needs the same decision made deliberately.
+# THEY ARE TWO RENDERINGS OF UNTRUSTED MODEL OUTPUT, CHOSEN FOR WHAT THE FIELD CARRIES,
+# AND NOT TWO TRUST LEVELS. That sentence belongs here and nowhere else, because each
+# comment in the UI can see only its own block and neither is in a position to say what the
+# pair means. A new field on this reply is exactly how one slips past sanitisation, so
+# anything added here needs that decision taken deliberately rather than inherited from
+# whichever neighbour it was pasted next to.
 ASK_MAX_CHARS = 300
 
 # The two reply modes. Answer mode explains and optionally ends with a recall question;
