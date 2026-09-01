@@ -23,6 +23,7 @@ import type {
   ReviewToday,
   TutorConflict,
   TutorConversation,
+  TutorMode,
   TutorTurn,
   UsageSummary,
 } from "./types";
@@ -428,15 +429,27 @@ export type TutorOutcome =
  * rows only after the reply has parsed and commits them together. So a caller may keep
  * the learner's typed text and let them send it again, and the transcript it is holding
  * is still correct.
+ *
+ * `mode` is required rather than defaulted. The server defaults a missing mode to
+ * "answer" and that default is its promise to clients written before guided mode
+ * existed; inside this client the two registers are a deliberate choice per question, so
+ * a call site that has not said which one it wants is a bug worth a compile error. A
+ * value the server does not answer in is a 422 `invalid_mode`, which throws like any
+ * other 422, and the union makes that unreachable from here.
+ *
+ * Asking for "guided" is a REQUEST, not a guarantee. With the concept's guided run
+ * already spent the server answers 200 in answer mode instead, and `turn.mode` is how a
+ * caller learns which it got.
  */
 export async function sendTutorMessage(
   conceptKey: string,
   message: string,
+  mode: TutorMode,
 ): Promise<TutorOutcome> {
   const res = await fetch(`${BASE_URL}/tutor/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ concept_key: conceptKey, message }),
+    body: JSON.stringify({ concept_key: conceptKey, message, mode }),
   });
   let body: unknown = null;
   try {

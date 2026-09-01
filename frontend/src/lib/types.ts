@@ -445,6 +445,7 @@ export type TutorMessage =
       answer: null;
       beyond: null;
       check: null;
+      ask: null;
       model: null;
       created_at: string;
     }
@@ -468,10 +469,67 @@ export type TutorMessage =
       beyond: string | null;
       /** One recall question the learner can try, or null when the reply offered none. */
       check: string | null;
+      /**
+       * The one move the tutor worked up to and then withheld, handed back for the
+       * learner to make. Present only on a reply that was actually served in guided
+       * mode, and null on every answer-mode reply, so its presence is what a renderer
+       * branches on rather than the mode the request asked for.
+       *
+       * NEVER set alongside `check`: the server blanks whichever one the mode does not
+       * allow, so the model only ever proposes and these two cannot both arrive.
+       *
+       * GROUNDED, and that is a rendering constraint rather than a note. The move it
+       * asks for is answerable from the `answer` directly above it, so it belongs with
+       * the grounded material and must not be drawn inside or under the `beyond`
+       * treatment, which would tell the learner the thing they are being asked to work
+       * out came from outside their course.
+       *
+       * Markdown from a model, exactly like `answer`, so it gets exactly the same
+       * escaping and never a rendering path of its own.
+       */
+      ask: string | null;
       /** Which model answered, or null. Provenance lives on the usage screen. */
       model: string | null;
       created_at: string;
     };
+
+/**
+ * Which register a turn was asked for and served in.
+ *
+ * The wire values are "answer" and "guided". The prose name of the second one is
+ * work-it-out mode, and the identifier deliberately did not follow the prose: the server
+ * 422s `invalid_mode` on anything that is not one of these two, "work-it-out" included,
+ * so this type is the one place the wire spelling is written down.
+ *
+ * Omitting the field entirely is the server's compatibility promise and means "answer".
+ * This client never omits it, because inside one codebase an explicit mode at the call
+ * site is worth more than a default.
+ */
+export type TutorMode = "answer" | "guided";
+
+/**
+ * How far into the guided fade this concept is, and whether the next request asking for
+ * it will actually be served it.
+ *
+ * FROM THE SERVER, NEVER DERIVED. A panel counting `ask` fields in the transcript it
+ * happens to hold would be recomputing a server rule from a partial copy of the rows,
+ * and it would be wrong in both directions the moment a second tab is open. It would
+ * also be a second definition of the run, which is precisely what this payload exists to
+ * prevent.
+ *
+ * `available` is the field with a job: it says whether the NEXT guided request is served
+ * guided, so the control can be drawn honestly instead of offering something the server
+ * will quietly convert into an ordinary answer.
+ *
+ * It is NOT a budget that runs out. A turn served in answer mode has no `ask`, which
+ * breaks the run, so the fallback reply itself resets `run` to 0 and `available` back to
+ * true. Two guided replies, then one full answer, then two more is the actual shape.
+ */
+export interface TutorGuided {
+  run: number;
+  run_max: number;
+  available: boolean;
+}
 
 /** A concept's whole conversation, oldest first. Any key gets a 200, empty included. */
 export interface TutorConversation {
@@ -481,6 +539,8 @@ export interface TutorConversation {
   /** Null on a conversation nobody has opened, so "never" is tellable from "last week". */
   last_message_at: string | null;
   limits: TutorLimits;
+  /** Sent on open too, so the control is drawn from the server before the first turn. */
+  guided: TutorGuided;
 }
 
 /**
@@ -496,6 +556,14 @@ export interface TutorTurn {
   learner: TutorMessage;
   reply: TutorMessage;
   limits: TutorLimits;
+  /**
+   * The mode this turn was actually SERVED in, which is not always the one requested.
+   * A guided request made with the run already spent comes back as an ordinary 200
+   * reporting "answer", deliberately, rather than as a refusal.
+   */
+  mode: TutorMode;
+  /** Recomputed after the insert, so it describes the NEXT request rather than this one. */
+  guided: TutorGuided;
 }
 
 /**

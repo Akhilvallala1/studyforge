@@ -5,10 +5,16 @@ import { useEffect, useId, useRef, useState } from "react";
 import { LessonMarkdown } from "@/components/LessonMarkdown";
 import { ApiError, getTutorConversation, sendTutorMessage } from "@/lib/api";
 import { formatDay } from "@/lib/copy";
-import type { TutorConflict, TutorLimits, TutorMessage } from "@/lib/types";
+import type {
+  TutorConflict,
+  TutorGuided,
+  TutorLimits,
+  TutorMessage,
+  TutorMode,
+} from "@/lib/types";
 
 /**
- * The two register headings, and the sentence that stands between them.
+ * The two register headings, the sentence that stands between them, and the handover.
  *
  * Fixed copy, kept together at the top of the file because they are the feature. The
  * design's claim is that the boundary between what the course says and what the model
@@ -18,14 +24,57 @@ import type { TutorConflict, TutorLimits, TutorMessage } from "@/lib/types";
  * answer's paragraph, or drop the disclaimer, and the schema is still split while the
  * screen is not, which is the whole guarantee gone with nothing failing.
  *
+ * `ask` is the same argument one step on. The server decides what to withhold and sends
+ * it as its own field, and ASK_HEADING is what makes a withheld move read as something
+ * to do rather than as a paragraph that trailed off.
+ *
  * "your course", never "your document" and never "the source". The upload is not kept,
  * so there is no document left for a claim about one to be checked against.
  */
 const GROUNDED_HEADING = "From your course";
 const BEYOND_HEADING = "Not in your course";
+/**
+ * The handover, in work-it-out mode.
+ *
+ * A third label rather than a variant of the other two, because it marks a different
+ * kind of thing: those two say where a piece of text came from, and this one says the
+ * text is not finished and the rest is the learner's to supply. It sits in the GROUNDED
+ * register, under the course's own explanation, because the move it asks for is
+ * answerable from that explanation.
+ */
+const ASK_HEADING = "Your turn";
 const BEYOND_DISCLAIMER =
   "Your course does not cover this. What follows is general knowledge and has not been " +
   "checked against your material.";
+
+/**
+ * What the second button offers, in one line, said as what it does.
+ *
+ * Deliberately not a claim that it teaches better. Nothing here knows that, the panel
+ * already promises that nothing in it moves the schedule, and a control that sells a
+ * pedagogy is a control that has to be believed rather than understood. It says what
+ * arrives instead: the same explanation, stopping one move early.
+ *
+ * "work it out" and not "Socratic". The name a learner reads should describe what they
+ * will be doing, not the tradition it came from.
+ */
+const GUIDED_HINT = "Let me work it out stops one step short and leaves that step to you.";
+
+/**
+ * That the next reply will be a complete answer whatever is pressed.
+ *
+ * Shown only while the server says the guided run is spent, which lasts exactly one
+ * turn: an answer-mode reply carries no withheld move, so it breaks the run and the
+ * fallback resets it. This is NOT a wall and must not read as one. Nothing is disabled,
+ * the button still sends, and the line removes itself.
+ *
+ * It exists because the alternative is worse. `available` is on the wire precisely so a
+ * control is not drawn offering something the server will quietly convert, and a button
+ * that says "let me work it out" and returns the finished answer with no explanation is
+ * that conversion happening to a learner.
+ */
+const GUIDED_SPENT_HINT =
+  "You have worked at this one twice in a row, so the next reply will be the full answer.";
 
 /** Where focus belongs once the response has landed and React has committed the tree. */
 type FocusTarget = "reply" | "composer" | "send";
@@ -105,6 +154,32 @@ function TutorReply({
           <LessonMarkdown content={message.answer} title={conceptLabel} />
         </div>
       </div>
+
+      {/* DIRECTLY under the grounded explanation, and above `beyond` rather than after
+          it. The move being asked for is the one withheld from the text immediately
+          above, so this is part of the grounded half; putting it below the ungrounded
+          aside would sit a handover under an "unchecked general knowledge" heading and
+          tell the learner the thing they are working out did not come from their course.
+          `check` keeps the last slot, which is right for the opposite reason: it is a
+          recall question about the whole reply rather than the end of one of its parts.
+
+          It cannot collide with `check`, which the server blanks in this mode, and the
+          two are told apart at a glance anyway: a filled panel with an accent bar and a
+          bold instruction here, a thin outline and a quiet label there. Amber and never
+          red, because nothing has gone wrong. */}
+      {message.ask && (
+        <div className="rounded-lg border-l-4 border-amber-600 bg-amber-100/70 px-4 py-3 dark:border-amber-500 dark:bg-amber-950/60">
+          <p className="text-[12px] font-semibold uppercase tracking-wide text-amber-900 dark:text-amber-200">
+            {ASK_HEADING}
+          </p>
+          {/* Through LessonMarkdown like `answer` and `beyond`. This is model output
+              derived from an uploaded document and gets the same escaping as the rest of
+              the reply; a new field is exactly how one slips past sanitisation. */}
+          <div className="mt-1.5 text-[13px] font-medium text-zinc-800 dark:text-zinc-100">
+            <LessonMarkdown content={message.ask} title="" />
+          </div>
+        </div>
+      )}
 
       {message.beyond && (
         /* A DIFFERENT block, never a paragraph appended to the one above. Dashed and
@@ -197,10 +272,21 @@ export function ConceptTutor({
 }) {
   const [messages, setMessages] = useState<TutorMessage[]>([]);
   const [limits, setLimits] = useState<TutorLimits | null>(null);
+  /** The server's view of the fade. Never computed from `messages`. */
+  const [guided, setGuided] = useState<TutorGuided | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const [sending, setSending] = useState(false);
+  /**
+   * The mode of the question in flight, or null when nothing is.
+   *
+   * Both facts in one value, because both are rendered: the buttons are disabled while
+   * it is set, and only the one that was pressed shows a working label. Held as state
+   * rather than a ref precisely because it is rendered; a ref read during render is not
+   * a subscription, and the label would be a frame behind the disable.
+   */
+  const [sendingMode, setSendingMode] = useState<TutorMode | null>(null);
+  const sending = sendingMode !== null;
   /** A refusal, in the server's words. Separate from `error`, which is a failure. */
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -209,8 +295,18 @@ export function ConceptTutor({
   const requested = useRef(false);
   const pendingFocus = useRef<FocusTarget | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  const sendRef = useRef<HTMLButtonElement>(null);
+  const askRef = useRef<HTMLButtonElement>(null);
+  const guidedRef = useRef<HTMLButtonElement>(null);
   const latestReplyRef = useRef<HTMLDivElement>(null);
+  /**
+   * Which of the two buttons started the LAST request, for the focus effect only.
+   *
+   * Both go `disabled` while a question is in flight, so both blur to the body, and
+   * "put focus back where it was" has to know which one it was. It outlives
+   * `sendingMode`, which is null again by the time focus is placed, and it is read in an
+   * effect rather than during render, which is where a ref belongs.
+   */
+  const pressed = useRef<TutorMode>("answer");
 
   function load() {
     setLoading(true);
@@ -219,6 +315,7 @@ export function ConceptTutor({
       .then((conversation) => {
         setMessages(conversation.messages);
         setLimits(conversation.limits);
+        setGuided(conversation.guided);
       })
       .catch((err) => {
         const message = errorMessage(err);
@@ -254,15 +351,18 @@ export function ConceptTutor({
         ? latestReplyRef.current
         : wanted === "composer"
           ? composerRef.current
-          : sendRef.current;
+          : // Back to the button that was actually pressed, which is why the mode is
+            // remembered rather than inferred.
+            (pressed.current === "guided" ? guidedRef.current : askRef.current);
     // Only when the blur left focus nowhere. A learner who tabbed away mid-request is
     // where they want to be, and yanking them back is worse than the problem being
     // fixed. Same guard, and the same reason, as ReteachConcept's recovered branch.
     if (document.activeElement === document.body) target?.focus();
-  }, [messages, notice, error, sending]);
+  }, [messages, notice, error, sending, guided]);
 
-  async function send() {
+  async function send(mode: TutorMode) {
     if (sending) return;
+    pressed.current = mode;
     const question = draft.trim();
     if (!question) {
       // Announced as well as shown. Focus never leaves the box on this path, and a
@@ -273,12 +373,16 @@ export function ConceptTutor({
       onAnnounce(empty);
       return;
     }
-    setSending(true);
+    setSendingMode(mode);
     setError(null);
     setNotice(null);
-    onAnnounce(`Sending your question about ${conceptLabel}.`);
+    onAnnounce(
+      mode === "guided"
+        ? `Sending your question about ${conceptLabel}, to work through yourself.`
+        : `Sending your question about ${conceptLabel}.`,
+    );
     try {
-      const outcome = await sendTutorMessage(conceptKey, question);
+      const outcome = await sendTutorMessage(conceptKey, question, mode);
       if (outcome.kind === "turn") {
         const { learner, reply, limits: fresh } = outcome.turn;
         // Appended to what is already on screen. The endpoint hands back only the two
@@ -286,6 +390,10 @@ export function ConceptTutor({
         // could disagree with the one being held here.
         setMessages((current) => [...current, learner, reply]);
         setLimits(fresh);
+        // Straight from the response, which recomputed it after the insert. This is also
+        // what makes the fallback self-clearing: the answer-mode reply it served breaks
+        // the run, so `available` comes back true and the spent hint disappears.
+        setGuided(outcome.turn.guided);
         // Cleared ONLY here. The box is emptied when the question has actually been
         // delivered and is visible in the transcript above it, and on no other path.
         setDraft("");
@@ -294,10 +402,17 @@ export function ConceptTutor({
         // focus moves to it. Whether it has an ungrounded half is worth carrying,
         // because that is the one thing about a reply that changes how to read it, and
         // moving focus to a region announces the region's name and not its contents.
+        // Built from what is ON SCREEN, never from the mode that was requested. A
+        // guided request served in answer mode arrives with no withheld move, and
+        // announcing one that is not there would send a screen reader user looking for
+        // a block that was never drawn.
+        const withheld = reply.role === "tutor" && reply.ask;
+        const outside = reply.role === "tutor" && reply.beyond;
+        const arrival = withheld
+          ? `The tutor worked through ${conceptLabel} up to the last step and left that step for you.`
+          : `The tutor answered your question about ${conceptLabel}.`;
         onAnnounce(
-          reply.role === "tutor" && reply.beyond
-            ? `The tutor answered your question about ${conceptLabel}, including a part that is not from your course.`
-            : `The tutor answered your question about ${conceptLabel}.`,
+          outside ? `${arrival} It also includes a part that is not from your course.` : arrival,
         );
         return;
       }
@@ -306,6 +421,8 @@ export function ConceptTutor({
       // Read before the switch narrows `conflict` away, for the unreachable default.
       const serverMessage = conflict.message;
       setLimits(conflict.limits);
+      // `guided` is deliberately NOT touched either. A refused turn wrote no row, so the
+      // run is exactly what it was, and the 409 carries no view of it to copy from.
       // The transcript is deliberately NOT touched. This refusal did not change it, and
       // it carries no copy of it to redraw from; that is the point of the 409 being
       // shaped the way it is.
@@ -352,7 +469,7 @@ export function ConceptTutor({
       // a screen reader user finds out it survived.
       pendingFocus.current = "composer";
     } finally {
-      setSending(false);
+      setSendingMode(null);
     }
   }
 
@@ -448,7 +565,10 @@ export function ConceptTutor({
             // it to be discovered.
             if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
               event.preventDefault();
-              void send();
+              // The shortcut sends in answer mode, which is the default and the primary
+              // button. Working it out is the deliberate choice, so it is made by
+              // pressing the control that says so.
+              void send("answer");
             }
           }}
           placeholder={`Ask anything about ${conceptLabel}`}
@@ -474,8 +594,8 @@ export function ConceptTutor({
           */}
           <button
             type="button"
-            ref={sendRef}
-            onClick={() => void send()}
+            ref={askRef}
+            onClick={() => void send("answer")}
             disabled={sending}
             className={`rounded-lg bg-amber-800 px-4 py-1.5 text-[13px] font-medium text-white transition-colors dark:bg-amber-200 dark:text-amber-950 ${
               sending
@@ -483,7 +603,30 @@ export function ConceptTutor({
                 : "hover:bg-amber-700 dark:hover:bg-amber-100"
             }`}
           >
-            {sending ? "Asking…" : "Ask"}
+            {sendingMode === "answer" ? "Asking…" : "Ask"}
+          </button>
+          {/*
+            TWO BUTTONS, not a toggle beside one. The register is a choice about THIS
+            question and the server treats it that way: any answer-mode turn breaks the
+            guided run, so there is no setting to be left switched on. A checkbox would
+            claim to persist something that resets underneath it, and would need clearing
+            after every send to stay honest. Sending twice, differently, needs neither.
+
+            Secondary styling, because answer mode is the default: a learner who opens
+            the tutor stuck on something should reach the button that answers.
+          */}
+          <button
+            type="button"
+            ref={guidedRef}
+            onClick={() => void send("guided")}
+            disabled={sending}
+            className={`rounded-lg border border-amber-700 px-4 py-1.5 text-[13px] font-medium text-amber-900 transition-colors dark:border-amber-500 dark:text-amber-200 ${
+              sending
+                ? "cursor-progress opacity-60"
+                : "hover:border-amber-900 hover:bg-amber-100/60 dark:hover:border-amber-300 dark:hover:bg-amber-950/50"
+            }`}
+          >
+            {sendingMode === "guided" ? "Working…" : "Let me work it out"}
           </button>
           <p className="text-[12px] text-zinc-500 dark:text-zinc-500">
             Ctrl or Cmd and Enter sends.
@@ -492,6 +635,11 @@ export function ConceptTutor({
             {limits && ` ${usageLine(limits)}`}
           </p>
         </div>
+        {/* Which of the two sentences shows is the server's call, off `guided.available`,
+            and never counted out of the transcript above. */}
+        <p className="mt-1.5 text-[12px] text-zinc-500 dark:text-zinc-500">
+          {guided && !guided.available ? GUIDED_SPENT_HINT : GUIDED_HINT}
+        </p>
       </div>
       {/* No schedule promise here. The note panel this is mounted inside carries it,
           widened to name the tutor, and it renders below: a second wording of the same
