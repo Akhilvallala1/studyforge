@@ -475,13 +475,23 @@ class FakeProvider:
                 # each region on its own; one sample can only ever prove the block it
                 # happens to land in.
                 #
-                # PURPOSE-BUILT AND SHORT rather than the answer's block appended to the
-                # rung wording. ASK_MAX_CHARS is 300 and parse_reply hard-cuts to it, the
-                # injection line sits at the END of the sample, and appending would leave
-                # roughly forty characters of headroom. One reworded question later the
-                # cut lands mid-sample and the fixture still LOOKS like it covers this.
-                # test_the_hostile_guided_ask_survives_the_cap_intact holds the line.
+                # PURPOSE-BUILT AND SHORT rather than the answer's block appended to
+                # the rung wording, for two measured reasons.
                 #
+                # FIRST, the append ends on the wrong thing. That block closes with the
+                # injection line, so an appended `ask` hands the learner a hostile sample
+                # where a withheld move should be, and the reply stops looking like a
+                # handover at all.
+                #
+                # SECOND, the headroom. Appending measures 297 and 299 characters at the
+                # two rungs against an ASK_MAX_CHARS of 300, which parse_reply hard-cuts
+                # to. That is three characters, not a margin. Nothing truncates today, so
+                # a length check alone would pass and keep passing until any word is
+                # added anywhere in that chain, at which point the cut takes the injection
+                # line off the end and leaves a fixture that still LOOKS like it covers
+                # this. The version below is 177 and 194, which is headroom worth having.
+                #
+                # test_the_hostile_guided_ask_survives_the_cap_intact holds both lines.
                 # The rung tail is kept so the fade stays legible on this concept too.
                 tail = (
                     "You have the method: what does it give back?"

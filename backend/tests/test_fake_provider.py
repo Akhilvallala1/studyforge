@@ -384,14 +384,21 @@ def test_fake_guided_carries_hostile_markdown_in_both_rendered_fields():
 
 
 def test_the_hostile_guided_ask_survives_the_cap_intact():
-    """MUTATION TARGET. Append the answer's hostile block to the rung wording instead of
-    replacing it, and this goes red while the test above stays green.
+    """MUTATION TARGET, CONFIRMED. Append the answer's hostile block to the rung wording
+    instead of replacing it: this goes red and the test above stays green.
 
-    parse_reply hard-cuts `ask` to ASK_MAX_CHARS, and the injection line sits at the END
-    of the sample. A hostile `ask` that overran the cap would lose that line to the cut,
-    the script tag before it would survive, and the fixture would still LOOK like it
-    covered this. That is the failure worth pinning: not an absent sample, a truncated
-    one that still passes a substring check for the first half of itself.
+    WHICH ASSERTION CATCHES IT IS NOT THE OBVIOUS ONE, and the measurement is the point.
+    That append lands at 297 and 299 characters against an ASK_MAX_CHARS of 300, so it
+    does NOT truncate and the two length assertions both pass. What fails is the last
+    one: the answer's block closes with the injection line, so the appended `ask` ends on
+    a hostile sample rather than on the question it is supposed to be handing back.
+
+    The length assertions are still worth their place, for the three characters of
+    headroom that measurement exposes. parse_reply hard-cuts `ask`, and the injection line
+    sits at the END of the sample, so the first word added anywhere in that chain pushes
+    the cut into the sample: the script tag before it survives, the injection line does
+    not, and the fixture goes on passing a substring check for the first half of itself.
+    That is the failure this pins, and it is one edit away rather than hypothetical.
     """
     provider = FakeProvider()
     for rung in tutor.GUIDED_RUNGS:
