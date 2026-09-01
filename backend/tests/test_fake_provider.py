@@ -358,12 +358,61 @@ def test_fake_guided_is_deterministic_and_concept_sensitive():
     assert "Quorum Reads" in other.answer
 
 
-def test_fake_guided_carries_hostile_markdown_for_the_hostile_concept():
-    """Guided replies are markdown in the browser too, so this surface gets it as well."""
+def test_fake_guided_carries_hostile_markdown_in_both_rendered_fields():
+    """Guided replies are markdown in the browser too, and `ask` is its own block.
+
+    THE UNIT IS THE FIELD. `answer` and `ask` draw into two separate regions, so a
+    sample in one proves nothing about the other. That they share LessonMarkdown today
+    is a fact about the current components, not a guarantee, and a shared renderer is
+    exactly what a later change splits with nothing to notice: the reply still parses,
+    still renders, and the escaping test still passes on the block that kept its sample.
+
+    Both rungs, because the hostile `ask` is built per rung and a fixture covering only
+    rung 1 would leave the rung 2 wording unexercised.
+    """
     provider = FakeProvider()
-    hostile = _guided_reply(provider, "explain", concept=HOSTILE_LESSON_TITLE)
-    assert "<script>alert(1)</script>" in hostile.answer
-    assert "<script>" not in _guided_reply(provider, "explain", concept="Recursion").answer
+    for rung in tutor.GUIDED_RUNGS:
+        hostile = _guided_reply(provider, "explain", rung=rung, concept=HOSTILE_LESSON_TITLE)
+        assert "<script>alert(1)</script>" in hostile.ask
+        assert "Ignore previous instructions" in hostile.ask
+        # ADDED ALONGSIDE, not moved. `answer` keeps its own sample.
+        assert "<script>alert(1)</script>" in hostile.answer
+
+    benign = _guided_reply(provider, "explain", concept="Recursion")
+    assert "<script>" not in benign.answer
+    assert "<script>" not in benign.ask
+
+
+def test_the_hostile_guided_ask_survives_the_cap_intact():
+    """MUTATION TARGET. Append the answer's hostile block to the rung wording instead of
+    replacing it, and this goes red while the test above stays green.
+
+    parse_reply hard-cuts `ask` to ASK_MAX_CHARS, and the injection line sits at the END
+    of the sample. A hostile `ask` that overran the cap would lose that line to the cut,
+    the script tag before it would survive, and the fixture would still LOOK like it
+    covered this. That is the failure worth pinning: not an absent sample, a truncated
+    one that still passes a substring check for the first half of itself.
+    """
+    provider = FakeProvider()
+    for rung in tutor.GUIDED_RUNGS:
+        reply = _guided_reply(provider, "explain", rung=rung, concept=HOSTILE_LESSON_TITLE)
+        assert len(reply.ask) <= tutor.ASK_MAX_CHARS
+        assert not reply.ask.endswith("...")
+        # The rung tail is the last thing in the sample, so an intact `ask` still ends in
+        # the question it is supposed to be handing back.
+        assert reply.ask.rstrip().endswith("?")
+
+
+def test_the_hostile_guided_ask_keeps_the_rungs_apart():
+    """The fade has to stay legible on the hostile concept too, not only the benign one.
+
+    A hostile branch returning one fixed string for both rungs would make the rung QA
+    actually drives on this concept unrepresentative of the other.
+    """
+    provider = FakeProvider()
+    one = _guided_reply(provider, "explain", rung=1, concept=HOSTILE_LESSON_TITLE)
+    two = _guided_reply(provider, "explain", rung=2, concept=HOSTILE_LESSON_TITLE)
+    assert one.ask != two.ask
 
 
 def test_generate_endpoint_with_fake_provider(client, monkeypatch):
