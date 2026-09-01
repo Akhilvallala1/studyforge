@@ -71,19 +71,32 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False)
 #
 # There is deliberately NO rule here about whether to use a server default, because the
 # right answer depends on the column and a rule either way would be wrong half the time.
-# Two shapes, both correct:
+# "Columns must be nullable" and "never write a DEFAULT clause" are both true of the only
+# spelling this table happened to contain first, and both false in general: they would
+# forbid the perfectly safe NOT NULL DEFAULT shape outright. Two shapes, both correct:
 #
-#   nullable      mapped_column(String(10), nullable=True)        -> DDL "VARCHAR(10)"
-#   not nullable  mapped_column(Text, server_default=text("''"))  -> DDL "TEXT NOT NULL
-#                                                                    DEFAULT ''"
+#   nullable      mapped_column(String(10), nullable=True)        -> "VARCHAR(10)"
+#   not nullable  mapped_column(Text, server_default=text("''"))  -> "TEXT NOT NULL
+#                                                                     DEFAULT ''"
 #
-# A nullable column with DEFAULT '' in the DDL and no server_default on the model does
-# NOT match: sqlite records dflt_value "''" where create_all records None, and upgraded
-# stops equalling fresh for a reason nobody would guess from the failure message.
+# A SERVER DEFAULT IS A MATCHED PAIR: server_default on the mapped_column AND the same
+# default written into the entry's definition, BOTH OR NEITHER. Half the pair is worse
+# than neither half, because neither half is caught by reading either file alone:
+#
+#   server_default on the model, no DEFAULT in the entry -> fresh records dflt_value
+#       "''" and upgraded records None
+#   DEFAULT in the entry, no server_default on the model -> upgraded records "''" and
+#       fresh records None
+#
+# Both directions fail upgraded == fresh on the `default` field, which is a comparison
+# nobody looks at until it fires, so the pairing is worth knowing before you write the
+# entry rather than after.
 
-# (table, column, ddl), where ddl is EVERYTHING that follows the column name in
-# ALTER TABLE <table> ADD COLUMN <column> <ddl>. The whole definition, not a type name,
-# because a NOT NULL column carries its constraint and default in the same string.
+# (table, column, definition), where `definition` is EVERYTHING that follows the column
+# name in ALTER TABLE <table> ADD COLUMN <column> <definition>. A COLUMN DEFINITION, not
+# a type name, and it is called that everywhere here because thinking of it as a type is
+# what leads to writing "TEXT" and losing the constraint and default a NOT NULL column
+# carries in the same string.
 #
 # APPEND, NEVER EDIT OR REMOVE A ROW. A database in the wild can be at any point in this
 # list, and deleting an entry means the install that never got that column never will.
@@ -138,7 +151,7 @@ def _add_missing_columns() -> None:
     """
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
-    for table, column, ddl in ADDED_COLUMNS:
+    for table, column, definition in ADDED_COLUMNS:
         if table not in tables:
             # create_all just built it from the current models, so it is already the
             # right shape. ALTERing a table that does not exist would raise.
@@ -146,7 +159,9 @@ def _add_missing_columns() -> None:
         if column in {existing["name"] for existing in inspector.get_columns(table)}:
             continue
         with engine.begin() as connection:
-            connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+            connection.execute(
+                text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            )
 
 
 def init_db() -> None:

@@ -868,6 +868,22 @@ def test_no_planning_endpoint_touches_the_scheduler(client):
         "almost nothing and would pass whatever the endpoints did. _seed_cards is what "
         "keeps it honest; do not remove it."
     )
+    # COUNTING IS NOT CHECKING, which is this test's own original mistake one level up.
+    # Three cards in the "new" state have due, stability and difficulty all NULL, so a
+    # mutation that moves every due date leaves them untouched: the count guard passes AND
+    # the test passes with the mutation live. Measured, not reasoned. What actually keeps
+    # this honest is the fsrs.GOOD rating inside _seed_cards, so assert the property that
+    # rating produces instead of trusting a docstring to describe it.
+    #
+    # Deliberately over the WHOLE snapshot rather than only the rows seeded here: every
+    # card the comparison covers ought to be one a mutation could move. If a future test
+    # leaves an unrated card behind and trips this, rate it there rather than narrowing
+    # this back to a count.
+    assert all(card["due"] is not None for card in before["cards"]), (
+        "a card in the snapshot has no due date, so nothing could pull it forward and it "
+        "contributes nothing to what this test can catch. Cards must be RATED, not merely "
+        "created; see _seed_cards."
+    )
     queue_before = client.get("/review/queue").json()
     today_before = client.get("/review/today").json()
 
