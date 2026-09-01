@@ -29,6 +29,25 @@ class Course(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
+    # The exam, the interview, the day the material stops being optional. A string in
+    # local YYYY-MM-DD, not a DateTime, for exactly the reason UnavailableDay.day gives
+    # below: a day the learner named is not an instant. "My exam is on the 14th" stays
+    # the 14th wherever it is read back from, and storing 2026-09-14T00:00 would make it
+    # the 13th for anyone east of the machine that wrote it.
+    #
+    # Both columns are NULLABLE and carry NO server default, and neither is a style
+    # choice. A course without a deadline is the normal case and behaves exactly as it
+    # did before this feature, so NULL has to mean something. And the ALTER TABLE that
+    # adds these to an existing database (see app/db.py) is only legal without a default
+    # while the column is nullable: SQLite accepts ADD COLUMN ... NOT NULL against an
+    # empty table and rejects it against a table with even one row, so a NOT NULL variant
+    # would pass every test on a fresh install and brick every real one.
+    deadline: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # What the deadline IS, in the learner's words: "Midterm", "CS230 final". Free text
+    # they typed, so anything rendering it (including the .ics export) treats it as
+    # untrusted the way it treats an LLM-written course title.
+    deadline_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
     modules: Mapped[list["Module"]] = relationship(
         back_populates="course", cascade="all, delete-orphan", order_by="Module.position"
     )
@@ -283,6 +302,23 @@ class UnavailableDay(Base):
     off is a calendar day the learner named, not an instant: storing 2026-09-14T00:00
     would make it depend on which timezone read it back, and a day marked off in one
     place would silently become a different day in another.
+
+    WHAT A DAY OFF ACTUALLY DOES, now that study planning reads this table (it has
+    existed since Phase 2 and had no consumer until then). It removes a day from the
+    INTAKE DENOMINATOR: available_days shrinks, so the lessons-per-week the learner
+    needs to hit their deadline goes up. That is the whole effect.
+
+    It does NOT move a review card, and nothing may make it. Reviews are scheduled by
+    memory decay and lessons by the calendar, and the two do not negotiate: a card due
+    on a day off stays due on that day, because the learner's memory does not take the
+    day off with them. Pushing it would corrupt the elapsed_days that FSRS fits against.
+    The planner does not schedule LESSONS into a day off either; it schedules nothing
+    into any particular day, it only counts the days that remain.
+
+    Days off are GLOBAL, not per course, which is what the missing course_id says. A
+    learner who is travelling is travelling for every course they are taking. Adding a
+    course_id later would have to answer what an existing global row means for a course
+    that did not exist when it was written, and there is no good answer.
     """
 
     __tablename__ = "unavailable_days"
