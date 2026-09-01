@@ -21,6 +21,19 @@ table is byte-identical afterwards NO MATTER WHAT the models say, and a column a
 attempts sails straight through. The claim with teeth is UPGRADED == FRESH, because
 that is the one an added column breaks, and test_every_mapped_column_exists_in_an_upgraded_database
 states the same thing as the symptom the learner would actually see.
+
+WHAT THIS FILE NOW ASSERTS, restated after study planning added courses.deadline. It
+used to assert that no existing table ever changes shape, which was the correct reading
+while init_db() was create_all() alone and an ALTER was simply unavailable. init_db()
+now runs a migration step after create_all (_ADDED_COLUMNS in app/db.py), so an existing
+table CAN change shape, and the invariant is one step weaker and considerably more
+useful: AN ALTER MUST BE ACCOMPANIED BY A MIGRATION STEP, AND THIS FILE PROVES THE STEP
+RAN. Every comparison here is still measured from BASE_COMMIT against the current
+models, so a column added with no migration behind it fails exactly as loudly as before.
+See test_no_existing_table_gains_or_loses_a_column for what was given up and what was
+kept. backend/tests/test_planning_migration.py covers what an EMPTY base database
+structurally cannot see: this file's base has no rows in it, so it would happily pass a
+migration that raises on every install that has ever been used.
 """
 
 import subprocess
@@ -217,13 +230,35 @@ def test_an_upgraded_database_ends_up_identical_to_a_fresh_one(databases):
 
 
 def test_no_existing_table_gains_or_loses_a_column(databases):
-    """The same constraint stated per table, so a failure names the table."""
-    for table, columns in databases.base.items():
-        assert databases.fresh[table] == columns, (
-            f"{table} changed shape on this branch. create_all cannot ALTER, so an "
-            f"upgraded database would never gain this."
+    """The same constraint stated per table, so a failure names the table.
+
+    NARROWED when study planning added courses.deadline, and it is worth being precise
+    about what was given up, because narrowing a test is usually how a test dies.
+
+    This compared each base table against FRESH, which asserted that no existing table
+    ever changes shape at all. That was the right claim for exactly as long as there was
+    no way to change one: init_db() was create_all() alone, create_all cannot ALTER, so
+    an added column was unimplementable and forbidding it cost nothing. app/db.py now
+    carries a migration step, and the claim stopped being true the moment it landed:
+    courses legitimately gains two columns, and a test asserting otherwise is asserting
+    that the mechanism must never be used.
+
+    The comparison is now UPGRADED against FRESH, per table. Every tooth is still here.
+    A column added to an existing table WITHOUT a migration step still fails, because
+    the upgraded database will not have it and the fresh one will, and it still fails
+    naming the table. What is gone is only the part that had stopped being a bug: the
+    same column WITH a working migration step now passes, which is the right answer.
+
+    The invariant this file proves is therefore no longer "an existing table never
+    changes shape" but "an alter is accompanied by a migration step, and the step ran".
+    """
+    for table in databases.base:
+        assert databases.upgraded[table] == databases.fresh[table], (
+            f"{table} has a different shape on an upgraded install than on a fresh one. "
+            f"create_all cannot ALTER, so either this branch changed the table without "
+            f"adding an entry to _ADDED_COLUMNS in app/db.py, or the entry it added does "
+            f"not reproduce what create_all builds."
         )
-        assert databases.upgraded[table] == columns
 
 
 def test_every_mapped_column_exists_in_an_upgraded_database(databases):
