@@ -1096,6 +1096,37 @@ def _post_mode(client, key: str, mode):
 _WRONG_TYPE_MODES = [7, None, [], {}, True, 1.5, ["guided"], {"mode": "guided"}]
 
 
+def test_the_published_schema_declares_the_mode_type_and_its_legal_values():
+    """What /docs tells a client, pinned, because it has already been lost once silently.
+
+    Widening the annotation to Any to fix the refusal shape dropped `type` from the
+    generated OpenAPI property, and nothing said so: the endpoint behaved correctly, every
+    test passed, and the only casualty was the documentation. json_schema_extra puts it
+    back and adds the legal VALUES, which no version of this field has ever advertised.
+
+    THE LAST ASSERTION IS THE LOAD-BEARING ONE. The enum here DOCUMENTS and does not
+    VALIDATE: pydantic hands `mode` through untouched, and app/main.py's hand-rolled check
+    is still the only thing that refuses anything. Someone reading `enum` in the schema
+    would reasonably assume otherwise and reach for a real Literal, which would restore
+    exactly the bug this branch fixed, since pydantic would then reject a wrong value with
+    its own validation array instead of invalid_mode. So the passthrough is asserted right
+    here, next to the enum, rather than left to the endpoint tests to imply.
+
+    The enum is compared against TUTOR_MODES rather than a literal list, so the docs cannot
+    drift from the values the server actually accepts.
+    """
+    prop = main.TutorQuestion.model_json_schema()["properties"]["mode"]
+
+    assert prop["type"] == "string"
+    assert prop["enum"] == list(tutor.TUTOR_MODES)
+    assert prop["default"] == tutor.MODE_ANSWER
+
+    assert main.TutorQuestion(concept_key="k", message="m", mode=7).mode == 7, (
+        "the schema enum has started validating, so a wrong mode is now rejected before "
+        "the endpoint's own check runs and comes back in the framework's shape again"
+    )
+
+
 @pytest.mark.parametrize("mode", _WRONG_TYPE_MODES, ids=repr)
 def test_a_mode_of_the_wrong_type_is_refused_exactly_like_one_of_the_wrong_value(
     client, monkeypatch, mode

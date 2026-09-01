@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -986,6 +986,51 @@ CONCEPT_TURN_LIMIT_MESSAGE = (
 )
 
 
+# THIS DOCSTRING IS PUBLISHED. FastAPI renders it as the request schema's `description`
+# at /docs, so it is read by people writing clients rather than by people reading this
+# file. Everything below the class line has to earn its place on that page: what the
+# fields accept, what a default does, what gets refused. The reasoning about how we got
+# here is up HERE instead, where it is just as findable to anyone in this file and
+# invisible to anyone in the docs.
+#
+# WHY `mode` IS TYPED Any AND VALIDATED BY HAND, which looks like giving up on the schema
+# and is the opposite. A Literal would reject an unknown value with pydantic's own 422,
+# whose detail is a list of validation objects, and every other tutor refusal is
+# {"error": ..., "message": ...}; a client parsing this route's errors would meet two
+# unrelated shapes from one route. So the check was hand rolled from the start.
+#
+# A plain `str` only got that half right, and QA found the other half. Pydantic rejects a
+# mode of the wrong TYPE before this endpoint's code runs at all, so {"mode": 7} and
+# {"mode": null} escaped the hand-rolled check and came back as exactly the raw array it
+# exists to avoid, with "Input should be a valid string" as the sentence a learner would
+# have been shown. A wrong type and a wrong value are THE SAME MISTAKE from the caller's
+# side, and they now produce the same refusal, because widening the annotation is what
+# lets both reach one code path and one message.
+#
+# json_schema_extra IS WHAT KEEPS THE DOCS HONEST, and it leaves them better than the
+# `str` annotation did rather than merely as good. Measured on the generated OpenAPI:
+#   str          {"title": "Mode", "default": "answer", "type": "string"}
+#   Any alone    {"title": "Mode", "default": "answer"}
+#   Any + this   {"title": "Mode", "default": "answer", "type": "string",
+#                 "enum": ["answer", "guided"]}
+# So widening the annotation had quietly dropped `type` from the published schema, and
+# declaring it back also publishes the legal VALUES, which no version of this field ever
+# advertised. It documents; it does not validate. Pydantic still hands `mode` through
+# untouched, which is the whole point, and the hand-rolled check below is still the only
+# thing that refuses anything.
+#
+# THE ENUM IS DERIVED FROM TUTOR_MODES, never written out. Two spellings of the same list
+# is a divergence nothing would catch: the docs would advertise a value the server refuses,
+# or omit one it accepts, and both read as correct until a client trusts them.
+#
+# THIS IS A NARROW FIX ON A WIDE HOLE, and the boundary is deliberate rather than an
+# oversight. Every string field on every hand-validated body in this file has the same
+# gap: concept_key, message, day, note, deadline and label all answer a wrong TYPE with
+# the raw array while answering a wrong VALUE in the good shape. `mode` is fixed alone
+# because it is the field the guided UI sends, and widening the rest is an API-wide
+# decision about error shape rather than a bug fix.
+# test_other_fields_keep_the_frameworks_validation_shape records that boundary, so
+# changing it later is a decision someone makes rather than a diff nobody notices.
 class TutorQuestion(BaseModel):
     """One question about one concept.
 
@@ -995,44 +1040,23 @@ class TutorQuestion(BaseModel):
     containing "/": the concept most in need of explaining would be the one URL the
     learner could not reach.
 
-    `mode` DEFAULTS TO ANSWER and the default is the compatibility promise. A client
-    written before guided mode existed sends no mode at all and gets exactly the behaviour
-    it already had, so nothing about this feature reaches a learner who did not ask for it.
-    Guided mode is opt in per request, never inferred from the learner's message, their
-    mastery bucket, or how many times they have missed the concept.
+    `mode` chooses the form of the reply and accepts "answer" or "guided". OMIT IT for
+    "answer": that is the compatibility promise, so a client written before guided mode
+    existed sends no mode at all and gets exactly the behaviour it already had. Sending
+    null is NOT the same as omitting it. Null, any other string, and any non-string are
+    all refused with 422 invalid_mode, in the same {"error", "message"} shape as every
+    other refusal on this route.
 
-    `mode` IS TYPED Any AND VALIDATED BY HAND, which looks like giving up on the schema
-    and is the opposite. A Literal would reject an unknown value with pydantic's own 422,
-    whose detail is a list of validation objects, and every other tutor refusal is
-    {"error": ..., "message": ...}; a client parsing this route's errors would meet two
-    unrelated shapes from one route. So the check was hand rolled from the start.
-
-    A plain `str` only got that half right, and QA found the other half. Pydantic rejects a
-    mode of the wrong TYPE before this endpoint's code runs at all, so {"mode": 7} and
-    {"mode": null} escaped the hand-rolled check and came back as exactly the raw array it
-    exists to avoid, with "Input should be a valid string" as the sentence a learner would
-    have been shown. A wrong type and a wrong value are THE SAME MISTAKE from the caller's
-    side, and they now produce the same refusal, because widening the annotation is what
-    lets both reach one code path and one message.
-
-    THIS IS A NARROW FIX ON A WIDE HOLE, and the boundary is deliberate rather than an
-    oversight. Every string field on every hand-validated body in this file has the same
-    gap: concept_key, message, day, note, deadline and label all answer a wrong TYPE with
-    the raw array while answering a wrong VALUE in the good shape. `mode` is fixed alone
-    because it is the field the guided UI is about to start sending, and widening the rest
-    is an API-wide decision about error shape rather than a bug fix.
-    test_other_fields_keep_the_frameworks_validation_shape records that boundary, so
-    changing it later is a decision someone makes rather than a diff nobody notices.
-
-    Explicit null is a wrong value here, not an absent one: omitting `mode` gives answer
-    mode, and sending null gives invalid_mode. That asymmetry is right. Omission is a
-    client that predates the feature, and null is a client that meant to say something and
-    said nothing, which is worth telling it about.
+    Guided mode is opt in per request. It is never inferred from the learner's message,
+    their mastery bucket, or how many times they have missed the concept.
     """
 
     concept_key: str
     message: str
-    mode: Any = tutor.MODE_ANSWER
+    mode: Any = Field(
+        tutor.MODE_ANSWER,
+        json_schema_extra={"type": "string", "enum": list(tutor.TUTOR_MODES)},
+    )
 
 
 def _tutor_invalid(code: str, message: str) -> HTTPException:
