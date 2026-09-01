@@ -143,6 +143,48 @@ def clear_todays_tutor_turns() -> None:
         session.close()
 
 
+def clear_days_off() -> None:
+    """Delete every marked day off. Call before anything that reads a study-day count.
+
+    THE RULE THIS EXISTS FOR: any test whose assertion depends on available_days,
+    required_per_week, or days_off_in_window needs this first. unavailable_days is a
+    GLOBAL table with a unique constraint on `day` and no course id, and the whole suite
+    shares one SQLite file, so a test that marks 2026-10-01 off leaves it marked for
+    every test that runs afterwards. The damage is silent and order-dependent: a plan
+    test asserting "12 available days" gets 11, and only when the other test happens to
+    run first. It would not fail today. It would fail when the fifth test is added, and
+    it would point at that test rather than at the one that left the row.
+
+    Here in conftest rather than in the planning tests for the reason
+    clear_todays_tutor_turns is here: the .ics tests need it too, a third file will, and
+    two byte-identical copies with two docstrings are how those drift apart.
+
+    A BLANKET DELETE HERE, unlike clear_todays_tutor_turns, which is carefully scoped to
+    today's window. That difference is deliberate and not an inconsistency. Tutor
+    messages carry a timestamp that test_tutor_context.py seeds at fixed past dates
+    precisely to prove where the 04:00 boundary falls, so a blanket delete there would
+    take exactly the rows that are the proof. A day off has no such fixture anywhere: it
+    is a bare calendar key with no window semantics, nothing seeds one to demonstrate a
+    boundary, and a window-scoped delete would be worse than useless, since the row that
+    poisons a denominator is the one another test left OUTSIDE the window under test.
+
+    Callers couple it to what actually needs it. test_planning.py runs it from an autouse
+    fixture, because every test in that file reads a study-day count. Anything else
+    should call it directly rather than adding a second autouse delete, which would
+    misdescribe tests that do not care about days off as tests that do.
+    """
+    from app import models
+    from app.db import SessionLocal, init_db
+
+    init_db()
+    session = SessionLocal()
+    try:
+        session.query(models.UnavailableDay).delete()
+        session.commit()
+    finally:
+        session.close()
+
+
 @pytest.fixture
 def client():
     from fastapi.testclient import TestClient
