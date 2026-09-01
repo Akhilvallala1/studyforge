@@ -395,6 +395,53 @@ def databases(request, tmp_path, monkeypatch):
         upgraded_engine.dispose()
 
 
+def test_every_added_column_is_one_the_models_still_declare():
+    """The other half of keeping ADDED_COLUMNS honest, and it needs no database at all.
+
+    Every entry has to name a column the CURRENT models declare on that table. An entry
+    that does not is applied anyway, because _add_missing_columns asks the database what
+    it is missing and never asks the models whether the column should exist. Measured: a
+    fresh install with an entry for a column models.py does not declare really does get
+    that column, on every install, permanently. It is unmapped, nothing reads it, and
+    "APPEND, NEVER EDIT OR REMOVE A ROW" means it can never be withdrawn.
+
+    That also makes a stale entry invisible to every other test in this file, which is
+    what earns this one its place. The comparisons here run init_db() against BOTH the
+    upgraded database and the fresh one, so a stale entry adds its column to both sides
+    and they go on agreeing. Nothing else here can see it.
+
+    WHAT TO DO WHEN THIS FIRES, because the obvious move is the wrong one. It fires when a
+    mapped_column is DROPPED while its entry stays, and the answer is NOT to quietly delete
+    the entry: the installs that already ran that entry have the column, and deleting the
+    line does not remove it from any of them, it only hides why it is there. Dropping a
+    column is already outside _add_missing_columns's documented ceiling, which names drops
+    explicitly as something SQLite cannot express as an ALTER. So this test firing is the
+    signal that the change has left what this mechanism covers, and the honest options are
+    to restore the mapped_column or to bring in a real migration path for the installs
+    that have the column. Deciding that is the point; being told is what this buys.
+
+    Modelled on test_every_altered_table_is_seeded, and for the same reason: an advisory
+    rule that nothing enforces is a rule the next person discovers by breaking it.
+    """
+    from app import models  # noqa: F401  (register the mapped classes with Base.metadata)
+    from app.db import Base
+
+    for table, column, _ in ADDED_COLUMNS:
+        assert table in Base.metadata.tables, (
+            f"ADDED_COLUMNS names table {table!r}, which the current models do not "
+            f"declare at all. Nothing will apply the entry, because _add_missing_columns "
+            f"skips a table create_all never built, so the column silently never arrives."
+        )
+        assert column in Base.metadata.tables[table].columns, (
+            f"ADDED_COLUMNS adds {table}.{column}, which the current models no longer "
+            f"declare. The ALTER still runs, so every install gets an unmapped column that "
+            f"nothing reads and that cannot be withdrawn. Do NOT just delete the entry: "
+            f"the installs that already ran it keep the column either way. A dropped "
+            f"column is outside what _add_missing_columns can do, so restore the "
+            f"mapped_column or give those installs a real migration path."
+        )
+
+
 def test_every_altered_table_is_seeded(databases):
     """THE GUARD THAT KEEPS THE REST OF THIS FILE HONEST.
 
