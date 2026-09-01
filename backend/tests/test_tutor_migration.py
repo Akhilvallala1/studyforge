@@ -459,13 +459,22 @@ def test_an_upgraded_database_ends_up_identical_to_a_fresh_one(databases):
     does not reflect what create_all emits (a stray DEFAULT '', a NOT NULL that the
     mapped_column does not carry, a mismatched width) fails here and nowhere else.
     """
-    # Names first, so a missing or extra column is reported as that column rather than
-    # as a diff of two large dictionaries. THE TWO DIRECTIONS GET DIFFERENT REMEDIES,
-    # because they are different mistakes: a column MISSING from an upgraded install is
-    # one that needs an ADDED_COLUMNS entry, and a column EXTRA on one is a column that
-    # was taken out of models.py while its entry stayed, which no entry can fix. Telling
-    # someone in the second case to add an entry sends them to write the line that is
-    # already there.
+    # Names first, so a missing or extra column is reported as that column rather than as
+    # a diff of two large dictionaries.
+    #
+    # THE TWO DIRECTIONS GET DIFFERENT REMEDIES, because they are opposite mistakes and
+    # only ONE of them is about ADDED_COLUMNS. A column MISSING from an upgraded install
+    # was ADDED to models.py with no entry behind it. A column EXTRA on one was REMOVED
+    # from models.py: it is in the base schema, create_all leaves an existing table alone,
+    # so the upgraded database keeps it and a fresh one never has it. Telling the second
+    # case to add an entry sends someone to write a line that would not help.
+    #
+    # AND AN ENTRY LEFT BEHIND IS NOT THE CAUSE, which is worth stating because it is the
+    # first guess and it is wrong. Measured: adding an ADDED_COLUMNS entry for a column
+    # models.py does not declare fails NOTHING here, because init_db() runs the migration
+    # step against the FRESH database too, so the stale entry adds the column to both
+    # sides and they still agree. A stale entry is invisible to this file; a removed
+    # mapped_column is what lands here.
     for table in sorted(set(databases.upgraded) | set(databases.fresh)):
         upgraded_columns = set(databases.upgraded.get(table, {}))
         fresh_columns = set(databases.fresh.get(table, {}))
@@ -478,11 +487,11 @@ def test_an_upgraded_database_ends_up_identical_to_a_fresh_one(databases):
         assert not upgraded_columns - fresh_columns, (
             f"measured from {databases.ref[:12]}: {table} has EXTRA "
             f"{sorted(upgraded_columns - fresh_columns)} on an upgraded install that a "
-            f"fresh one does not, so a column was removed from models.py while its "
-            f"ADDED_COLUMNS entry in app/db.py stayed. Adding an entry cannot fix this "
-            f"and removing that one would only strand the installs that never got the "
-            f"column: neither create_all nor _add_missing_columns can DROP a column, so "
-            f"either restore the mapped_column or this needs a real migration tool."
+            f"fresh one does not, so a mapped_column was REMOVED from models.py. Adding "
+            f"an ADDED_COLUMNS entry is not the fix and no entry is the cause: nothing "
+            f"here can DROP a column, and neither can create_all. Restore the "
+            f"mapped_column, or accept that removing a column that has already shipped "
+            f"needs a real migration tool."
         )
 
     assert databases.upgraded == databases.fresh, (
@@ -519,8 +528,7 @@ def test_no_existing_table_gains_or_loses_a_column(databases):
         upgraded_columns = set(databases.upgraded[table])
         fresh_columns = set(databases.fresh[table])
         # Split by direction for the reason given in the test above: an added column and
-        # a removed one need opposite fixes, and only one of them is an ADDED_COLUMNS
-        # entry.
+        # a removed one need opposite fixes, and only one of them is about ADDED_COLUMNS.
         assert not fresh_columns - upgraded_columns, (
             f"{table} is MISSING {sorted(fresh_columns - upgraded_columns)} on an upgraded "
             f"install (from {databases.ref[:12]}) that a fresh one has. create_all cannot "
@@ -529,11 +537,11 @@ def test_no_existing_table_gains_or_loses_a_column(databases):
         )
         assert not upgraded_columns - fresh_columns, (
             f"{table} has EXTRA {sorted(upgraded_columns - fresh_columns)} on an upgraded "
-            f"install (from {databases.ref[:12]}) that a fresh one does not, so a column "
-            f"was removed from models.py while its ADDED_COLUMNS entry in app/db.py "
-            f"stayed. Nothing here can DROP a column: restore the mapped_column, or reach "
-            f"for a real migration tool. Do not delete the entry, which would only strand "
-            f"the installs that never got the column."
+            f"install (from {databases.ref[:12]}) that a fresh one does not, so a "
+            f"mapped_column was REMOVED from models.py and the upgraded database still "
+            f"carries it. No ADDED_COLUMNS entry causes this and none can fix it: nothing "
+            f"here can DROP a column. Restore the mapped_column, or accept that removing a "
+            f"column that has already shipped needs a real migration tool."
         )
         assert databases.upgraded[table] == databases.fresh[table], (
             f"{table} has the same columns on an upgraded install (from "
