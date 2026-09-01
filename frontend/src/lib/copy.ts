@@ -24,6 +24,30 @@ export function formatDay(iso: string): string {
 }
 
 /**
+ * A local YYYY-MM-DD study day as the learner would write it: "25 September 2026".
+ *
+ * NOT formatDay above, and the difference is a whole day. formatDay takes a full ISO
+ * timestamp; handed a bare "2026-09-25" the Date constructor reads it as UTC midnight,
+ * and toLocaleDateString then renders it in the browser's zone, which is the 24th
+ * anywhere west of Greenwich. The deadline, the finish projection and every day off are
+ * bare day keys, so they are pinned to UTC on the way in and on the way out and the
+ * date arrives as the one that was stored.
+ *
+ * The locale is fixed rather than inherited so the server render and the client render
+ * produce the same string and hydration does not tear.
+ */
+export function formatDayKey(key: string): string {
+  const date = new Date(`${key}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return key;
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/**
  * That a concept has stopped being one the learner keeps missing, in one wording.
  *
  * Two places reach this fact by different routes: the re-teach button is told

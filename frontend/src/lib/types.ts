@@ -649,3 +649,68 @@ export interface ReviewRatingResult {
   scheduled_days: number;
   interval_label: string;
 }
+
+/** Whether the course has a deadline, and whether it is still ahead of the learner. */
+export type PlanStatus = "none" | "active" | "passed";
+
+/**
+ * Why `required_per_week` is null, and null itself whenever it is a number.
+ *
+ * The three non-trivial cases all mean "there are no study days left to spread the
+ * remaining lessons across" and each wants a different sentence, which is the whole
+ * reason the server sends a code instead of leaving the client to infer one from the
+ * other fields.
+ */
+export type PlanReason = "no_deadline" | "deadline_passed" | "deadline_today" | "all_days_off";
+
+/**
+ * How fast new material has to go in to beat a deadline, and how fast it actually is.
+ *
+ * THIS CARRIES NO CONCEPT DATA AND MUST NOT GROW ANY. Study planning owns the rate new
+ * material enters; FSRS owns everything already in, and a deadline moves nothing in the
+ * review schedule. A card's due date is by construction the day its recall decays to
+ * about 90%, so a card due after the deadline is predicted at or above 90% ON the
+ * deadline day: the set of concepts a deadline puts at risk is empty. Printing a due
+ * count beside "your exam is in 4 days" invites exactly that inference, so the server
+ * omits it, and this screen must not fetch it from the concepts endpoint to fill the gap.
+ */
+export interface CoursePlan {
+  course_id: number;
+  title: string;
+  /** Local YYYY-MM-DD, or null when the course has no deadline. */
+  deadline: string | null;
+  /** What the learner calls it ("Midterm"), or null when they named it nothing. */
+  deadline_label: string | null;
+  status: PlanStatus;
+  /** Calendar days from today to the deadline. Negative once it has passed. */
+  days_until: number | null;
+  /** Study days left, days off removed. The deadline day itself is never one of them. */
+  available_days: number | null;
+  days_off_in_window: number | null;
+  lessons_total: number;
+  lessons_remaining: number;
+  required_per_week: number | null;
+  /** Null below the server's minimum sample; `observed_sample` carries the real count. */
+  observed_per_week: number | null;
+  observed_sample: number;
+  /** Local YYYY-MM-DD, or null when the observed pace is unknown or zero. */
+  finish_projection: string | null;
+  reason: PlanReason | null;
+}
+
+/** One day the learner has marked as unavailable. Global, never scoped to a course. */
+export interface DayOff {
+  day: string;
+  note: string;
+  created_at: string;
+}
+
+export interface DaysOff {
+  days_off: DayOff[];
+}
+
+/** `removed` is false when the day was not marked; unmarking succeeds either way. */
+export interface DayOffRemoval {
+  day: string;
+  removed: boolean;
+}
