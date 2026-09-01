@@ -2,16 +2,28 @@ import logging
 import os
 import uuid
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import days, fsrs, generation, ingest, models, remediation, review, tutor
+from app import (
+    days,
+    fsrs,
+    generation,
+    ics,
+    ingest,
+    models,
+    planning,
+    remediation,
+    review,
+    tutor,
+)
 from app.attempts import (
     _attempt_state,
     _attempts_by_item,
@@ -1474,3 +1486,264 @@ def get_usage(limit: int = 50, session: Session = Depends(get_session)):
 @app.post("/usage/alert/ack")
 def ack_usage_alert(session: Session = Depends(get_session)):
     return acknowledge_alert(session)
+
+
+# --------------------------------------------------------------------------
+# Study planning: deadlines, pace, and days off
+# --------------------------------------------------------------------------
+
+DEADLINE_MALFORMED_MESSAGE = "A deadline must be a calendar date written as YYYY-MM-DD."
+DEADLINE_IN_PAST_MESSAGE = (
+    "That date has already passed. Pick today or a day in the future."
+)
+DEADLINE_LABEL_TOO_LONG_MESSAGE = (
+    f"That name is longer than {models.Course.deadline_label.type.length} characters. "
+    "A short one like 'Midterm' is what shows up in your calendar."
+)
+DAY_MALFORMED_MESSAGE = "A day off must be a calendar date written as YYYY-MM-DD."
+NO_DEADLINE_MESSAGE = (
+    "This course has no deadline, so there is nothing to put in a calendar. Set one first."
+)
+
+
+class DeadlineRequest(BaseModel):
+    """The date the material has to be known by, and what the learner calls it.
+
+    `deadline` is a plain YYYY-MM-DD string rather than a date, so that a malformed
+    value produces this feature's own 422 with a sentence the learner can act on,
+    instead of pydantic's generic date-parsing error.
+    """
+
+    deadline: str
+    label: str | None = None
+
+
+class DayOffRequest(BaseModel):
+    day: str
+    note: str | None = None
+
+
+def _planning_invalid(code: str, message: str) -> HTTPException:
+    """422 for a date this feature cannot use, in the shape the other 422s here take."""
+    return HTTPException(422, detail={"error": code, "message": message})
+
+
+def _parse_day(value: str | None) -> date | None:
+    """A strict YYYY-MM-DD, or None.
+
+    Strict on purpose. date.fromisoformat has accepted "20260901" and other ISO 8601
+    spellings since 3.11, and the column is a 10-character string that days.today_key
+    compares against by equality. A value that parses but does not round-trip to the
+    same 10 characters would be a day off that never matches the day it names.
+    """
+    text = (value or "").strip()
+    if len(text) != 10:
+        return None
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _day_off_payload(row: models.UnavailableDay) -> dict:
+    return {"day": row.day, "note": row.note, "created_at": iso_utc(row.created_at)}
+
+
+@app.put("/courses/{course_id}/deadline")
+def set_course_deadline(
+    course_id: int, body: DeadlineRequest, session: Session = Depends(get_session)
+):
+    """Set or move a course's deadline. Returns the recomputed plan.
+
+    TODAY IS ACCEPTED, the past is not. A deadline of today is a real thing a learner
+    sets ("the exam is this afternoon"), and refusing it would be refusing the truth.
+    It does mean available_days is zero, which the read path below reports as a defined
+    state rather than dividing by it.
+
+    The past is rejected because setting one is always a typo, and because a deadline
+    the learner can see is in the past carries no information they do not already have.
+    Note that this rejection does NOT protect the read path: a deadline that was valid
+    when it was written becomes today, and then yesterday, with no request in between.
+    """
+    course = session.get(models.Course, course_id)
+    if not course:
+        raise HTTPException(404, "Course not found")
+
+    deadline = _parse_day(body.deadline)
+    if deadline is None:
+        raise _planning_invalid("deadline_malformed", DEADLINE_MALFORMED_MESSAGE)
+    if deadline < planning.today():
+        raise _planning_invalid("deadline_in_past", DEADLINE_IN_PAST_MESSAGE)
+
+    label = (body.label or "").strip()
+    if len(label) > models.Course.deadline_label.type.length:
+        raise _planning_invalid("deadline_label_too_long", DEADLINE_LABEL_TOO_LONG_MESSAGE)
+
+    course.deadline = deadline.isoformat()
+    # Empty label stored as NULL rather than "", so "has a label" is one question with
+    # one answer instead of two spellings of no.
+    course.deadline_label = label or None
+    session.commit()
+    return planning.course_plan(session, course)
+
+
+@app.delete("/courses/{course_id}/deadline")
+def clear_course_deadline(course_id: int, session: Session = Depends(get_session)):
+    """Remove a deadline. Idempotent: a course that has none is already in this state.
+
+    Nothing else is touched. No review card moves, no lesson is un-completed, and the
+    course goes back to behaving exactly as a course with no deadline always has.
+    """
+    course = session.get(models.Course, course_id)
+    if not course:
+        raise HTTPException(404, "Course not found")
+    course.deadline = None
+    course.deadline_label = None
+    session.commit()
+    return planning.course_plan(session, course)
+
+
+@app.get("/courses/{course_id}/plan")
+def get_course_plan(course_id: int, session: Session = Depends(get_session)):
+    """How fast new material has to go in, and how fast it actually is.
+
+    200 WITH A NULL-DEADLINE SHAPE, NOT 404, when the course has no deadline. The
+    observed pace is real and worth showing either way, and a 404 would force the
+    frontend to branch on an error response to draw a perfectly ordinary screen.
+    "No deadline" is a state of this resource, not the absence of it.
+
+    WHERE THE CONCEPT COUNTS WENT, since the spec listed concepts_total,
+    concepts_not_started and concepts_due_now here and they are deliberately absent.
+
+    They were moved rather than composed in, for three reasons. The first is the
+    feature's boundary: study planning owns the rate new material enters, and FSRS owns
+    everything already in. A plan screen putting "3 concepts due now" beside "your exam
+    is in 4 days" reads as a claim that those three are at risk FOR THE EXAM, and
+    app/planning.py's header proves that claim is never true: a card due after the
+    deadline is predicted at or above ~0.90 recall on the deadline day, by construction.
+    Shipping the number invites the inference.
+
+    The second is cost. review.course_concepts is a Python join that eagerly loads every
+    lesson's quiz items and chunks card lookups across the whole course. This endpoint
+    otherwise reads the lesson rows and one small table, and bolting the concept map's
+    heaviest query onto it would make the cheapest read in the feature the most expensive
+    read in the backend.
+
+    The third is that both numbers already have a home and two sources can disagree.
+    GET /courses/{course_id}/concepts returns `counts` keyed by mastery bucket, including
+    not_started, over exactly this course. GET /review/today returns due_now. A client
+    that wants all three on one screen calls the endpoint that owns each.
+    """
+    course = session.get(models.Course, course_id)
+    if not course:
+        raise HTTPException(404, "Course not found")
+    return planning.course_plan(session, course)
+
+
+@app.get("/courses/{course_id}/plan.ics")
+def get_course_plan_ics(course_id: int, session: Session = Depends(get_session)):
+    """The deadline as a calendar file. The only non-JSON response in this API.
+
+    404 rather than an empty VCALENDAR when there is no deadline. A calendar with no
+    events imports silently and leaves the learner believing it worked.
+
+    The filename is hardcoded from the course id and never derived from the title. See
+    ics.download_filename: a title is LLM output, and a title in a Content-Disposition
+    header is header injection rather than a broken calendar.
+    """
+    course = session.get(models.Course, course_id)
+    if not course:
+        raise HTTPException(404, "Course not found")
+    plan = planning.course_plan(session, course)
+    if not plan["deadline"]:
+        raise HTTPException(404, NO_DEADLINE_MESSAGE)
+    return Response(
+        content=ics.deadline_calendar(plan),
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{ics.download_filename(course.id)}"'
+        },
+    )
+
+
+@app.get("/plan/days-off")
+def list_days_off(session: Session = Depends(get_session)):
+    """Every day the learner has marked off, oldest first.
+
+    Global, not per course. The table has no course_id because a learner who is away is
+    away from all of it; see models.UnavailableDay.
+    """
+    rows = (
+        session.query(models.UnavailableDay).order_by(models.UnavailableDay.day).all()
+    )
+    return {"days_off": [_day_off_payload(row) for row in rows]}
+
+
+@app.post("/plan/days-off")
+def add_day_off(body: DayOffRequest, session: Session = Depends(get_session)):
+    """Mark a day off. IDEMPOTENT: marking an already-marked day is a success.
+
+    Never a 409 off the unique constraint. Pressing the button twice, or pressing it on
+    a day that was already off, is not an error the learner can learn anything from, and
+    an endpoint that refuses here while DELETE happily accepts an unmarked day would be
+    an asymmetry they can see and cannot explain.
+
+    An existing row is returned UNCHANGED rather than having its note overwritten, so
+    this is a genuine no-op and not a silent edit. Changing a note means deleting the
+    day and adding it again.
+
+    The IntegrityError branch is the same idempotence under a race: two simultaneous
+    posts both find no row and both insert, and the loser must still come back with the
+    winner's row rather than a 500.
+    """
+    day = _parse_day(body.day)
+    if day is None:
+        raise _planning_invalid("day_malformed", DAY_MALFORMED_MESSAGE)
+
+    key = day.isoformat()
+    existing = (
+        session.query(models.UnavailableDay)
+        .filter(models.UnavailableDay.day == key)
+        .one_or_none()
+    )
+    if existing is not None:
+        return _day_off_payload(existing)
+
+    row = models.UnavailableDay(day=key, note=(body.note or "").strip())
+    session.add(row)
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        row = (
+            session.query(models.UnavailableDay)
+            .filter(models.UnavailableDay.day == key)
+            .one()
+        )
+    return _day_off_payload(row)
+
+
+@app.delete("/plan/days-off/{day}")
+def remove_day_off(day: str, session: Session = Depends(get_session)):
+    """Unmark a day. Succeeds whether or not it was marked.
+
+    THE DATE IS IN THE PATH, and this deliberately does not copy the tutor's
+    concept_key, which travels in the query string. That was forced: a normalized
+    concept key can contain a slash, and Starlette will not match a path segment
+    containing one, so the concept most in need of explaining would be the one URL the
+    learner could not reach. A YYYY-MM-DD has no slashes and never will, so the reason
+    does not apply and the plainer URL wins.
+
+    Idempotent, matching POST above. Deleting a day that was not marked leaves the
+    learner in exactly the state they asked for.
+    """
+    parsed = _parse_day(day)
+    if parsed is None:
+        raise _planning_invalid("day_malformed", DAY_MALFORMED_MESSAGE)
+    removed = (
+        session.query(models.UnavailableDay)
+        .filter(models.UnavailableDay.day == parsed.isoformat())
+        .delete()
+    )
+    session.commit()
+    return {"day": parsed.isoformat(), "removed": bool(removed)}
