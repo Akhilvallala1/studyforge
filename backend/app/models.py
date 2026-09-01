@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -403,6 +404,17 @@ class TutorMessage(Base):
     reserved SQL, and while SQLAlchemy quotes it correctly, a raw-SQL debugging session
     or a future Postgres path would trip on it.
 
+    `ask` is a THIRD column for the same reason, and NOT a reuse of check_question. A
+    check question is optional decoration on a complete answer, and `ask` is the move the
+    reply deliberately stopped short of, so a row carrying one is a reply that is not
+    finished on purpose. Sharing the column would make "the tutor asked something back"
+    and "the tutor withheld the last step" indistinguishable on every row ever written,
+    and the run that decides when guided mode falls back to a plain answer is counted off
+    exactly that distinction. Flattening it into content is the same loss one level worse:
+    the withheld move would be replayed to the next turn as part of the grounded answer.
+    Exactly one of the two is ever non-empty on a row, and tutor.parse_reply is what
+    guarantees it.
+
     run_id and model match llm_calls, so a reply can be tied back to what it cost and
     to the model that wrote it. Both are blank on a learner row, which pays for nothing.
     """
@@ -425,6 +437,23 @@ class TutorMessage(Base):
     content: Mapped[str] = mapped_column(Text, default="")
     beyond: Mapped[str] = mapped_column(Text, default="")
     check_question: Mapped[str] = mapped_column(Text, default="")
+    # The one move a guided reply withheld, handed back as a question. Empty on a learner
+    # row and on every answer-mode reply, and beside check_question because that is the
+    # field it is a sibling of: exactly one of the two is ever non-empty on a row.
+    #
+    # THE server_default IS NOT POLISH. This column is added to a table that has already
+    # shipped, so app/db.py has to ALTER it into existing databases, and the entry there
+    # and this line are a MATCHED PAIR: half of it is worse than neither half, because
+    # neither half can be caught by reading either file alone. Measured, all three
+    # spellings, reading (nullable, default) off the inspector:
+    #   mapped_column(Text, default="") with ALTER ... TEXT NOT NULL DEFAULT ''
+    #     -> fresh (False, None), upgraded (False, "''"), so they never agree;
+    #   server_default here with ALTER ... TEXT DEFAULT '' and no NOT NULL
+    #     -> upgraded is nullable where fresh is not;
+    #   server_default here with ALTER ... TEXT NOT NULL DEFAULT ''
+    #     -> identical, and every pre-existing row backfills to '' rather than to NULL.
+    # `text` is imported at the top of this file for exactly this.
+    ask: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
     run_id: Mapped[str] = mapped_column(String(32), default="")
     model: Mapped[str] = mapped_column(String(100), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

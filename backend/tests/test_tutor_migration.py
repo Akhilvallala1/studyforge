@@ -101,6 +101,11 @@ MODELS_PATH = "backend/app/models.py"
 NEW_TABLE = "tutor_messages"
 NEW_INDEXES = {"ix_tutor_messages_concept_created", "ix_tutor_messages_created"}
 
+# Work-it-out mode's column on that table. The only ADDED_COLUMNS entry so far that is NOT
+# NULL with a constant default, and therefore the only one for which a row already in the
+# base has to come back reading something rather than NULL.
+ASK_COLUMN = "ask"
+
 
 def _git(*args: str) -> subprocess.CompletedProcess:
     here = Path(__file__).resolve().parent
@@ -390,6 +395,53 @@ def databases(request, tmp_path, monkeypatch):
         upgraded_engine.dispose()
 
 
+def test_every_added_column_is_one_the_models_still_declare():
+    """The other half of keeping ADDED_COLUMNS honest, and it needs no database at all.
+
+    Every entry has to name a column the CURRENT models declare on that table. An entry
+    that does not is applied anyway, because _add_missing_columns asks the database what
+    it is missing and never asks the models whether the column should exist. Measured: a
+    fresh install with an entry for a column models.py does not declare really does get
+    that column, on every install, permanently. It is unmapped, nothing reads it, and
+    "APPEND, NEVER EDIT OR REMOVE A ROW" means it can never be withdrawn.
+
+    That also makes a stale entry invisible to every other test in this file, which is
+    what earns this one its place. The comparisons here run init_db() against BOTH the
+    upgraded database and the fresh one, so a stale entry adds its column to both sides
+    and they go on agreeing. Nothing else here can see it.
+
+    WHAT TO DO WHEN THIS FIRES, because the obvious move is the wrong one. It fires when a
+    mapped_column is DROPPED while its entry stays, and the answer is NOT to quietly delete
+    the entry: the installs that already ran that entry have the column, and deleting the
+    line does not remove it from any of them, it only hides why it is there. Dropping a
+    column is already outside _add_missing_columns's documented ceiling, which names drops
+    explicitly as something SQLite cannot express as an ALTER. So this test firing is the
+    signal that the change has left what this mechanism covers, and the honest options are
+    to restore the mapped_column or to bring in a real migration path for the installs
+    that have the column. Deciding that is the point; being told is what this buys.
+
+    Modelled on test_every_altered_table_is_seeded, and for the same reason: an advisory
+    rule that nothing enforces is a rule the next person discovers by breaking it.
+    """
+    from app import models  # noqa: F401  (register the mapped classes with Base.metadata)
+    from app.db import Base
+
+    for table, column, _ in ADDED_COLUMNS:
+        assert table in Base.metadata.tables, (
+            f"ADDED_COLUMNS names table {table!r}, which the current models do not "
+            f"declare at all. Nothing will apply the entry, because _add_missing_columns "
+            f"skips a table create_all never built, so the column silently never arrives."
+        )
+        assert column in Base.metadata.tables[table].columns, (
+            f"ADDED_COLUMNS adds {table}.{column}, which the current models no longer "
+            f"declare. The ALTER still runs, so every install gets an unmapped column that "
+            f"nothing reads and that cannot be withdrawn. Do NOT just delete the entry: "
+            f"the installs that already ran it keep the column either way. A dropped "
+            f"column is outside what _add_missing_columns can do, so restore the "
+            f"mapped_column or give those installs a real migration path."
+        )
+
+
 def test_every_altered_table_is_seeded(databases):
     """THE GUARD THAT KEEPS THE REST OF THIS FILE HONEST.
 
@@ -454,13 +506,39 @@ def test_an_upgraded_database_ends_up_identical_to_a_fresh_one(databases):
     does not reflect what create_all emits (a stray DEFAULT '', a NOT NULL that the
     mapped_column does not carry, a mismatched width) fails here and nowhere else.
     """
-    # Names first, so a missing or extra column is reported as that column rather than
-    # as a diff of two large dictionaries.
+    # Names first, so a missing or extra column is reported as that column rather than as
+    # a diff of two large dictionaries.
+    #
+    # THE TWO DIRECTIONS GET DIFFERENT REMEDIES, because they are opposite mistakes and
+    # only ONE of them is about ADDED_COLUMNS. A column MISSING from an upgraded install
+    # was ADDED to models.py with no entry behind it. A column EXTRA on one was REMOVED
+    # from models.py: it is in the base schema, create_all leaves an existing table alone,
+    # so the upgraded database keeps it and a fresh one never has it. Telling the second
+    # case to add an entry sends someone to write a line that would not help.
+    #
+    # AND AN ENTRY LEFT BEHIND IS NOT THE CAUSE, which is worth stating because it is the
+    # first guess and it is wrong. Measured: adding an ADDED_COLUMNS entry for a column
+    # models.py does not declare fails NOTHING here, because init_db() runs the migration
+    # step against the FRESH database too, so the stale entry adds the column to both
+    # sides and they still agree. A stale entry is invisible to this file; a removed
+    # mapped_column is what lands here.
     for table in sorted(set(databases.upgraded) | set(databases.fresh)):
-        assert set(databases.upgraded.get(table, {})) == set(databases.fresh.get(table, {})), (
-            f"measured from {databases.ref[:12]}: {table} has a different SET of columns "
-            f"on an upgraded install than on a fresh one. A column added to an existing "
-            f"table needs an entry in ADDED_COLUMNS in app/db.py."
+        upgraded_columns = set(databases.upgraded.get(table, {}))
+        fresh_columns = set(databases.fresh.get(table, {}))
+        assert not fresh_columns - upgraded_columns, (
+            f"measured from {databases.ref[:12]}: {table} is MISSING "
+            f"{sorted(fresh_columns - upgraded_columns)} on an upgraded install, which a "
+            f"fresh one has. create_all cannot ALTER an existing table, so a column added "
+            f"to one needs an entry in ADDED_COLUMNS in app/db.py."
+        )
+        assert not upgraded_columns - fresh_columns, (
+            f"measured from {databases.ref[:12]}: {table} has EXTRA "
+            f"{sorted(upgraded_columns - fresh_columns)} on an upgraded install that a "
+            f"fresh one does not, so a mapped_column was REMOVED from models.py. Adding "
+            f"an ADDED_COLUMNS entry is not the fix and no entry is the cause: nothing "
+            f"here can DROP a column, and neither can create_all. Restore the "
+            f"mapped_column, or accept that removing a column that has already shipped "
+            f"needs a real migration tool."
         )
 
     assert databases.upgraded == databases.fresh, (
@@ -494,10 +572,23 @@ def test_no_existing_table_gains_or_loses_a_column(databases):
     migration entry now passes, which is the right answer.
     """
     for table in databases.base:
-        assert set(databases.upgraded[table]) == set(databases.fresh[table]), (
-            f"{table} has a different SET of columns on an upgraded install (from "
-            f"{databases.ref[:12]}) than on a fresh one. create_all cannot ALTER, so a "
-            f"column added to this table needs an entry in ADDED_COLUMNS in app/db.py."
+        upgraded_columns = set(databases.upgraded[table])
+        fresh_columns = set(databases.fresh[table])
+        # Split by direction for the reason given in the test above: an added column and
+        # a removed one need opposite fixes, and only one of them is about ADDED_COLUMNS.
+        assert not fresh_columns - upgraded_columns, (
+            f"{table} is MISSING {sorted(fresh_columns - upgraded_columns)} on an upgraded "
+            f"install (from {databases.ref[:12]}) that a fresh one has. create_all cannot "
+            f"ALTER, so a column added to this table needs an entry in ADDED_COLUMNS in "
+            f"app/db.py."
+        )
+        assert not upgraded_columns - fresh_columns, (
+            f"{table} has EXTRA {sorted(upgraded_columns - fresh_columns)} on an upgraded "
+            f"install (from {databases.ref[:12]}) that a fresh one does not, so a "
+            f"mapped_column was REMOVED from models.py and the upgraded database still "
+            f"carries it. No ADDED_COLUMNS entry causes this and none can fix it: nothing "
+            f"here can DROP a column. Restore the mapped_column, or accept that removing a "
+            f"column that has already shipped needs a real migration tool."
         )
         assert databases.upgraded[table] == databases.fresh[table], (
             f"{table} has the same columns on an upgraded install (from "
@@ -562,23 +653,88 @@ def test_upgrading_twice_is_a_no_op(databases, monkeypatch):
     assert _schema(databases.upgraded_engine) == databases.upgraded
 
 
-def test_beyond_and_check_question_are_separate_columns(databases):
+def test_beyond_check_question_and_ask_are_separate_columns(databases):
     """The one decision here that cannot be fixed later.
 
-    beyond is what the tutor said that its material did not support, and check_question
-    is the question it asked back. Flattened into content as markdown, every row written
-    afterwards loses the grounded/ungrounded boundary permanently: the information is not
-    in the text, so no migration can recover it.
+    beyond is what the tutor said that its material did not support, check_question is the
+    question it asked back, and ask is the move a guided reply deliberately stopped short
+    of. Flattened into content as markdown, every row written afterwards loses the
+    boundary permanently: the information is not in the text, so no migration can recover
+    it. Flattening ask into check_question is the same loss one step smaller, and it takes
+    tutor.guided_run with it, since a run is counted by asking each row which of the two
+    it carries.
 
     check_question rather than `check` because CHECK is reserved SQL. SQLAlchemy quotes it
-    correctly; a raw-SQL session or a future Postgres path would not.
+    correctly; a raw-SQL session or a future Postgres path would not. `ask` needs no such
+    dodge and gets none, so the column name is the JSON key.
     """
     names = databases.upgraded[NEW_TABLE]
 
     assert "beyond" in names
     assert "check_question" in names
     assert "check" not in names
+    assert ASK_COLUMN in names
     assert "content" in names
+
+
+def test_the_ask_column_reaches_an_upgraded_database(databases):
+    """Work-it-out mode's own entry, and the DELIBERATE OPPOSITE of the deadline one.
+
+    The two columns took opposite decisions on both nullability and the default clause,
+    and each is right for its own case, which is why app/db.py refuses to have a rule
+    either way. An absent deadline means something, so it is NULL with no default. An
+    absent `ask` means the reply withheld nothing, which is a fact about the reply rather
+    than a gap in it, so it is '' and never NULL, and on an upgrade that is only reachable
+    if the ALTER carries the default with it.
+
+    WRITTEN BECAUSE THE GENERIC COMPARISONS DEMONSTRABLY DO NOT SEE THIS, and the
+    measurement is in test_the_deadline_columns_reach_an_upgraded_database's docstring:
+    with the base unseeded and a column mutated to NOT NULL with no default in models.py
+    and ADDED_COLUMNS together, upgraded == fresh passes, the per-table loop passes, the
+    mapped-column loop passes, and upgrading twice passes. Only the seeding guard and that
+    test caught it, and that test catches it by naming study planning's OWN two columns.
+    `ask` had no equivalent, so this is it. It is still a NARROW NET and still not a
+    substitute for the seeded base, which is the only thing that makes the bad ALTER fail
+    at all.
+    """
+    columns = databases.upgraded[NEW_TABLE]
+    column_type, nullable, default, primary_key = columns[ASK_COLUMN]
+
+    assert column_type == "TEXT"
+    assert nullable is False
+    assert default == "''", "the server_default is what keeps upgraded equal to fresh"
+    assert primary_key is False
+
+
+def test_an_existing_conversation_backfills_to_empty_string(databases):
+    """The value a row that predates the column reads afterwards, which is '' and not NULL.
+
+    Two things are on trial and the fixture proves the first by reaching the assertions at
+    all: the ALTER has to RUN against a table with a row in it, which NOT NULL with no
+    default would not. What is asserted here is the second, and it is the reason the
+    default is a constant rather than NULL: a conversation written before guided mode
+    existed reads back as an unbroken run of answer-mode turns, so tutor.guided_run counts
+    it correctly with no special case for legacy rows. A NULL there would make every
+    pre-existing row a three-valued question for a column whose entire job is to be
+    checked for emptiness.
+
+    Skipped where the base predates tutor_messages, on the CONDITION rather than on a pin,
+    so appending a pin never has to touch this test.
+    """
+    from app import models
+
+    if NEW_TABLE not in databases.base:
+        pytest.skip(f"{databases.ref[:12]} predates {NEW_TABLE}, so it seeds no conversation")
+
+    with Session(databases.upgraded_engine) as session:
+        rows = session.query(models.TutorMessage).all()
+        assert rows, "the seeder for tutor_messages put no rows in the base"
+        for row in rows:
+            assert row.ask is not None, "an upgraded row must never read NULL"
+            assert row.ask == ""
+        # The rest of the row is untouched, so this is a backfill and not a rewrite.
+        assert rows[0].content == "Why downhill?"
+        assert rows[0].role == "learner"
 
 
 def test_the_deadline_columns_reach_an_upgraded_database(databases):

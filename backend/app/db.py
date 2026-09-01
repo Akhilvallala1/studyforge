@@ -106,11 +106,13 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # sentinel that some later query has to remember to exclude.
     ("courses", "deadline", "VARCHAR(10)"),
     ("courses", "deadline_label", "VARCHAR(200)"),
-    # Work-it-out mode appends when it lands, and it is worth leaving here as the worked
-    # example of the shape study planning's own columns do not exercise: a NOT NULL
-    # column with a constant default. Its mapped_column needs server_default=text("''")
-    # to keep upgraded == fresh, per the invariant above.
-    # ("tutor_messages", "ask", "TEXT NOT NULL DEFAULT ''"),
+    # Work-it-out mode: the one move a guided reply withheld. The worked example of the
+    # shape study planning's own columns do not exercise, a NOT NULL column with a
+    # constant default, and the matched pair above is exactly what it needs:
+    # models.TutorMessage.ask carries server_default=text("''") and this definition
+    # carries the same default, so upgraded == fresh and every row already in the table
+    # backfills to '' rather than to NULL.
+    ("tutor_messages", "ask", "TEXT NOT NULL DEFAULT ''"),
 )
 
 

@@ -5,6 +5,8 @@ import json
 from app import generation, models, remediation, tutor
 from app.llm import get_provider
 from app.llm.fake_provider import (
+    GUIDED_MARKER,
+    GUIDED_RUNG2_MARKER,
     HOSTILE_LESSON_TITLE,
     OUTLINE_MARKER,
     REMEDIATION_MARKER,
@@ -97,9 +99,19 @@ def test_fake_provider_answers_every_live_system_prompt():
 
     # parse_reply raises unless `answer` is present and non-empty.
     reply = tutor.parse_reply(
-        provider.generate(tutor.TUTOR_SYSTEM, _tutor_prompt()).text
+        provider.generate(tutor.TUTOR_SYSTEM, _tutor_prompt()).text, tutor.MODE_ANSWER
     )
     assert reply.answer
+
+    # Both guided rungs are live prompts too, and they carry the same hazard in a quieter
+    # form: they reach this provider through TUTOR_MARKER, so a missing branch would not
+    # fail to parse. It would answer in answer-mode shape with nothing in `ask`.
+    for rung in tutor.GUIDED_RUNGS:
+        guided = tutor.parse_reply(
+            provider.generate(tutor.guided_system(rung), _tutor_prompt()).text,
+            tutor.MODE_GUIDED,
+        )
+        assert guided.answer and guided.ask
 
 
 def test_the_stage_markers_are_mutually_exclusive():
@@ -115,6 +127,8 @@ def test_the_stage_markers_are_mutually_exclusive():
         "lesson": generation.LESSON_SYSTEM,
         "remediation": remediation.REMEDIATION_SYSTEM,
         "tutor": tutor.TUTOR_SYSTEM,
+        "guided_1": tutor.guided_system(1),
+        "guided_2": tutor.guided_system(2),
     }
     matched = {
         name: [
@@ -127,8 +141,32 @@ def test_the_stage_markers_are_mutually_exclusive():
     assert matched["outline"] == [OUTLINE_MARKER]
     assert matched["remediation"] == [REMEDIATION_MARKER]
     assert matched["tutor"] == [TUTOR_MARKER]
+    # MUTATION TARGET. Move TUTOR_MARKER's phrase out of the shared body and into the
+    # answer-mode slot: these two go red and nothing else in the suite does. A guided
+    # prompt that does not carry the phrase falls through to the lesson branch, and the
+    # only symptom in production is a 502 that reads like the network.
+    assert matched["guided_1"] == [TUTOR_MARKER]
+    assert matched["guided_2"] == [TUTOR_MARKER]
     # The lesson stage is the fall-through and deliberately matches nothing.
     assert matched["lesson"] == []
+
+
+def test_the_guided_markers_select_a_form_not_a_stage():
+    """GUIDED_MARKER is a second decision inside the tutor branch, not a fourth stage.
+
+    So it must be absent from answer mode, present at both rungs, and the rung marker has
+    to separate the two. Getting this wrong raises nowhere: it serves one rung where the
+    other was asked for, and the reply still parses.
+    """
+    answer = tutor.TUTOR_SYSTEM
+    rung_one = tutor.guided_system(1)
+    rung_two = tutor.guided_system(2)
+
+    assert GUIDED_MARKER not in answer
+    assert GUIDED_RUNG2_MARKER not in answer
+    assert GUIDED_MARKER in rung_one and GUIDED_MARKER in rung_two
+    assert GUIDED_RUNG2_MARKER not in rung_one
+    assert GUIDED_RUNG2_MARKER in rung_two
 
 
 def test_fake_remediation_is_deterministic_and_concept_sensitive():
@@ -164,7 +202,20 @@ def test_fake_remediation_carries_hostile_markdown_for_the_hostile_concept():
 
 def _reply(provider, question, concept="Gradient Descent"):
     return tutor.parse_reply(
-        provider.generate(tutor.TUTOR_SYSTEM, _tutor_prompt(question, concept)).text
+        provider.generate(tutor.TUTOR_SYSTEM, _tutor_prompt(question, concept)).text,
+        tutor.MODE_ANSWER,
+    )
+
+
+def _guided_reply(provider, question, rung=1, concept="Gradient Descent"):
+    """The same prompt through the guided system prompt, parsed in the guided mode.
+
+    The mode passed here is the one the SYSTEM PROMPT was built in, which is what the
+    endpoint has to do too. Parsing a guided reply in answer mode silently drops `ask`.
+    """
+    return tutor.parse_reply(
+        provider.generate(tutor.guided_system(rung), _tutor_prompt(question, concept)).text,
+        tutor.MODE_GUIDED,
     )
 
 
@@ -214,6 +265,105 @@ def test_fake_tutor_carries_hostile_markdown_for_the_hostile_concept():
     provider = FakeProvider()
     assert "<script>alert(1)</script>" in _reply(provider, "explain", HOSTILE_LESSON_TITLE).answer
     assert "<script>" not in _reply(provider, "explain", "Recursion").answer
+
+
+def test_fake_guided_hands_back_a_move_at_both_rungs_and_never_a_check():
+    """A fixture per rung, each with a populated `ask` and nothing in `check`.
+
+    `check` is forbidden in this mode by the prompt and blanked by the parser anyway, so
+    the assertion below is about the FIXTURE not modelling a reply the prompt says cannot
+    exist. A fake that emitted one would stop being evidence about the shipped behaviour.
+    """
+    provider = FakeProvider()
+    for rung in tutor.GUIDED_RUNGS:
+        reply = _guided_reply(provider, "how do I do this?", rung=rung)
+        assert reply.answer
+        assert reply.ask
+        assert not reply.check
+
+
+def test_fake_guided_rungs_withhold_visibly_different_things():
+    """The fade has to be legible offline, or QA cannot tell the two rungs apart.
+
+    Rung 2 states the method and withholds only what it produces, so its `ask` and its
+    answer both differ from rung 1's. Identical fixtures would let the endpoint serve the
+    wrong rung forever with nothing to see.
+    """
+    provider = FakeProvider()
+    one = _guided_reply(provider, "how do I do this?", rung=1)
+    two = _guided_reply(provider, "how do I do this?", rung=2)
+    assert one.ask != two.ask
+    assert one.answer != two.answer
+
+
+def test_fake_guided_ask_survives_the_cap_intact():
+    """Written to sit inside the cap, so QA sees a whole question and not a stub."""
+    provider = FakeProvider()
+    for rung in tutor.GUIDED_RUNGS:
+        reply = _guided_reply(provider, "how do I do this?", rung=rung)
+        assert len(reply.ask) <= tutor.ASK_MAX_CHARS
+        assert not reply.ask.endswith("...")
+
+
+def test_fake_guided_drops_the_ask_when_the_course_does_not_cover_it():
+    """The documented degrade, reachable by typing, because the UI has to render it.
+
+    Withholding a step of something the course never taught is a riddle, so the guided
+    prompt tells the model to answer case 3 outright. The reply then carries `beyond` and
+    no `ask`, which is a shape the tutor panel must draw without an ask block.
+    """
+    reply = _guided_reply(FakeProvider(), "what is beyond this?")
+    assert reply.answer and reply.beyond
+    assert not reply.ask
+    assert not reply.check
+
+
+def test_fake_guided_reaches_the_shape_that_carries_both_blocks():
+    """Case 2, which nothing else offline can reach, and the panel has to draw it.
+
+    The case 3 switch drops `ask` by design, so with only that switch `beyond` and `ask`
+    never appear together anywhere offline, and the one layout that shows the aside AND
+    the withheld move is a rendering branch nobody could get to by typing. That is how a
+    branch ships having never been looked at. "partly" is the switch that reaches it.
+
+    The rung still varies inside this shape, which is the other half of what it is for:
+    case 2 is where a fade and an aside coexist, and a fixture that flattened the rungs
+    here would say the two are exclusive.
+    """
+    provider = FakeProvider()
+
+    one = _guided_reply(provider, "does this partly hold?", rung=1)
+    two = _guided_reply(provider, "does this partly hold?", rung=2)
+
+    for reply in (one, two):
+        assert reply.answer and reply.beyond and reply.ask
+        assert not reply.check
+        assert len(reply.beyond) <= tutor.BEYOND_MAX_CHARS
+        assert len(reply.ask) <= tutor.ASK_MAX_CHARS
+    assert one.ask != two.ask
+    # "partly" wins over "beyond", so a question carrying both is still case 2.
+    both = _guided_reply(provider, "what is partly beyond this?")
+    assert both.beyond and both.ask
+
+
+def test_fake_guided_is_deterministic_and_concept_sensitive():
+    provider = FakeProvider()
+    first = _guided_reply(provider, "explain", concept="Backpropagation")
+    again = _guided_reply(provider, "explain", concept="Backpropagation")
+    other = _guided_reply(provider, "explain", concept="Quorum Reads")
+
+    assert first == again
+    assert first != other
+    assert "Backpropagation" in first.answer
+    assert "Quorum Reads" in other.answer
+
+
+def test_fake_guided_carries_hostile_markdown_for_the_hostile_concept():
+    """Guided replies are markdown in the browser too, so this surface gets it as well."""
+    provider = FakeProvider()
+    hostile = _guided_reply(provider, "explain", concept=HOSTILE_LESSON_TITLE)
+    assert "<script>alert(1)</script>" in hostile.answer
+    assert "<script>" not in _guided_reply(provider, "explain", concept="Recursion").answer
 
 
 def test_generate_endpoint_with_fake_provider(client, monkeypatch):
