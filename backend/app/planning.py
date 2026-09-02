@@ -85,6 +85,13 @@ REASON_DEADLINE_PASSED = "deadline_passed"
 REASON_DEADLINE_TODAY = "deadline_today"
 REASON_ALL_DAYS_OFF = "all_days_off"
 
+# Why finish_projection is null, when it is. A SEPARATE field from `reason` above and
+# deliberately so: `reason` explains a missing required_per_week, these explain a
+# missing date, and a course can be in both states at once (every remaining day marked
+# off AND nothing finished here yet). One field would have to throw one answer away.
+REASON_NO_PACE_YET = "no_pace_yet"
+REASON_NO_PROGRESS_HERE = "no_progress_in_this_course"
+
 
 def _naive_utc(moment: datetime) -> datetime:
     """Coerce a datetime to the naive-UTC shape every stored timestamp has.
@@ -173,24 +180,54 @@ def available_days(session: Session, deadline: date, now: datetime | None = None
     }
 
 
-def observed_pace(session: Session, now: datetime | None = None) -> dict:
-    """Lessons per week the learner has been finishing, ACROSS EVERY COURSE, over 30 days.
+def _completions_since(
+    session: Session, cutoff: datetime, course: models.Course | None = None
+) -> int:
+    """Lessons completed at or after `cutoff`, everywhere or within one course.
 
-    WHAT THE NUMBER MEANS, because widening the query changed it and the meaning is the
-    part that leaves this module. It used to be "how fast you got through THIS course".
-    It is now "how fast you get through lessons, whichever course they belong to".
-    Anything rendering it has to say the second thing; the first is no longer true.
+    One query shape for both scopes, so the two rates below can never drift apart on what
+    "completed inside the window" means and disagree for a reason nobody can see.
+    """
+    query = (
+        session.query(func.count(models.Lesson.id))
+        .filter(models.Lesson.completed_at.isnot(None))
+        .filter(models.Lesson.completed_at >= cutoff)
+    )
+    if course is not None:
+        query = query.join(models.Module).filter(models.Module.course_id == course.id)
+    return query.scalar() or 0
 
-    WHY IT WIDENED. PACE_MIN_LESSONS is 5, and scoped to one course's own lessons that
-    threshold was not slow to reach, it was UNREACHABLE for any course with fewer than
-    five lessons: a permanent dash and never a finish projection, however much work the
-    learner did. The minimum itself is right and stays, because it is what stops the rate
-    lurching every time one more lesson lands. The SCOPE was the mistake.
 
-    WHAT IT COSTS, stated here so it is not discovered from a surprising date: this rate
-    is the learner's whole throughput, while lessons_remaining is one course's backlog.
-    For someone running several courses at once the two no longer describe the same
-    effort, and finish_projection built from them is a best case. See course_plan.
+def observed_pace(
+    session: Session, course: models.Course, now: datetime | None = None
+) -> dict:
+    """Two rates: how fast the learner finishes lessons anywhere, and how fast in here.
+
+    TWO NUMBERS, NOT ONE, AND THE NAMES CARRY THE DIFFERENCE, because rendering the wrong
+    one is the whole hazard. observed_per_week_all_courses is what the page DISPLAYS and
+    counts every course. observed_per_week_this_course is what the finish date is BUILT
+    FROM and counts only this one. Neither is allowed to be the bare "observed_per_week"
+    that used to sit here, because that name meant different things in different weeks and
+    said nothing about its own scope.
+
+    WHY THE DISPLAYED RATE COUNTS EVERY COURSE. PACE_MIN_LESSONS is 5, and scoped to one
+    course that threshold was not slow to reach, it was UNREACHABLE for any course with
+    fewer than five lessons: a permanent dash however much work the learner did. Counting
+    everywhere keeps the anti-noise minimum and makes it reachable.
+
+    WHY THE PROJECTION RATE COUNTS ONLY THIS COURSE. The projection divides THIS course's
+    remaining lessons, so dividing them by the learner's whole throughput answers a
+    question nobody asked: the date they would finish if they abandoned everything else.
+    That is wrong by roughly the number of courses they have in flight, and always in the
+    optimistic direction, which is the dangerous direction for a deadline feature.
+    Projecting from this course's SHARE of the throughput is what makes the date honest,
+    and that share reduces algebraically to this course's own completion rate, which is
+    what is measured here.
+
+    BOTH RATES ARE GATED ON THE SAME CROSS-COURSE SAMPLE, deliberately. The minimum exists
+    to stop a rate lurching on one more completion, and making a second, smaller
+    per-course sample clear it separately would put the unreachable threshold straight back
+    for exactly the short courses this was changed for.
 
     A LESSON COUNTS AT MOST ONCE, whatever the learner does to it. completed_at is a
     single nullable column, not an event log: un-completing sets it back to NULL (see
@@ -216,46 +253,80 @@ def observed_pace(session: Session, now: datetime | None = None) -> dict:
     """
     moment = _naive_utc(models.utcnow() if now is None else now)
     cutoff = moment - timedelta(days=PACE_WINDOW_DAYS)
-    sample = (
-        session.query(func.count(models.Lesson.id))
-        .filter(models.Lesson.completed_at.isnot(None))
-        .filter(models.Lesson.completed_at >= cutoff)
-        .scalar()
-        or 0
-    )
-    if sample < PACE_MIN_LESSONS:
-        return {"observed_per_week": None, "observed_sample": sample}
-    return {"observed_per_week": sample / PACE_WINDOW_DAYS * 7, "observed_sample": sample}
+    everywhere = _completions_since(session, cutoff)
+    if everywhere < PACE_MIN_LESSONS:
+        return {
+            "observed_per_week_all_courses": None,
+            "observed_sample_all_courses": everywhere,
+            "observed_per_week_this_course": None,
+        }
+    here = _completions_since(session, cutoff, course)
+    return {
+        "observed_per_week_all_courses": everywhere / PACE_WINDOW_DAYS * 7,
+        "observed_sample_all_courses": everywhere,
+        "observed_per_week_this_course": here / PACE_WINDOW_DAYS * 7,
+    }
+
+
+def _projection(
+    lessons_remaining: int,
+    per_week_all_courses: float | None,
+    per_week_this_course: float | None,
+    now: datetime | None = None,
+) -> tuple[str | None, str | None]:
+    """(date, reason). Exactly one of them is ever set, which is the point.
+
+    A bare null date makes the UI guess, and the three ways of not having one want
+    different sentences. Ordered so each branch is a genuinely different state rather than
+    a fallback for the one above it.
+
+    lessons_remaining == 0 short-circuits to today whatever the pace has been. A course
+    finished more than thirty days ago has no completions in the window at all, and
+    answering "nothing finished here recently" about a course they have already completed
+    would be true and useless.
+    """
+    if lessons_remaining == 0:
+        return today(now).isoformat(), None
+    if per_week_all_courses is None:
+        return None, REASON_NO_PACE_YET
+    if not per_week_this_course:
+        # THE STATE THE WIDENING CREATED, and it is not a bug to paper over. The learner
+        # has cleared the minimum across their other courses but finished nothing here, so
+        # there is no evidence of pace INTO this course and no honest date to give. It
+        # reaches the screen as a reason a learner can act on ("you have been studying,
+        # just not this") rather than as a blank or a division by zero.
+        return None, REASON_NO_PROGRESS_HERE
+    return finish_projection(lessons_remaining, per_week_this_course, now), None
 
 
 def finish_projection(
     lessons_remaining: int,
-    observed_per_week: float | None,
+    per_week_this_course: float | None,
     now: datetime | None = None,
 ) -> str | None:
-    """The day the learner finishes the course at the pace they are actually going.
+    """The day the learner finishes THIS course at the pace they are putting into it.
 
-    None unless the observed rate is both known and above zero, because the alternative
-    is a projection of infinity dressed up as a date.
+    None unless the rate is both known and above zero, because the alternative is a
+    projection of infinity dressed up as a date. Callers that need to TELL the learner why
+    there is no date go through _projection, which turns each of those cases into a reason
+    code instead of a bare null.
+
+    THE RATE PASSED IN MUST BE THIS COURSE'S, not the cross-course figure the page
+    displays, and the parameter is named so that passing the wrong one looks wrong at the
+    call site. lessons_remaining counts one course, so dividing it by the learner's whole
+    throughput answers "when would I finish if I abandoned my other courses", which is
+    optimistic by roughly the number of courses they have open and never pessimistic. See
+    observed_pace.
 
     Days off are NOT subtracted again here. observed_per_week is a measurement, and the
     thirty days it was measured over already contain whatever days the learner took off
     during them. Removing marked days from a rate that already reflects them would
     penalise the same absence twice.
 
-    THE SCOPES OF THE TWO ARGUMENTS DIFFER and the caller cannot fix it here.
-    observed_per_week now counts completions in EVERY course while lessons_remaining
-    counts this one, so for a learner with several courses in flight this returns the
-    date they would finish IF they spent their whole throughput on this course, and it
-    gets more optimistic the more courses they run. With one course the two scopes are
-    the same set and the projection is exact. Making it exact for the multi-course case
-    means projecting from this course's own share of the throughput, which is a different
-    number from the one the page displays, so it is a product decision rather than an
-    arithmetic fix.
     """
-    if observed_per_week is None or observed_per_week <= 0:
+    if per_week_this_course is None or per_week_this_course <= 0:
         return None
-    days_needed = math.ceil(lessons_remaining * 7 / observed_per_week)
+    days_needed = math.ceil(lessons_remaining * 7 / per_week_this_course)
     return (today(now) + timedelta(days=days_needed)).isoformat()
 
 
@@ -268,12 +339,13 @@ def course_plan(session: Session, course: models.Course, now: datetime | None = 
     boundary is unchanged and still visible in the call graph: no concept data anywhere on
     this path.
 
-    THE ONE PLACE THE SCOPES DIFFER, worth seeing here rather than inferring it from a
-    surprising date. observed_per_week counts EVERY course; lessons_remaining counts this
-    one. That is deliberate, and observed_pace says why the rate had to widen, but it
-    makes finish_projection a best case for a learner running several courses at once,
-    because it spends their whole throughput on this course's backlog. For a single
-    course the two scopes coincide and every number here is exactly what it was.
+    TWO RATES REACH THE PAYLOAD AND THEY ARE NOT INTERCHANGEABLE.
+    observed_per_week_all_courses is the displayed figure and counts every course.
+    observed_per_week_this_course counts only this one and is what finish_projection is
+    built from. So the learner sees a date that does NOT equal lessons_remaining divided
+    by the displayed rate, and that is correct rather than a rounding bug: the two numbers
+    answer different questions, and the copy has to say which one the date came from. For
+    a single course the two rates are equal and the distinction costs nothing.
 
     A course with no deadline still gets a full answer rather than an error. The
     observed pace is real and worth showing either way, and the endpoint returning 200
@@ -282,7 +354,13 @@ def course_plan(session: Session, course: models.Course, now: datetime | None = 
     lessons = course_lessons(session, course)
     lessons_total = len(lessons)
     lessons_remaining = sum(1 for lesson in lessons if lesson.completed_at is None)
-    pace = observed_pace(session, now)
+    pace = observed_pace(session, course, now)
+    projection, projection_reason = _projection(
+        lessons_remaining,
+        pace["observed_per_week_all_courses"],
+        pace["observed_per_week_this_course"],
+        now,
+    )
 
     payload = {
         "course_id": course.id,
@@ -298,9 +376,8 @@ def course_plan(session: Session, course: models.Course, now: datetime | None = 
         "days_off_in_window": None,
         "status": NO_DEADLINE,
         **pace,
-        "finish_projection": finish_projection(
-            lessons_remaining, pace["observed_per_week"], now
-        ),
+        "finish_projection": projection,
+        "projection_reason": projection_reason,
     }
 
     deadline = parse_deadline(course.deadline)
