@@ -486,19 +486,42 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
               label="Lessons a week needed"
             />
             {/*
-              THE DISPLAYED RATE IS THE ALL-COURSES ONE, and the label says so rather
-              than leaving "your pace" to be read as this course's. The per-course rate is
-              never a headline here: it is smaller, it is only the projection's input, and
-              two unlabelled rates side by side is exactly the pair that gets read
-              wrongly. The prose underneath names the share.
+              THE SECOND TILE IS THIS COURSE'S SHARE, NOT THE ALL-COURSES RATE, and the
+              reason overturns what this comment used to say. Labelling the all-courses
+              rate accurately was not enough: two numbers in the largest type on the page,
+              side by side, in the same units, ARE a comparison whatever the labels say. A
+              learner seeing "needed 2.3" beside "all courses 2.8" reads "comfortably
+              ahead" at a glance, while the share is 0.9 and the projected finish is a
+              month past the deadline. The number that compares to 2.3 is 0.9, and it was
+              nowhere in the tiles, only in the third and smallest sentence below.
+
+              That glance was a verdict, and an optimistic one, on a page whose whole
+              discipline is not to draw verdicts because only the learner knows what their
+              next fortnight looks like. An accidental verdict is still a verdict. At 390px
+              the tiles stack one directly above the other, which tightens the false
+              comparison rather than loosening it.
+
+              TWO TILES, NOT THREE. A third tile carrying the all-courses rate would put
+              the mis-comparison straight back in the row: the eye pairs the largest
+              adjacent numbers sharing a unit, and a disambiguating third number does not
+              stop that, it gives it more to work with. The all-courses rate is context
+              rather than a target, so it belongs in the prose, where the share sentence
+              contextualises it in the same breath.
+
+              ZERO IS SHOWN AS ZERO, NOT AS A DASH. A learner with a rate elsewhere and
+              none here has a share that is genuinely measured and genuinely zero, while
+              the dash means "not enough data to say", which would be a different and false
+              claim. The dash appears only where the server nulls the rate, and it nulls
+              both rates together, so the two tiles can never disagree about whether a pace
+              exists at all.
             */}
             <PlanStat
               value={
-                plan.observed_per_week_all_courses == null
+                plan.observed_per_week_this_course == null
                   ? "–"
-                  : formatRate(plan.observed_per_week_all_courses)
+                  : formatRate(plan.observed_per_week_this_course)
               }
-              label="Lessons a week, all courses"
+              label="Lessons a week, this course"
             />
           </dl>
           <div className="mt-5 max-w-2xl border-t border-zinc-200 pt-4 text-[13px] leading-relaxed text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
