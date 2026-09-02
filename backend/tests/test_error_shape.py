@@ -2,7 +2,16 @@
 
 THE CLAIM THIS FILE EXISTS FOR, stated as a client would and SCOPED TO 422s, which is
 narrower than it is tempting to write it: every 422 from this API carries `detail` as an
-object with `error` and `message`, never as a list.
+object with `error` and `message`, never as a list, WITH ONE KNOWN EXCEPTION named below.
+
+THE EXCEPTION IS main.py's NoMaterial refusal on POST /review/cards/{id}/remediation,
+which raises HTTPException(422, NO_MATERIAL_MESSAGE) with a bare string. It was found by
+grepping every HTTPException in backend/app rather than by probing from the outside, which
+is how the two coded 400s below were found and is the reason the grep was run at all: an
+external sweep can only report what it happened to ask for. It is left alone here on
+instruction, so that fixing it stays a decision rather than becoming a sweep, and it is
+named rather than quietly excluded because an unqualified claim in this docstring would be
+FALSE, and a false compatibility promise is worse than a narrow true one.
 
 It is NOT true that a client now writes one parsing branch. A 404 still carries `detail`
 as a bare string, "Course not found", and test_a_404_is_not_reshaped_either pins that. So
@@ -32,9 +41,11 @@ the bottom pin the exact bodies of the ones that already worked, so a future wid
 this handler that started swallowing them fails here.
 """
 
+from uuid import uuid4
+
 import pytest
 
-from app import main, models
+from app import fsrs, main, models, review
 from app.db import SessionLocal
 
 
@@ -317,6 +328,85 @@ def test_a_wrong_mode_keeps_its_own_message_rather_than_the_generic_one(client):
             "error": "invalid_mode",
             "message": main.INVALID_MODE_MESSAGE,
         }, f"mode={mode!r} fell through to the generic handler"
+
+
+@pytest.fixture
+def card_id() -> int:
+    """A real review card, RATED, because two different tests need it to be both.
+
+    REAL, because the rating check sits BEHIND the card lookup: rating an id that does not
+    exist answers 404 and never reaches the rating branch at all, so a made-up id would
+    assert nothing about ratings. That is the same failure the security test in this file
+    fell into once, and the reason both 400 tests below assert the status as well as the
+    body.
+
+    RATED, because the card outlives this test in the suite's shared database, and
+    test_planning.py::test_no_planning_endpoint_touches_the_scheduler snapshots every
+    review card and refuses to run against one with a NULL due date, on the grounds that a
+    card nothing can move contributes nothing to what it can catch. Its docstring says
+    that a test leaving an unrated card behind should rate it HERE rather than narrow that
+    test back to a row count, so that is what this does. Found by the full suite, not by
+    running this file alone, where it passes either way.
+    """
+    session = SessionLocal()
+    try:
+        key = f"shape probe {uuid4().hex[:8]}"
+        review.record_review(session, key, "Probe", fsrs.GOOD)
+        session.commit()
+        return review.get_card(session, key).id
+    finally:
+        session.close()
+
+
+def test_generating_with_no_source_carries_a_code(client):
+    """One of the two QA found still answering with a bare string.
+
+    The status is asserted as well as the body, and that is not belt and braces. The
+    tempting wrong fix is to let this fall through to the RequestValidationError handler,
+    by making `text` and `url` a validated either-or in the model; that produces a
+    perfectly well formed body with `invalid_request` in it and a 422, and a test checking
+    only the shape would pass. It is the wrong answer because the sentence would stop
+    naming the two fields, which is the entire content of this refusal.
+    """
+    response = client.post("/courses/generate", json={})
+
+    assert response.status_code == 400, "a 422 here means the check moved into the schema"
+    assert _detail(response) == {"error": "no_source", "message": main.NO_SOURCE_MESSAGE}
+
+
+def test_rating_a_card_with_a_rating_nobody_uses_carries_a_code(client, card_id):
+    """The other one, and the reason the fixture builds a real card.
+
+    The message keeps naming the legal ratings, which is why this is a coded refusal
+    rather than something the generic handler could produce: `invalid_request` would say
+    a value was wrong and not which values are right.
+    """
+    response = client.post(f"/review/cards/{card_id}/rate", json={"rating": 99})
+
+    assert response.status_code == 400, "a 404 here means the fixture's card did not exist"
+    detail = _detail(response)
+    assert detail == {"error": "invalid_rating", "message": main.INVALID_RATING_MESSAGE}
+    for rating in fsrs.RATINGS:
+        assert str(rating) in detail["message"], "the message has to name the legal ratings"
+
+
+def test_the_two_coded_400s_do_not_share_a_code(client, card_id):
+    """Distinct codes, which is the whole point of having a code at all.
+
+    A fix that gave both refusals the same code, or reused `invalid_request` for both,
+    would satisfy every shape assertion above and leave a client exactly where it started:
+    unable to tell one refusal from another without reading the prose. Asserted across the
+    two endpoints together, because neither test alone can see it.
+    """
+    no_source = client.post("/courses/generate", json={})
+    bad_rating = client.post(f"/review/cards/{card_id}/rate", json={"rating": 99})
+
+    codes = {_detail(no_source)["error"], _detail(bad_rating)["error"]}
+    assert len(codes) == 2, f"both refusals answer with the same code: {codes}"
+    assert main.INVALID_REQUEST_ERROR not in codes, (
+        "a hand-rolled refusal took the generic handler's code, so a client cannot tell "
+        "a refusal this endpoint chose from one the framework produced"
+    )
 
 
 def test_a_404_still_carries_a_bare_string_detail(client):

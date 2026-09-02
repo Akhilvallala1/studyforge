@@ -133,6 +133,21 @@ async def invalid_request(request: Request, exc: RequestValidationError) -> JSON
     )
 
 
+def _bad_request(code: str, message: str) -> HTTPException:
+    """400 in the shared refusal shape: a code to branch on, a sentence to read.
+
+    The same shape as _tutor_invalid and its siblings, and it exists for the reason the
+    handler above exists. A refusal whose `detail` is a bare string gives a client nothing
+    to switch on, so it has to match on prose, and prose is the part most likely to be
+    edited. Every refusal that carries a code is one a client can handle without guessing.
+
+    NOT a sweep of every bare string in this file. There are 41 of them and most are
+    deliberate; see the audit in the commit message. This factory exists so that the two
+    that were fixed, and any refusal added later, have somewhere obvious to go.
+    """
+    return HTTPException(400, detail={"error": code, "message": message})
+
+
 # NULL IS NOT ABSENCE, and this is the rule for every optional field on every body in this
 # file. It is written here because this is where request bodies are validated and where
 # somebody adding an optional field will be looking.
@@ -202,6 +217,17 @@ NO_MATERIAL_MESSAGE = (
 TUTOR_FAILURE_MESSAGE = (
     "The tutor could not answer that just now. Nothing was saved, so try asking again."
 )
+# The two refusals QA found still answering with a bare string. Both keep their exact
+# wording; only the shape around them changed, so a client that was matching on the prose
+# is no worse off and one reading `detail.error` now gets something.
+#
+# INVALID_RATING_MESSAGE is derived from fsrs.RATINGS rather than spelling the numbers out,
+# for the reason the tutor's mode enum is derived from TUTOR_MODES: two spellings of one
+# list is a divergence nothing would catch, and the message would go on naming a rating the
+# scheduler had stopped accepting.
+NO_SOURCE_MESSAGE = "Provide 'text' or 'url'"
+INVALID_RATING_MESSAGE = f"rating must be one of {list(fsrs.RATINGS)}"
+
 MESSAGE_EMPTY_MESSAGE = "Type a question before sending it."
 MESSAGE_TOO_LONG_MESSAGE = (
     f"That message is longer than {tutor.MAX_MESSAGE_CHARS} characters. The tutor answers "
@@ -350,7 +376,7 @@ def generate_from_text(body: GenerateRequest, session: Session = Depends(get_ses
         except Exception as exc:
             raise generation_failure(exc, "url") from exc
     else:
-        raise HTTPException(400, "Provide 'text' or 'url'")
+        raise _bad_request("no_source", NO_SOURCE_MESSAGE)
     if not chunks:
         raise HTTPException(400, "No usable text found in the source")
     return _run_generation(session, chunks)
@@ -684,7 +710,7 @@ def rate_review(card_id: int, body: ReviewRating, session: Session = Depends(get
     if not card:
         raise HTTPException(404, "Review card not found")
     if body.rating not in fsrs.RATINGS:
-        raise HTTPException(400, f"rating must be one of {list(fsrs.RATINGS)}")
+        raise _bad_request("invalid_rating", INVALID_RATING_MESSAGE)
 
     suggested = body.suggested_rating
     log = review.record_review(
