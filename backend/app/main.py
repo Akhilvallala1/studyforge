@@ -6,8 +6,10 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -53,6 +55,102 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# --------------------------------------------------------------------------
+# Request validation
+# --------------------------------------------------------------------------
+#
+# ONE ERROR SHAPE FOR THE WHOLE API, and this handler is what makes that true rather than
+# aspirational. Every refusal anywhere in this file is
+# {"detail": {"error": ..., "message": ...}}: a code the client switches on, and a sentence
+# a person reads. FastAPI's own 422 is not that shape. It is a list of validation objects,
+# so until this existed the honest answer to "how many error shapes does this API have"
+# was TWO, and which one a client got depended on whether its bug was a wrong TYPE or a
+# wrong VALUE. A wrong value reached a hand-rolled check and came back in the good shape; a
+# wrong type was rejected by pydantic first and came back as the array.
+#
+# THAT SPLIT IS NOT A TYPING PROBLEM AND WIDENING ANNOTATIONS IS THE WRONG INSTRUMENT.
+# tutor_messages.mode was fixed that way first, one field, and it worked; but a client has
+# to write both parsing paths as long as EITHER shape is reachable anywhere, so fixing
+# fields one at a time never retires the second path. It also costs something measurable
+# every time: an annotation widened to Any loses its `type` in the generated OpenAPI, which
+# has to be handed back by declaring json_schema_extra. Six fields would have paid that
+# price six times and still left the array reachable through any field nobody thought of,
+# and through a MISSING required field, which no annotation can widen at all.
+#
+# WHAT THIS DOES NOT TOUCH, which is the risk it carries. Every hand-rolled refusal already
+# raises HTTPException, and HTTPException does not pass through here, so no existing
+# refusal changes by a byte. test_error_shape.py asserts that directly rather than trusting
+# the reasoning.
+#
+# THE MESSAGE IS BUILT FROM `loc` AND `msg` ONLY, never from `input`. Pydantic's error
+# objects carry the offending value, and echoing a caller's own input back into a response
+# body is how a reflection vector gets built by accident; it is also unbounded, since the
+# rejected value can be a megabyte of JSON. `msg` is pydantic's own short sentence and
+# names no value.
+INVALID_REQUEST_ERROR = "invalid_request"
+INVALID_REQUEST_MESSAGE = "The request is not valid."
+# Enough to fix a broken client, few enough that the sentence stays a sentence.
+MAX_REPORTED_PROBLEMS = 3
+
+
+def _validation_message(errors: list) -> str:
+    """A readable sentence naming what was wrong and where, and never what was sent."""
+    problems = [
+        "{}: {}".format(
+            ".".join(str(piece) for piece in error.get("loc") or ()) or "body",
+            error.get("msg") or "is not valid",
+        )
+        for error in errors[:MAX_REPORTED_PROBLEMS]
+    ]
+    if not problems:
+        return INVALID_REQUEST_MESSAGE
+    hidden = len(errors) - len(problems)
+    listed = "; ".join(problems)
+    if hidden > 0:
+        listed = f"{listed}; and {hidden} more"
+    return f"{INVALID_REQUEST_MESSAGE} {listed}"
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """FastAPI's 422, in the shape every other refusal on this API already uses.
+
+    Covers a wrong type, a missing required field, a malformed JSON body, and a path or
+    query parameter that will not parse, on every route, because all of them arrive here
+    as the same exception. That breadth is the point: the previous fix had to be repeated
+    per field and could not reach the missing-field case at all.
+    """
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": {
+                "error": INVALID_REQUEST_ERROR,
+                "message": _validation_message(exc.errors()),
+            }
+        },
+    )
+
+
+# NULL IS NOT ABSENCE, and this is the rule for every optional field on every body in this
+# file. It is written here because this is where request bodies are validated and where
+# somebody adding an optional field will be looking.
+#
+# OMISSION IS THE ABSENCE OF AN OPINION, and a default exists precisely to serve a client
+# that has none: one written before the field existed, or one that does not care. Serving
+# it the default is right.
+#
+# NULL IS AN OPINION THAT FAILED TO BE FORMED. Almost nothing sends a literal null on
+# purpose; it is an unset variable serialised straight through, which means the client has
+# a bug it does not know about. Coercing it to the default makes that request SUCCEED, so
+# the bug produces working requests with the wrong behaviour and stays invisible for
+# exactly as long as it takes to ship. Refusing it costs a client that meant nothing by it
+# one clear error, and saves a client that meant something a silent wrong answer.
+#
+# So an optional field takes its default from OMISSION only, and an explicit null is
+# refused like any other value the field does not accept. TutorQuestion.mode is the worked
+# example: omit it for "answer", send null and get invalid_mode.
 
 
 @app.on_event("startup")
@@ -1023,14 +1121,15 @@ CONCEPT_TURN_LIMIT_MESSAGE = (
 # is a divergence nothing would catch: the docs would advertise a value the server refuses,
 # or omit one it accepts, and both read as correct until a client trusts them.
 #
-# THIS IS A NARROW FIX ON A WIDE HOLE, and the boundary is deliberate rather than an
-# oversight. Every string field on every hand-validated body in this file has the same
-# gap: concept_key, message, day, note, deadline and label all answer a wrong TYPE with
-# the raw array while answering a wrong VALUE in the good shape. `mode` is fixed alone
-# because it is the field the guided UI sends, and widening the rest is an API-wide
-# decision about error shape rather than a bug fix.
-# test_other_fields_keep_the_frameworks_validation_shape records that boundary, so
-# changing it later is a decision someone makes rather than a diff nobody notices.
+# WHY `mode` KEEPS ITS OWN CHECK NOW THAT THE HANDLER EXISTS. The RequestValidationError
+# handler above would already put a wrong-type mode in the right SHAPE, so this could have
+# been reverted to a plain `str` when that landed. It was not, and the reason is the
+# MESSAGE rather than the shape. invalid_mode says which values are legal and that omitting
+# the field is allowed; the generic handler can only say that a string was expected. This
+# is the one field on this body a learner's own action puts in flight, through a button in
+# the tutor panel, so it is the one worth a sentence written for it. Every other field here
+# is set by the client once and never varies, and the generic message is the right size for
+# those.
 class TutorQuestion(BaseModel):
     """One question about one concept.
 

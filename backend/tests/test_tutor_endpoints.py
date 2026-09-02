@@ -1185,21 +1185,24 @@ def test_omitting_mode_and_sending_null_are_different_requests(client, monkeypat
 
 
 @pytest.mark.parametrize("field", ["concept_key", "message"])
-def test_other_fields_keep_the_frameworks_validation_shape(client, monkeypatch, field):
-    """THE BOUNDARY OF THIS FIX, asserted so that moving it is a decision and not a diff.
+def test_other_fields_answer_a_wrong_type_in_the_one_shape_too(client, monkeypatch, field):
+    """THE BOUNDARY TEST THAT USED TO BE HERE HAS BEEN RETIRED, AND THIS REPLACES IT.
 
-    Every string field on every hand-validated body in main.py has the gap `mode` had: a
-    wrong TYPE is rejected by pydantic before the endpoint runs and comes back as the raw
-    array, while a wrong VALUE reaches the hand-rolled check and comes back in the good
-    shape. Measured across concept_key, message, day, note, deadline and label; all six
-    behave the same way.
+    It asserted the OPPOSITE: that concept_key and message still answered a wrong type
+    with the framework's raw array, because at the time only `mode` had been widened. It
+    was not there to defend that behaviour. It was there so that changing it would have to
+    be somebody's decision rather than a diff nobody noticed, and it said so.
 
-    Only `mode` was widened, because it is the field the guided UI is about to start
-    sending and because doing all six is a decision about this API's error shape rather
-    than a bug fix. This test pins the other two on THIS route so the narrow fix cannot
-    silently become a wide one, and so that widening it later is a deliberate edit here
-    rather than a change nobody notices. It asserts today's behaviour; it does not argue
-    that today's behaviour is right.
+    That decision has now been taken. app/main.py carries a RequestValidationError handler
+    that puts every framework 422 in the {error, message} shape, on every route, so the
+    old assertion pins exactly the thing that was deliberately changed and would now be a
+    test defending a retired design. Its replacement makes the same two fields prove the
+    new invariant instead, at the same place in the file, so the history is legible from
+    the diff.
+
+    See test_error_shape.py for the app-wide version of this claim, which is where it
+    belongs: an invariant that holds across three request bodies should not be asserted
+    only on the tutor's.
     """
     provider = TutorProvider()
     monkeypatch.setattr(main, "get_provider", lambda: provider)
@@ -1210,11 +1213,10 @@ def test_other_fields_keep_the_frameworks_validation_shape(client, monkeypatch, 
     answered = client.post("/tutor/messages", json=body)
 
     assert answered.status_code == 422
-    assert isinstance(answered.json()["detail"], list), (
-        f"{field} now answers a wrong type in the hand-rolled shape. If that was "
-        f"deliberate, this test is where the decision gets recorded; if it was a side "
-        f"effect of widening `mode`, the fix reached further than it was scoped to."
-    )
+    detail = answered.json()["detail"]
+    assert set(detail) == {"error", "message"}, "a framework 422 escaped the shared shape"
+    assert detail["error"] == main.INVALID_REQUEST_ERROR
+    assert field in detail["message"], "the message has to say which field was wrong"
     assert provider.calls == 0
 
 
