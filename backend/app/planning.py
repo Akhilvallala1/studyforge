@@ -329,10 +329,22 @@ def finish_projection(
     optimistic by roughly the number of courses they have open and never pessimistic. See
     observed_pace.
 
-    Days off are NOT subtracted again here. observed_per_week is a measurement, and the
-    thirty days it was measured over already contain whatever days the learner took off
-    during them. Removing marked days from a rate that already reflects them would
-    penalise the same absence twice.
+    Days off are NOT subtracted again here, and the argument survives the rate becoming
+    per-course. per_week_this_course is a MEASUREMENT over a fixed thirty-day window, so
+    the days the learner took off inside that window are already in its denominator: they
+    are days on which no lesson was finished, and the window counts them either way.
+    Subtracting marked days from a rate that already reflects them would penalise the same
+    absence twice. That reasoning turns only on the rate being measured over a fixed
+    calendar span, not on WHICH lessons it counts, which is why narrowing the scope to one
+    course left it intact.
+
+    WHAT IT DOES NOT CLAIM: days marked off in the FUTURE are not subtracted either, and
+    that is a different question. required_per_week does subtract them, because it is
+    prescriptive and divides by the calendar that actually remains. This is descriptive
+    and carries the learner's past mix of working and idle days forward, so subtracting
+    marked future days would double count the ordinary ones to count the exceptional ones
+    correctly. Neither treatment is error free; this one is at least consistent with how
+    the rate was measured.
 
     """
     if per_week_this_course is None or per_week_this_course <= 0:

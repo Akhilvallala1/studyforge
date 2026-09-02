@@ -203,8 +203,10 @@ def clear_days_off() -> None:
 def clear_lesson_completions() -> None:
     """Clear completed_at on every lesson. Call before anything that reads the observed pace.
 
-    THE RULE THIS EXISTS FOR: any test whose assertion depends on observed_per_week,
-    observed_sample or finish_projection needs this first, and it became necessary the
+    THE RULE THIS EXISTS FOR: any test whose assertion depends on
+    observed_per_week_all_courses, observed_sample_all_courses,
+    observed_per_week_this_course, finish_projection or projection_reason needs this
+    first, and it became necessary the
     moment planning.observed_pace started counting completions ACROSS EVERY COURSE.
 
     Note what changed rather than what broke. While the pace was scoped to one course, a
