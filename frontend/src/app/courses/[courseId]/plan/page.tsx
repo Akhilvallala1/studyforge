@@ -225,7 +225,7 @@ function projectionSentence(plan: CoursePlan): string {
     case "no_pace_yet":
       return "There is no finish date to project until you have finished a few more lessons.";
     case "no_progress_in_this_course":
-      return "None of those have been in this course yet, so there is no finish date to project.";
+      return "None of that has been in this course yet, so there is no finish date to project.";
     case null:
     case undefined:
       break;
@@ -236,12 +236,15 @@ function projectionSentence(plan: CoursePlan): string {
     return noDate;
   }
   /*
-   * "of that", not "of those". "Those" refers to a set of lessons and forces a plural,
-   * which made the verb wrong above one: "about 1.4 of those is". "That" refers to the
-   * rate as a single quantity, so the singular is correct at every value and the sentence
-   * has no input at which it reads wrong. Fixed by the noun rather than by switching the
-   * verb on the number, because there is then no threshold to get wrong and no second
-   * string to keep in step with the first.
+   * "of that", not "of those", IN EVERY SENTENCE HERE, the no-progress branch above
+   * included. "Those" refers to a set of lessons and forces a plural, which made the verb
+   * wrong above one: "about 1.4 of those is". "That" refers to the rate as a single
+   * quantity, so the singular is correct at every value and the sentence has no input at
+   * which it reads wrong. Fixed by the noun rather than by switching the verb on the
+   * number, because there is then no threshold to get wrong and no second string to keep
+   * in step with the first. The branches are mutually exclusive, so no learner ever sees
+   * two of them, but a reader of this function sees all of them at once and should not
+   * have to work out whether two pronouns for one antecedent were deliberate.
    *
    * THE EQUALITY BRANCH IS GATED ON THE UNDERLYING FLOATS, NOT THE ROUNDED DISPLAY. Two
    * rates that both render as "1.4" can differ underneath, and "all of that" would then
