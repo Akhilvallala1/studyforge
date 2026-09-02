@@ -40,6 +40,16 @@ export const dynamic = "force-dynamic";
  * A server component throughout, like the concepts page. CourseTabs takes `active` as a
  * prop precisely so it never reads the pathname, and the two mutations live in small
  * client components that refresh this route when they land.
+ *
+ * EVERY NULLABLE FIELD OF THE PAYLOAD IS TESTED WITH `== null`, NOT `=== null`, and that
+ * is deliberate rather than sloppy. TypeScript describes the payload; it does not enforce
+ * it, because the server is free to stop sending a field and the declaration here will go
+ * on claiming it exists. That is not hypothetical: this payload has already renamed its
+ * pace fields once, and under `=== null` an absent field silently took the branch that
+ * assumes a number, since `undefined === null` is false. A strict test turns "the server
+ * stopped sending this" into a wrong number on a deadline screen; a nullish test turns it
+ * into the dash, which is what the learner should see when nothing is known. Loud beats
+ * silent here, and the dash is the honest answer either way.
  */
 
 /**
@@ -98,7 +108,7 @@ function dayCount(count: number): string {
  * lessons can go in on, which is the only thing this feature measures.
  */
 function deadlineSentence(plan: CoursePlan): string {
-  if (plan.deadline === null || plan.days_until === null) return "";
+  if (plan.deadline == null || plan.days_until == null) return "";
   const when = formatDayKey(plan.deadline);
   const name = capitalizedDeadlineName(plan);
   if (plan.status === "passed") {
@@ -111,7 +121,7 @@ function deadlineSentence(plan: CoursePlan): string {
 
 /** "24 study days left before it, after the 2 days you have marked off." */
 function studyDaysSentence(plan: CoursePlan): string | null {
-  if (plan.status !== "active" || plan.available_days === null) return null;
+  if (plan.status !== "active" || plan.available_days == null) return null;
   const head = `That leaves ${dayCount(plan.available_days)} to study on before it`;
   const off = plan.days_off_in_window ?? 0;
   if (off > 0) {
@@ -201,22 +211,24 @@ function PlanStat({ value, label }: { value: string; label: string }) {
  * cause either; the same discipline weakestExplanation follows on the concepts page.
  */
 function projectionSentence(plan: CoursePlan): string {
+  const noDate = "There is no finish date to project for this course just now.";
   switch (plan.projection_reason) {
     case "no_pace_yet":
       return "There is no finish date to project until you have finished a few more lessons.";
     case "no_progress_in_this_course":
       return "None of those have been in this course yet, so there is no finish date to project.";
     case null:
+    case undefined:
       break;
     default:
-      return "There is no finish date to project for this course just now.";
+      return noDate;
   }
-  if (plan.finish_projection === null || plan.observed_per_week_this_course === null) {
-    return "There is no finish date to project for this course just now.";
+  if (plan.finish_projection == null || plan.observed_per_week_this_course == null) {
+    return noDate;
   }
   const share = `${ratePhrase(plan.observed_per_week_this_course)} of those is in this course, and that is the pace your finish date uses.`;
   const finish = `At that pace you finish on ${formatDayKey(plan.finish_projection)}`;
-  return plan.deadline !== null && plan.status === "active"
+  return plan.deadline != null && plan.status === "active"
     ? `${capitalize(share)} ${finish}; ${deadlineName(plan)} is on ${formatDayKey(plan.deadline)}.`
     : `${capitalize(share)} ${finish}.`;
 }
@@ -241,7 +253,7 @@ function paceSentences(plan: CoursePlan): string[] {
     lines.push(
       `All ${lessonCount(plan.lessons_total)} in this course are finished, so there is no new material left to fit in.`,
     );
-  } else if (plan.required_per_week !== null) {
+  } else if (plan.required_per_week != null) {
     lines.push(
       `You need ${ratePhrase(plan.required_per_week)} lessons a week to get through the remaining ${lessonCount(plan.lessons_remaining)} before ${deadlineName(plan)}.`,
     );
@@ -249,20 +261,25 @@ function paceSentences(plan: CoursePlan): string[] {
     lines.push(requiredDashNote(plan));
   }
 
-  if (plan.observed_per_week_all_courses !== null) {
+  const sample = plan.observed_sample_all_courses;
+  if (plan.observed_per_week_all_courses != null) {
     // "all" is load-bearing and must survive any trimming of this sentence. Without it
     // this is the old claim, which counted only this course, and it is now false.
     lines.push(
       `Across all your courses, you have been finishing ${ratePhrase(plan.observed_per_week_all_courses)} lessons a week.`,
     );
-  } else if (plan.observed_sample_all_courses === 0) {
+  } else if (sample === 0) {
     lines.push(
       "You have not finished a lesson in any course in the last 30 days, so there is no pace to measure yet.",
     );
-  } else {
+  } else if (typeof sample === "number") {
     lines.push(
-      `You have finished ${lessonCount(plan.observed_sample_all_courses)} across all your courses in the last 30 days, which is not enough to call a pace yet: a rate off a handful of lessons would swing every time one more landed.`,
+      `You have finished ${lessonCount(sample)} across all your courses in the last 30 days, which is not enough to call a pace yet: a rate off a handful of lessons would swing every time one more landed.`,
     );
+  } else {
+    // Claims no count, because a payload that stopped sending one is a payload whose
+    // count we do not know. Saying "you have finished 0" there would be inventing it.
+    lines.push("There is not enough finished work across your courses to call a pace yet.");
   }
 
   if (plan.lessons_remaining > 0) {
@@ -305,7 +322,7 @@ function CalendarSection({ plan }: { plan: CoursePlan }) {
         notification, or a reminder of any kind, and that is by design. What it can do is
         hand you a calendar file, and let the calendar you already use do the reminding.
       </p>
-      {plan.deadline === null ? (
+      {plan.deadline == null ? (
         <p className="mt-3 rounded-lg border border-zinc-200 px-5 py-4 text-[13px] text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
           Set a deadline above and the calendar file appears here.
         </p>
@@ -362,7 +379,7 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
           <dl className="flex flex-wrap gap-x-12 gap-y-6">
             <PlanStat
               value={
-                plan.required_per_week === null ? "–" : formatRate(plan.required_per_week)
+                plan.required_per_week == null ? "–" : formatRate(plan.required_per_week)
               }
               label="Lessons a week needed"
             />
@@ -375,7 +392,7 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
             */}
             <PlanStat
               value={
-                plan.observed_per_week_all_courses === null
+                plan.observed_per_week_all_courses == null
                   ? "–"
                   : formatRate(plan.observed_per_week_all_courses)
               }
@@ -397,7 +414,7 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
           Deadline
         </h2>
         <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-400">
-          {plan.deadline === null
+          {plan.deadline == null
             ? "This course has no deadline. Setting one works out the weekly rate above; it changes nothing else, and clearing it later puts everything back."
             : "Changing the date works out a new weekly rate. It moves no review and un-completes no lesson, and clearing it puts the course back to where it was."}
         </p>
