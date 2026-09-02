@@ -3,26 +3,46 @@
  *
  * The house pattern: the focused control is never disabled mid-request, the buttons
  * are; a real `disabled` blurs the pressed button to the body, so focus has to be
- * placed again once the response lands. The restore is guarded on
- * `document.activeElement === document.body`, and the intent is cleared BEFORE the
- * guard, so a learner who tabbed away mid-request consumes the intent rather than
- * leaving it armed for a later commit to fire.
+ * placed again once the response lands. The restore acts only when the learner has not
+ * moved since they sent, and the effect consumes the intent when it runs, so a
+ * declined restore cannot leave it armed for a later commit.
  *
- * Both halves of the guard are asserted, deliberately: that the restore FIRES when the
- * blur left focus on the body, and that it DECLINES when the learner moved on. The
- * second half is the one that has shipped broken four times, and it is the half a
- * naive test omits, because a test that never moves focus cannot see it.
+ * Both halves of the guard are asserted: that the restore FIRES when the learner has
+ * not moved (focus left on the body by the disable, or, in ConceptTutor, still on the
+ * control that sent), and that it DECLINES when the learner moved on. The decline half
+ * has shipped broken four times and is the half a naive test omits.
  *
- * jsdom does not blur a control when it becomes disabled, so these tests drive the
- * request with fireEvent (which never moves focus): focus genuinely rests on the body
- * for the fire cases, and is placed by hand for the decline cases. The real
- * disable-blur is a browser behaviour and stays the qa-tester's to see.
+ * WHAT THIS SUITE DOES NOT PIN, deliberately and worth knowing: it asserts the
+ * RESPONSE to a focus state, never the ARRIVAL of that state. jsdom does not blur a
+ * control that becomes disabled, so the premise "a disabled button drops focus to the
+ * body" is exercised nowhere in this file; requests are driven with fireEvent, which
+ * never moves focus, and the body-focus state is real but test-established. If a
+ * refactor or a browser change ever stopped the disable from blurring, every test here
+ * would still pass while the restore never fired for button senders. The qa-tester's
+ * browser pass is the only coverage of that trigger, not a nicety on top of this file.
  *
  * Written as mutation tests. Each was confirmed by making the change and watching the
- * right test go red:
- *   - drop the body guard (focus unconditionally)     -> the decline tests fail
- *   - drop the focus call                              -> the restore tests fail
- *   - clear the intent AFTER the guard in ConceptTutor -> the stale-intent test fails
+ * right tests go red:
+ *   - drop the guard, focus unconditionally      -> the three decline tests and both
+ *     stale-intent tests fail (five, not three: the stale tests need the guard too)
+ *   - drop the focus call                        -> the three body-restore tests and
+ *     the keyboard-parity test fail
+ *   - never clear the intent (ConceptTutor)      -> the tutor stale-intent test fails
+ *   - clear the intent after the guard's early
+ *     return (DeadlineForm)                      -> the deadline stale-intent test
+ *     fails, via the reseed path that re-runs the effect without arming an intent
+ *   - drop the focusAtSend disjunct (ConceptTutor) -> the keyboard-parity test fails,
+ *     reintroducing the Ctrl+Enter bug ff876af fixed
+ *
+ * Two clear-ordering mutants are KNOWN SURVIVORS, and honestly so:
+ *   - ConceptTutor: its guard is a statement, not an early return, so the clear runs
+ *     unconditionally wherever it sits and moving it changes nothing. The invariant
+ *     there is non-consumption, which the stale-intent test pins.
+ *   - DaysOffControl: its effect deps (pending, error, notice) change only inside
+ *     run(), and run() overwrites the intent before any of them can commit, so
+ *     clear-after-guard is behaviourally equivalent today. Killing it would mean
+ *     reading component internals. The ordering stays a convention there until the
+ *     component grows an intent-free effect path like DeadlineForm's reseed.
  */
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -33,6 +53,7 @@ import { DaysOffControl } from "@/components/DaysOffControl";
 import { DeadlineForm } from "@/components/DeadlineForm";
 import type { TutorOutcome } from "@/lib/api";
 import {
+  ApiError,
   getTutorConversation,
   removeDayOff,
   sendTutorMessage,
@@ -91,10 +112,29 @@ describe("ConceptTutor focus restoration", () => {
     ).toHaveFocus();
   });
 
+  test("takes a Ctrl+Enter sender from the composer to the reply, though focus never touched the body", async () => {
+    const { composer, turn } = await renderTutor();
+    act(() => composer.focus());
+    fireEvent.keyDown(composer, { key: "Enter", ctrlKey: true });
+    // The composer is deliberately never disabled, so this send blurs nothing: focus
+    // sits exactly where the learner left it, and the body test alone would call that
+    // "moved on". This is the parity ff876af restored, and the case its focusAtSend
+    // disjunct exists for.
+    expect(composer).toHaveFocus();
+
+    await act(async () => turn.resolve(turnOutcome(reply)));
+
+    expect(
+      screen.getByRole("region", { name: "Tutor reply" }),
+      "a Ctrl+Enter sender who never left the composer has not moved on, and must reach the answer the way a button sender does",
+    ).toHaveFocus();
+  });
+
   test("declines to move focus when the learner moved on mid-request", async () => {
     const { composer, ask, turn } = await renderTutor();
     fireEvent.click(ask);
-    // The learner went back to the box while the request was in flight.
+    // The learner went back to the box while the request was in flight. The box is not
+    // where the send came from (the button was), so this is a move, not a stay.
     act(() => composer.focus());
 
     await act(async () => turn.resolve(turnOutcome(reply)));
@@ -127,14 +167,14 @@ describe("ConceptTutor focus restoration", () => {
 
 describe("DeadlineForm focus restoration", () => {
   function renderForm() {
-    render(<DeadlineForm plan={plan()} />);
+    const view = render(<DeadlineForm plan={plan()} />);
     const date = screen.getByLabelText("Date");
     const label = screen.getByLabelText(/What to call it/);
     const submit = screen.getByRole("button", { name: "Set deadline" });
     const save = deferred<CoursePlan>();
     vi.mocked(setCourseDeadline).mockReturnValue(save.promise);
     fireEvent.change(date, { target: { value: "2026-12-01" } });
-    return { date, label, submit, save };
+    return { date, label, submit, save, rerender: view.rerender };
   }
 
   test("returns focus to the submit button when the disable left focus on the body", async () => {
@@ -166,13 +206,43 @@ describe("DeadlineForm focus restoration", () => {
       "a learner typing the label mid-save must not have focus yanked back to the submit button",
     ).toHaveFocus();
   });
+
+  test("a declined restore consumes the intent rather than leaving it armed", async () => {
+    const { label, submit, save, rerender } = renderForm();
+    fireEvent.click(submit);
+    act(() => label.focus());
+    // A failure, not a success: the reseed step below needs a standing error for the
+    // props change to clear, and failing is also the path where a learner most
+    // plausibly wanders off mid-request.
+    await act(async () => save.reject(new ApiError(400, "The deadline is in the past.")));
+    await waitFor(() => expect(submit).toBeEnabled());
+    expect(label).toHaveFocus();
+
+    // The learner gives up and clicks away; focus lands nowhere.
+    act(() => label.blur());
+    // A route refresh delivers a deadline saved elsewhere. The reseed branch clears
+    // the stale error, which re-runs the focus effect WITHOUT arming a fresh intent:
+    // the one commit this component has where a leaked intent could fire. This is the
+    // ordering that matters here and not in ConceptTutor, because this guard is an
+    // early return: an intent cleared only after it would never be cleared on decline.
+    rerender(<DeadlineForm plan={plan({ deadline: "2026-12-15", status: "active" })} />);
+
+    expect(
+      document.body,
+      "the submit button must not seize focus on the reseed commit: the intent belonged to the failed save, and the declined restore should have consumed it",
+    ).toHaveFocus();
+  });
 });
 
 describe("DaysOffControl focus restoration", () => {
   const entry = { day: "2026-09-10", note: "Travelling", created_at: "2026-09-01T08:00:00Z" };
 
   function renderControl() {
-    render(<DaysOffControl daysOff={[entry]} />);
+    // `today` is a fixed literal on purpose, chosen before the fixture's day so the
+    // entry renders in the upcoming list, which is where the Unmark button these tests
+    // press lives. Deriving today from the clock would let the entry drift into the
+    // collapsed past list one real morning and silently change which branch renders.
+    render(<DaysOffControl daysOff={[entry]} today="2026-09-01" />);
     const date = screen.getByLabelText("Date");
     const note = screen.getByLabelText(/Why/);
     const unmark = screen.getByRole("button", { name: /^Unmark / });

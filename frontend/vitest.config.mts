@@ -16,7 +16,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     // The same alias tsconfig.json declares. Vitest resolves through Vite, not tsc.
-    alias: { "@": path.resolve(__dirname, "src") },
+    alias: { "@": path.resolve(import.meta.dirname, "src") },
   },
   test: {
     environment: "jsdom",
