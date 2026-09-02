@@ -384,21 +384,28 @@ def test_fake_guided_carries_hostile_markdown_in_both_rendered_fields():
 
 
 def test_the_hostile_guided_ask_survives_the_cap_intact():
-    """MUTATION TARGET, CONFIRMED. Append the answer's hostile block to the rung wording
+    """MUTATION TARGET, MEASURED. Append the answer's hostile block to the rung wording
     instead of replacing it: this goes red and the test above stays green.
 
-    WHICH ASSERTION CATCHES IT IS NOT THE OBVIOUS ONE, and the measurement is the point.
-    That append lands at 297 and 299 characters against an ASK_MAX_CHARS of 300, so it
-    does NOT truncate and the two length assertions both pass. What fails is the last
-    one: the answer's block closes with the injection line, so the appended `ask` ends on
-    a hostile sample rather than on the question it is supposed to be handing back.
+    WHICH ASSERTION FIRES, read out of pytest's traceback rather than reasoned about: the
+    no-ellipsis one, on rung 1. The append composes to 322 and 305 characters against an
+    ASK_MAX_CHARS of 300, parse_reply's _hard_cut truncates both to 297 and 299, and
+    _hard_cut ends every truncation it makes with "...".
 
-    The length assertions are still worth their place, for the three characters of
-    headroom that measurement exposes. parse_reply hard-cuts `ask`, and the injection line
-    sits at the END of the sample, so the first word added anywhere in that chain pushes
-    the cut into the sample: the script tag before it survives, the injection line does
-    not, and the fixture goes on passing a substring check for the first half of itself.
-    That is the failure this pins, and it is one edit away rather than hypothetical.
+    THE LENGTH ASSERTION CANNOT FAIL HERE, and it is not pretending to. _hard_cut returns
+    at most `limit` for any input whatsoever, so `len(ask) <= ASK_MAX_CHARS` holds on
+    parse_reply output no matter what the fixture does. It documents the cap. It does not
+    defend the sample, and reading it as the thing standing guard is how the mechanism
+    got written down wrong twice before this.
+
+    THE TRAILING-QUESTION ASSERTION IS THE BACKSTOP, for the one case an ellipsis cannot
+    catch: an append short enough to fit under the cap. Nothing truncates, no ellipsis is
+    added, and the reply still ends on the injection line rather than on the move it is
+    supposed to be handing back.
+
+    WHY ANY OF IT IS WORTH CATCHING: post-cut the `ask` keeps the whole script tag and the
+    words "Ignore previous instructions" while losing the rest of that line, so a fixture
+    checked only for the tag would pass on half of its own sample.
     """
     provider = FakeProvider()
     for rung in tutor.GUIDED_RUNGS:

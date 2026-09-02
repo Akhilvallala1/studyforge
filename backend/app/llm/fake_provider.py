@@ -483,15 +483,25 @@ class FakeProvider:
                 # where a withheld move should be, and the reply stops looking like a
                 # handover at all.
                 #
-                # SECOND, the headroom. Appending measures 297 and 299 characters at the
-                # two rungs against an ASK_MAX_CHARS of 300, which parse_reply hard-cuts
-                # to. That is three characters, not a margin. Nothing truncates today, so
-                # a length check alone would pass and keep passing until any word is
-                # added anywhere in that chain, at which point the cut takes the injection
-                # line off the end and leaves a fixture that still LOOKS like it covers
-                # this. The version below is 177 and 194, which is headroom worth having.
+                # SECOND, the append does not fit. Measured through the real prompt and
+                # parser: it composes to 322 and 305 characters at the two rungs against
+                # an ASK_MAX_CHARS of 300, so parse_reply's _hard_cut truncates BOTH, to
+                # 297 and 299, each ending in "...". It overruns by 22 and 5. There is no
+                # headroom in that version at all, and 297 and 299 are what the cap
+                # produced rather than what the append measured.
                 #
-                # test_the_hostile_guided_ask_survives_the_cap_intact holds both lines.
+                # WHAT SURVIVES THE CUT is the dangerous half. The full script tag stays,
+                # and so do the words "Ignore previous instructions", while the rest of
+                # that line goes. A fixture checked only for the tag would pass on half of
+                # its own sample.
+                #
+                # It cannot do that silently, and the reason is structural rather than
+                # lucky: _hard_cut ends EVERY truncation with "...", so any sample not
+                # itself ending in "..." is caught by the no-ellipsis assertion in
+                # test_the_hostile_guided_ask_survives_the_cap_intact. The version below
+                # is 177 and 194, which is 123 and 106 characters of real margin, so the
+                # question is nowhere near the cut to begin with.
+                #
                 # The rung tail is kept so the fade stays legible on this concept too.
                 tail = (
                     "You have the method: what does it give back?"
