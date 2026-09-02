@@ -737,6 +737,36 @@ export type PlanStatus = "none" | "active" | "passed";
 export type PlanReason = "no_deadline" | "deadline_passed" | "deadline_today" | "all_days_off";
 
 /**
+ * Why there is no finish date, and null whenever there is one.
+ *
+ * A SEPARATE FIELD FROM `reason`, because a course can be in both states at once: a
+ * deadline that has passed says nothing about whether a pace exists to project from.
+ *
+ * "already_finished" means no lessons remain, so there is no remaining work to project a
+ * date for. The server checks this FIRST and deliberately: it used to return today's date
+ * with a null reason, which read as "finishes today" about a course finished last year,
+ * and a course completed over thirty days ago has no completions inside the pace window,
+ * so the zero-share branch below would otherwise call it "nothing finished here yet".
+ * "no_pace_yet" means not enough completions anywhere to call a rate at all.
+ * "no_progress_in_this_course" means a rate exists, but none of it has been in here, so
+ * there is no evidence of pace INTO this course and no honest date to give. That one is a
+ * state the cross-course widening created and is not a shortfall to paper over: it is
+ * something the learner can act on.
+ *
+ * THIS UNION IS A HAND-WRITTEN COPY OF A BACKEND CONSTANT LIST, not generated from it, and
+ * that is the mechanism that has already failed once. `already_finished` shipped on the
+ * server while this said there were two codes, and nothing anywhere compared the two: the
+ * build stayed green, and a reviewer caught it rather than a tool. So a code added to
+ * planning.py's REASON_* constants has to be added HERE by hand, and the switch that
+ * consumes it carries a `never` check so at least the omission fails the build once this
+ * line is updated. Nothing makes that first step automatic.
+ */
+export type ProjectionReason =
+  | "no_pace_yet"
+  | "no_progress_in_this_course"
+  | "already_finished";
+
+/**
  * How fast new material has to go in to beat a deadline, and how fast it actually is.
  *
  * THIS CARRIES NO CONCEPT DATA AND MUST NOT GROW ANY. Study planning owns the rate new
@@ -763,12 +793,35 @@ export interface CoursePlan {
   lessons_total: number;
   lessons_remaining: number;
   required_per_week: number | null;
-  /** Null below the server's minimum sample; `observed_sample` carries the real count. */
-  observed_per_week: number | null;
-  observed_sample: number;
+  /**
+   * The DISPLAYED rate, counting completions in every course. Null below the server's
+   * minimum sample, where `observed_sample_all_courses` carries the real count.
+   *
+   * Counts everywhere because the minimum is five completions, and scoped to a single
+   * course that was not merely slow to reach but UNREACHABLE for any course with fewer
+   * than five lessons: a permanent dash however hard the learner worked.
+   */
+  observed_per_week_all_courses: number | null;
+  observed_sample_all_courses: number;
+  /**
+   * The rate the FINISH DATE is built from, counting only this course. Never displayed
+   * as a headline figure and never interchangeable with the one above.
+   *
+   * The projection divides THIS course's remaining lessons, so dividing them by the
+   * learner's whole throughput would answer a question nobody asked: the date they would
+   * finish if they abandoned every other course. That is optimistic by roughly the number
+   * of courses in flight, which is the dangerous direction for a deadline.
+   *
+   * Gated on the same cross-course sample as the displayed rate, so it is null exactly
+   * when that one is. It can also be a legitimate ZERO: the learner has cleared the
+   * minimum elsewhere and finished nothing here, which the server reports as
+   * `projection_reason` rather than as a division by zero.
+   */
+  observed_per_week_this_course: number | null;
   /** Local YYYY-MM-DD, or null when the observed pace is unknown or zero. */
   finish_projection: string | null;
   reason: PlanReason | null;
+  projection_reason: ProjectionReason | null;
 }
 
 /** One day the learner has marked as unavailable. Global, never scoped to a course. */

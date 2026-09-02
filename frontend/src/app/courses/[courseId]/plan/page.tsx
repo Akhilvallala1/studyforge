@@ -40,6 +40,16 @@ export const dynamic = "force-dynamic";
  * A server component throughout, like the concepts page. CourseTabs takes `active` as a
  * prop precisely so it never reads the pathname, and the two mutations live in small
  * client components that refresh this route when they land.
+ *
+ * EVERY NULLABLE FIELD OF THE PAYLOAD IS TESTED WITH `== null`, NOT `=== null`, and that
+ * is deliberate rather than sloppy. TypeScript describes the payload; it does not enforce
+ * it, because the server is free to stop sending a field and the declaration here will go
+ * on claiming it exists. That is not hypothetical: this payload has already renamed its
+ * pace fields once, and under `=== null` an absent field silently took the branch that
+ * assumes a number, since `undefined === null` is false. A strict test turns "the server
+ * stopped sending this" into a wrong number on a deadline screen; a nullish test turns it
+ * into the dash, which is what the learner should see when nothing is known. Loud beats
+ * silent here, and the dash is the honest answer either way.
  */
 
 /**
@@ -53,6 +63,19 @@ export const dynamic = "force-dynamic";
  */
 const RATE_FLOOR = 0.05;
 
+/**
+ * The window both observed rates are measured over, in days.
+ *
+ * A constant rather than three literals because three sentences describe this window, and
+ * a copy edit that changes one number and not the others is the drift it exists to stop.
+ *
+ * MIRRORS PACE_WINDOW_DAYS in backend/app/planning.py, hand-written like ProjectionReason
+ * and with the same limit: nothing compares the two, so this keeps the sentences honest
+ * with EACH OTHER and cannot keep them honest with the server. If that constant moves,
+ * this one has to be changed to match.
+ */
+const PACE_WINDOW_DAYS = 30;
+
 function formatRate(value: number): string {
   if (value === 0) return "0";
   if (value < RATE_FLOOR) return "less than 0.1";
@@ -65,6 +88,30 @@ function formatRate(value: number): string {
  * "about" has to come off the floor case or the prose says "about less than 0.1", which
  * hedges a bound that is already exact. Everything else keeps it, because a figure
  * rounded to one decimal is an approximation and should say so.
+ *
+ * THE OMISSION ABOVE IS LOAD-BEARING AND MUST NOT BE "SIMPLIFIED" BACK. The share sentence
+ * interpolates this result and capitalizes the whole string; it does not prepend "About"
+ * of its own. So the floor branch already reads correctly there, "Less than 0.1 of that is
+ * in this course", and it is THIS function dropping the hedge that makes it so. Restoring
+ * an unconditional "about" here to tidy the branch away is what would produce "About less
+ * than 0.1", which is why the rule lives in one place rather than at the call site.
+ *
+ * The floor branch is also unreachable from that sentence, and the argument is structural
+ * rather than a list of cases. The share sentence runs only where `projection_reason` is
+ * null, and the server produces a null reason only after its zero-share branch has already
+ * returned, so a rate arriving here from that path is truthy by construction. Above zero
+ * the floor cannot be hit either: the rate is completions over a fixed window, so its
+ * smallest non-zero value is one completion at about 0.23 a week, well clear of RATE_FLOOR.
+ *
+ * Deliberately NOT phrased as "zero routes to `no_progress_in_this_course`". That was the
+ * earlier wording and it went stale the moment `already_finished` was added, which also
+ * carries a zero share: an enumeration of the server's reason codes has to be revisited
+ * every time one is added, and this file has already been caught out by that once. The
+ * structural form covers every code, including ones not yet written.
+ *
+ * Both halves rest on the SERVER's branch ordering rather than on anything this file
+ * enforces, which is why they are the backup and not the primary reason. The prose reading
+ * correctly at the floor is the property that holds no matter what the server sends.
  */
 function ratePhrase(value: number): string {
   if (value !== 0 && value < RATE_FLOOR) return "less than 0.1";
@@ -98,7 +145,7 @@ function dayCount(count: number): string {
  * lessons can go in on, which is the only thing this feature measures.
  */
 function deadlineSentence(plan: CoursePlan): string {
-  if (plan.deadline === null || plan.days_until === null) return "";
+  if (plan.deadline == null || plan.days_until == null) return "";
   const when = formatDayKey(plan.deadline);
   const name = capitalizedDeadlineName(plan);
   if (plan.status === "passed") {
@@ -111,7 +158,7 @@ function deadlineSentence(plan: CoursePlan): string {
 
 /** "24 study days left before it, after the 2 days you have marked off." */
 function studyDaysSentence(plan: CoursePlan): string | null {
-  if (plan.status !== "active" || plan.available_days === null) return null;
+  if (plan.status !== "active" || plan.available_days == null) return null;
   const head = `That leaves ${dayCount(plan.available_days)} to study on before it`;
   const off = plan.days_off_in_window ?? 0;
   if (off > 0) {
@@ -187,6 +234,113 @@ function PlanStat({ value, label }: { value: string; label: string }) {
 }
 
 /**
+ * The SECOND half of the pace pair: which slice of that throughput is this course, and
+ * therefore where the finish date came from.
+ *
+ * This sentence exists because the two numbers do not divide. A learner who reads "3 a
+ * week" and then sees a date that is not the remaining lessons over 3 would be looking at
+ * an error; naming the share answers that in the same breath instead of apologising for
+ * it afterwards. The split is also the actionable part: with a tight deadline and three
+ * courses open, "about 0.9 of that is in this course" says what to change.
+ *
+ * EXHAUSTIVE ON `projection_reason`, now enforced by a `never` check rather than claimed
+ * in a comment. The fallback still says nothing about why: an unrecognised code must not
+ * render as a blank panel, and must not invent a cause either, the same discipline
+ * weakestExplanation follows on the concepts page.
+ *
+ * `already_finished` CANNOT REACH THIS FUNCTION TODAY, and the reason is worth knowing
+ * before anyone moves the call. The server returns it exactly when lessons_remaining is
+ * zero, and the only call site guards on `plan.lessons_remaining > 0`. That guard is
+ * therefore LOAD-BEARING rather than incidental: it is what keeps a finished course out
+ * of here, and a second consumer added without it would reach this branch immediately.
+ *
+ * WHICH IS WHY THAT BRANCH ANSWERS RATHER THAN ASSERTS. Throwing would have been the
+ * tidier way to encode "unreachable", and it would be wrong here: this is a server
+ * component's render path, so a throw takes down the whole plan screen, deadline form and
+ * calendar file and days-off list included, for a course whose only sin is being finished.
+ * The caller that reaches it is a future one that forgot a guard, and the useful response
+ * to that is a true sentence on their screen rather than a broken page. The neighbouring
+ * default branch already answers rather than throwing, on strictly stranger input.
+ */
+function projectionSentence(plan: CoursePlan): string {
+  const noDate = "There is no finish date to project for this course just now.";
+  switch (plan.projection_reason) {
+    case "no_pace_yet":
+      return "There is no finish date to project until you have finished a few more lessons.";
+    case "no_progress_in_this_course":
+      /*
+       * SCOPED TO THE WINDOW, NOT TO THE LEARNER'S HISTORY, because this branch is reached
+       * two ways and the payload cannot say which. One is someone who has never opened this
+       * course. The other is someone whose lessons here were all finished before the window
+       * began: the in-window count is zero, the share is zero, and the server routes here
+       * exactly as designed. For that second learner "yet" was simply false. They have
+       * worked in this course, just not lately, and a screen telling them otherwise is
+       * wrong about the one thing they would know better than it does.
+       */
+      return `None of that has been in this course in the last ${PACE_WINDOW_DAYS} days, so there is no finish date to project.`;
+    case "already_finished":
+      // Unreachable today, and answered rather than asserted. See the header above.
+      return "You have finished this course, so there is no finish date left to project.";
+    case null:
+    case undefined:
+      break;
+    default: {
+      /*
+       * Two jobs, which is why this is not simply a return.
+       *
+       * The assignment is the COMPILE-TIME half: once every member of ProjectionReason is
+       * handled above, this narrows to `never` and the assignment is legal. Add a member
+       * to the union without a case for it and this line stops compiling and points here,
+       * which is the check that was missing when `already_finished` was added.
+       *
+       * The return is the RUNTIME half, and it is still needed, because the union is a
+       * hand-written copy of the server's constants: the server can send a code this file
+       * has never heard of, which no amount of type-checking sees. That case gets a
+       * sentence claiming nothing about why, rather than a blank panel or a guess.
+       */
+      const unhandled: never = plan.projection_reason;
+      void unhandled;
+      return noDate;
+    }
+  }
+  if (plan.finish_projection == null || plan.observed_per_week_this_course == null) {
+    return noDate;
+  }
+  /*
+   * "of that", not "of those", IN EVERY SENTENCE HERE, the no-progress branch above
+   * included. "Those" refers to a set of lessons and forces a plural, which made the verb
+   * wrong above one: "about 1.4 of those is". "That" refers to the rate as a single
+   * quantity, so the singular is correct at every value and the sentence has no input at
+   * which it reads wrong. Fixed by the noun rather than by switching the verb on the
+   * number, because there is then no threshold to get wrong and no second string to keep
+   * in step with the first. The branches are mutually exclusive, so no learner ever sees
+   * two of them, but a reader of this function sees all of them at once and should not
+   * have to work out whether two pronouns for one antecedent were deliberate.
+   *
+   * THE EQUALITY BRANCH IS GATED ON THE UNDERLYING FLOATS, NOT THE ROUNDED DISPLAY. Two
+   * rates that both render as "1.4" can differ underneath, and "all of that" would then
+   * be the only thing on the page claiming they are the same while the projected date
+   * quietly disagreed. Exact equality makes the claim exactly true; anything else falls
+   * through to the share, even when the two printed numbers happen to match. It also
+   * fires correctly for a learner with several courses whose completions are all in this
+   * one, which is the same fact stated about a different situation.
+   */
+  const share =
+    plan.observed_per_week_this_course === plan.observed_per_week_all_courses
+      ? "All of that is in this course, and that is the pace your finish date uses."
+      : `${ratePhrase(plan.observed_per_week_this_course)} of that is in this course, and that is the pace your finish date uses.`;
+  const finish = `At that pace you finish on ${formatDayKey(plan.finish_projection)}`;
+  return plan.deadline != null && plan.status === "active"
+    ? `${capitalize(share)} ${finish}; ${deadlineName(plan)} is on ${formatDayKey(plan.deadline)}.`
+    : `${capitalize(share)} ${finish}.`;
+}
+
+/** Sentence-initial form, for a phrase that starts with a lower-case rate word. */
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
  * The two rates, in prose, with no comparison drawn between them.
  *
  * Reads as a report and stops: "you need about 5 a week, you have averaged 2, at that
@@ -201,7 +355,7 @@ function paceSentences(plan: CoursePlan): string[] {
     lines.push(
       `All ${lessonCount(plan.lessons_total)} in this course are finished, so there is no new material left to fit in.`,
     );
-  } else if (plan.required_per_week !== null) {
+  } else if (plan.required_per_week != null) {
     lines.push(
       `You need ${ratePhrase(plan.required_per_week)} lessons a week to get through the remaining ${lessonCount(plan.lessons_remaining)} before ${deadlineName(plan)}.`,
     );
@@ -209,27 +363,29 @@ function paceSentences(plan: CoursePlan): string[] {
     lines.push(requiredDashNote(plan));
   }
 
-  if (plan.observed_per_week !== null) {
+  const sample = plan.observed_sample_all_courses;
+  if (plan.observed_per_week_all_courses != null) {
+    // "all" is load-bearing and must survive any trimming of this sentence. Without it
+    // this is the old claim, which counted only this course, and it is now false.
     lines.push(
-      `Over the last 30 days you have averaged ${ratePhrase(plan.observed_per_week)} lessons a week in this course.`,
+      `Across all your courses, you have been finishing ${ratePhrase(plan.observed_per_week_all_courses)} lessons a week.`,
     );
-  } else if (plan.observed_sample === 0) {
+  } else if (sample === 0) {
     lines.push(
-      "You have not finished a lesson in this course in the last 30 days, so there is no pace to measure yet.",
+      `You have not finished a lesson in any course in the last ${PACE_WINDOW_DAYS} days, so there is no pace to measure yet.`,
+    );
+  } else if (typeof sample === "number") {
+    lines.push(
+      `You have finished ${lessonCount(sample)} across all your courses in the last ${PACE_WINDOW_DAYS} days, which is not enough to call a pace yet: a rate off a handful of lessons would swing every time one more landed.`,
     );
   } else {
-    lines.push(
-      `You have finished ${lessonCount(plan.observed_sample)} in this course in the last 30 days, which is not enough to call a pace yet: a rate off a handful of lessons would swing every time one more landed.`,
-    );
+    // Claims no count, because a payload that stopped sending one is a payload whose
+    // count we do not know. Saying "you have finished 0" there would be inventing it.
+    lines.push("There is not enough finished work across your courses to call a pace yet.");
   }
 
-  if (plan.lessons_remaining > 0 && plan.finish_projection !== null) {
-    const finish = `At that pace you finish on ${formatDayKey(plan.finish_projection)}`;
-    lines.push(
-      plan.deadline !== null && plan.status === "active"
-        ? `${finish}; ${deadlineName(plan)} is on ${formatDayKey(plan.deadline)}.`
-        : `${finish}.`,
-    );
+  if (plan.lessons_remaining > 0) {
+    lines.push(projectionSentence(plan));
   }
 
   return lines;
@@ -268,7 +424,7 @@ function CalendarSection({ plan }: { plan: CoursePlan }) {
         notification, or a reminder of any kind, and that is by design. What it can do is
         hand you a calendar file, and let the calendar you already use do the reminding.
       </p>
-      {plan.deadline === null ? (
+      {plan.deadline == null ? (
         <p className="mt-3 rounded-lg border border-zinc-200 px-5 py-4 text-[13px] text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
           Set a deadline above and the calendar file appears here.
         </p>
@@ -325,15 +481,24 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
           <dl className="flex flex-wrap gap-x-12 gap-y-6">
             <PlanStat
               value={
-                plan.required_per_week === null ? "–" : formatRate(plan.required_per_week)
+                plan.required_per_week == null ? "–" : formatRate(plan.required_per_week)
               }
               label="Lessons a week needed"
             />
+            {/*
+              THE DISPLAYED RATE IS THE ALL-COURSES ONE, and the label says so rather
+              than leaving "your pace" to be read as this course's. The per-course rate is
+              never a headline here: it is smaller, it is only the projection's input, and
+              two unlabelled rates side by side is exactly the pair that gets read
+              wrongly. The prose underneath names the share.
+            */}
             <PlanStat
               value={
-                plan.observed_per_week === null ? "–" : formatRate(plan.observed_per_week)
+                plan.observed_per_week_all_courses == null
+                  ? "–"
+                  : formatRate(plan.observed_per_week_all_courses)
               }
-              label="Lessons a week, your pace"
+              label="Lessons a week, all courses"
             />
           </dl>
           <div className="mt-5 max-w-2xl border-t border-zinc-200 pt-4 text-[13px] leading-relaxed text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
@@ -351,7 +516,7 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
           Deadline
         </h2>
         <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-400">
-          {plan.deadline === null
+          {plan.deadline == null
             ? "This course has no deadline. Setting one works out the weekly rate above; it changes nothing else, and clearing it later puts everything back."
             : "Changing the date works out a new weekly rate. It moves no review and un-completes no lesson, and clearing it puts the course back to where it was."}
         </p>

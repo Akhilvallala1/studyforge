@@ -107,7 +107,30 @@ export function turnOutcome(reply: TutorRow, question = "What grows stability?")
   return { kind: "turn", turn };
 }
 
-/** A plan with no deadline, which is the state DeadlineForm's submit path starts from. */
+/**
+ * A plan with no deadline, which is the state DeadlineForm's submit path starts from.
+ *
+ * THE PACE FIELDS ARE MEASURED RATHER THAN EMPTY, and the choice is deliberate even
+ * though nothing asserts on them today: DeadlineForm reads only course_id, deadline and
+ * deadline_label, so every pace value here is currently structural. That is exactly why
+ * they should describe an ordinary learner. A future test that renders the whole plan
+ * screen off this base gets the path with the most logic in it, the two rates and the
+ * share sentence and a projected date, rather than a screen of dashes that exercises the
+ * degenerate branch and looks like it passed.
+ *
+ * THE NUMBERS ARE INTERNALLY CONSISTENT, which matters more than any single value,
+ * because a fixture is also documentation of a shape the server can actually produce:
+ *   - 10 total and 6 remaining means 4 lessons finished here, so the per-course rate is
+ *     4 over the 30-day window, 0.93 a week.
+ *   - 12 completions across every course clears the server's five-completion minimum, so
+ *     both rates are non-null. Below it the server nulls BOTH, and a fixture with one set
+ *     and the other null would be a payload the backend never sends.
+ *   - The two rates DIFFER, so the share sentence renders rather than the "all of that"
+ *     equality branch, which is the case this feature exists for.
+ *   - 6 remaining at 0.93 a week is 45 days, which is where finish_projection lands, and
+ *     projection_reason is null because a date exists. A deadline is not required for a
+ *     projection, so a null deadline sits with a real date quite legitimately.
+ */
 export function plan(overrides: Partial<CoursePlan> = {}): CoursePlan {
   return {
     course_id: 1,
@@ -121,10 +144,12 @@ export function plan(overrides: Partial<CoursePlan> = {}): CoursePlan {
     lessons_total: 10,
     lessons_remaining: 6,
     required_per_week: null,
-    observed_per_week: null,
-    observed_sample: 0,
-    finish_projection: null,
+    observed_per_week_all_courses: 2.8,
+    observed_sample_all_courses: 12,
+    observed_per_week_this_course: 0.9333333333333333,
+    finish_projection: "2026-10-16",
     reason: "no_deadline",
+    projection_reason: null,
     ...overrides,
   };
 }
