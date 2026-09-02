@@ -345,9 +345,13 @@ def test_observed_pace_is_null_below_the_minimum_sample_and_says_how_many():
 
     plan = _plan(course_id)
 
-    assert plan["observed_per_week"] is None
-    assert plan["observed_sample"] == 4
+    assert plan["observed_per_week_all_courses"] is None
+    assert plan["observed_sample_all_courses"] == 4
+    assert plan["observed_per_week_this_course"] is None
     assert plan["finish_projection"] is None
+    # Not "no_progress_in_this_course": they HAVE finished lessons here, there is just
+    # not enough of a sample anywhere to quote a rate from yet. Two different sentences.
+    assert plan["projection_reason"] == "no_pace_yet"
 
 
 def test_observed_pace_is_reported_once_there_is_enough_of_it():
@@ -361,8 +365,8 @@ def test_observed_pace_is_reported_once_there_is_enough_of_it():
 
     plan = _plan(course_id)
 
-    assert plan["observed_sample"] == 6
-    assert plan["observed_per_week"] == pytest.approx(6 / 30 * 7)
+    assert plan["observed_sample_all_courses"] == 6
+    assert plan["observed_per_week_all_courses"] == pytest.approx(6 / 30 * 7)
 
 
 def test_completions_older_than_the_window_do_not_count():
@@ -374,8 +378,8 @@ def test_completions_older_than_the_window_do_not_count():
 
     plan = _plan(course_id)
 
-    assert plan["observed_sample"] == 5
-    assert plan["observed_per_week"] == pytest.approx(5 / 30 * 7)
+    assert plan["observed_sample_all_courses"] == 5
+    assert plan["observed_per_week_all_courses"] == pytest.approx(5 / 30 * 7)
 
 
 def test_the_observed_rate_counts_lessons_from_every_course():
@@ -404,8 +408,11 @@ def test_the_observed_rate_counts_lessons_from_every_course():
     # THE RATE widens; the counts do not. Nine completions, none of them in this course.
     assert plan["lessons_total"] == 6
     assert plan["lessons_remaining"] == 6
-    assert plan["observed_sample"] == 9
-    assert plan["observed_per_week"] == pytest.approx(9 / 30 * 7)
+    assert plan["observed_sample_all_courses"] == 9
+    assert plan["observed_per_week_all_courses"] == pytest.approx(9 / 30 * 7)
+    # Nine a week across their courses, none of it here, and the two numbers are allowed
+    # to disagree that far. That is the pair the copy has to explain.
+    assert plan["observed_per_week_this_course"] == 0.0
 
 
 def test_a_learner_reaches_the_minimum_only_by_combining_courses():
@@ -426,27 +433,130 @@ def test_a_learner_reaches_the_minimum_only_by_combining_courses():
 
     plan = _plan(course_id)
 
-    assert plan["observed_sample"] == 6
-    assert plan["observed_per_week"] == pytest.approx(6 / 30 * 7)
-    assert plan["finish_projection"] is not None
+    assert plan["observed_sample_all_courses"] == 6
+    assert plan["observed_per_week_all_courses"] == pytest.approx(6 / 30 * 7)
+
+    # THE CONSEQUENCE THE USER ACCEPTED WHEN THEY CHOSE THE SHARE. The widening makes the
+    # RATE reachable for a short course without making the PROJECTION reachable. This
+    # learner has finished nothing in the course being planned, so there is no evidence of
+    # pace into it and no honest date to give, and inventing one from their other courses
+    # is exactly the flattering answer this change removed. It reaches the screen as a
+    # state with a reason rather than as a blank or a division by zero.
+    assert plan["observed_per_week_this_course"] == 0.0
+    assert plan["finish_projection"] is None
+    assert plan["projection_reason"] == "no_progress_in_this_course"
+
+
+def test_a_multi_course_projection_follows_this_courses_share_and_lands_later():
+    """THE DECISION, pinned in the direction that matters rather than just on the number.
+
+    Six completions elsewhere and three here, so the learner's whole throughput is three
+    times the pace they are actually putting into this course. Dividing this course's
+    backlog by the whole throughput answers "when would I finish if I abandoned everything
+    else", which is optimistic by roughly the number of courses in flight and NEVER
+    pessimistic. The direction assertion is the point: a projection that is going to be
+    wrong in a deadline feature should at least not flatter the learner.
+    """
+    _make_course(
+        lesson_count=6,
+        completed=[(index, _completed(index + 1)) for index in range(6)],
+        title="Another Course",
+    )
+    course_id = _make_course(
+        lesson_count=9,
+        completed=[(index, _completed(index + 1)) for index in range(3)],
+    )
+
+    plan = _plan(course_id)
+
+    assert plan["observed_sample_all_courses"] == 9
+    assert plan["observed_per_week_all_courses"] == pytest.approx(9 / 30 * 7)
+    assert plan["observed_per_week_this_course"] == pytest.approx(3 / 30 * 7)
+    assert plan["lessons_remaining"] == 6
+
+    from_this_course = planning.finish_projection(6, 3 / 30 * 7, NOON)
+    from_whole_throughput = planning.finish_projection(6, 9 / 30 * 7, NOON)
+
+    assert plan["finish_projection"] == from_this_course
+    assert plan["finish_projection"] > from_whole_throughput
+    assert plan["projection_reason"] is None
+
+
+def test_a_finished_course_has_no_date_to_project_and_says_so_in_the_payload():
+    """A PAYLOAD claim, not a rendering one, which is the whole point of the fix.
+
+    This used to return TODAY with a null reason. The page that consumed it happened to
+    suppress the sentence for a finished course, so nothing rendered wrongly, but the
+    payload was one a caller could not read without also reading lessons_remaining: "you
+    finish today" about a course finished last year, with nothing in the payload saying
+    so. The next consumer would not have known to check.
+    """
+    _make_course(
+        lesson_count=6,
+        completed=[(index, _completed(index + 1)) for index in range(6)],
+        title="Another Course",
+    )
+    course_id = _make_course(
+        lesson_count=3,
+        completed=[(0, _completed(3)), (1, _completed(2)), (2, _completed(1))],
+    )
+
+    plan = _plan(course_id)
+
+    assert plan["lessons_remaining"] == 0
+    # Not no_pace_yet, since there is plenty of sample, and not no_progress_in_this_course,
+    # since they finished it. Both would be true and neither would be the useful answer.
+    assert plan["observed_per_week_all_courses"] is not None
+    assert plan["finish_projection"] is None
+    assert plan["projection_reason"] == "already_finished"
+
+
+def test_a_course_finished_long_ago_still_reads_as_finished():
+    """THE ORDERING, pinned. Every completion here is outside the 30-day window, so this
+    course's share is zero, and the zero-share branch would answer "nothing finished here
+    yet" about a course that is entirely finished. Checking finished first is what makes
+    the answer the useful one rather than merely a true one."""
+    _make_course(
+        lesson_count=6,
+        completed=[(index, _completed(index + 1)) for index in range(6)],
+        title="Another Course",
+    )
+    course_id = _make_course(
+        lesson_count=2,
+        completed=[(0, _completed(300)), (1, _completed(280))],
+    )
+
+    plan = _plan(course_id)
+
+    assert plan["lessons_remaining"] == 0
+    assert plan["observed_per_week_this_course"] == 0.0
+    assert plan["finish_projection"] is None
+    assert plan["projection_reason"] == "already_finished"
 
 
 def test_below_the_minimum_across_every_course_is_still_a_dash():
     """The minimum SURVIVES the widening, which is the half of the decision that is easy
-    to lose. Four completions spread over two courses is still four, and four is still
-    not enough to quote a rate from."""
+    to lose. Four completions spread over two courses is still four, and four is still not
+    enough to quote a rate from.
+
+    FOUR, deliberately, which puts this exactly one completion below the threshold: the
+    strongest place for a boundary test, and the same boundary
+    test_observed_pace_is_null_below_the_minimum_sample_and_says_how_many checks inside a
+    single course. The pair reads as one rule tested at both scopes.
+    """
     _make_course(
         lesson_count=3,
-        completed=[(0, _completed(3)), (1, _completed(2))],
+        completed=[(0, _completed(3)), (1, _completed(2)), (2, _completed(2))],
         title="Other",
     )
     course_id = _make_course(lesson_count=3, completed=[(0, _completed(1))])
 
     plan = _plan(course_id)
 
-    assert plan["observed_sample"] == 3
-    assert plan["observed_per_week"] is None
+    assert plan["observed_sample_all_courses"] == 4
+    assert plan["observed_per_week_all_courses"] is None
     assert plan["finish_projection"] is None
+    assert plan["projection_reason"] == "no_pace_yet"
 
 
 def test_a_single_course_learner_sees_exactly_what_they_saw_before():
@@ -460,9 +570,14 @@ def test_a_single_course_learner_sees_exactly_what_they_saw_before():
 
     plan = _plan(course_id)
 
-    assert plan["observed_sample"] == 6
-    assert plan["observed_per_week"] == pytest.approx(6 / 30 * 7)
+    assert plan["observed_sample_all_courses"] == 6
+    assert plan["observed_per_week_all_courses"] == pytest.approx(6 / 30 * 7)
+    # With one course in flight the two rates are the same measurement of the same
+    # lessons, so the split costs a single-course learner nothing and the date is
+    # unchanged from before the projection followed the share.
+    assert plan["observed_per_week_this_course"] == plan["observed_per_week_all_courses"]
     assert plan["finish_projection"] == "2026-10-10"
+    assert plan["projection_reason"] is None
 
 
 def test_finish_projection_reads_from_the_observed_rate():
@@ -574,7 +689,7 @@ def test_the_plan_of_a_course_with_no_deadline_is_200_and_not_404(client):
     assert body["status"] == "none"
     assert body["deadline"] is None
     assert body["lessons_remaining"] == 3
-    assert "observed_per_week" in body
+    assert "observed_per_week_all_courses" in body
 
 
 def test_the_plan_reports_no_concept_data(client):
