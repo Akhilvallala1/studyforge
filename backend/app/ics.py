@@ -151,6 +151,15 @@ def download_filename(course_id: int) -> str:
     filename, because that is a second escaping problem with a different grammar that
     has to stay correct forever. It is to have nothing to sanitize: the only variable
     here is an integer primary key.
+
+    THE FRONTEND MIRRORS THIS SHAPE, at coursePlanIcsFilename in
+    frontend/src/lib/api.ts, so the plan page can tell the learner what the download
+    will be called before they click it. It cannot read the name back off the response:
+    the link is a plain anchor, so the browser consumes the Content-Disposition and the
+    page never sees it. RENAMING HERE MEANS RENAMING THERE. This side is pinned by
+    test_the_download_filename_is_built_from_the_id_and_never_the_title and by the
+    header assertion in the endpoint test, so a change here cannot pass unnoticed;
+    nothing pins the copy, which would simply go on naming the old file.
     """
     return f"studyforge-course-{course_id}.ics"
 

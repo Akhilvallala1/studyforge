@@ -22,6 +22,50 @@ const FIELD_CLASS =
  */
 type DayOffFocus = "day" | "submit";
 
+/**
+ * One row, identical in both lists, which is why it is genuinely shared rather than
+ * merely claimed to be.
+ *
+ * AT MODULE SCOPE ON PURPOSE. Declared inside DaysOffControl it was a new function on
+ * every parent render, so React compared element types by reference, found them
+ * different, and unmounted and remounted every row's DOM on each keystroke in the date
+ * or note field. `key` cannot prevent that: the type mismatch is settled before keys are
+ * consulted. Nothing visible broke, because rows hold no state, the disclosure is a
+ * sibling rather than a child so its open state survived, and the focus target after an
+ * unmark is the form's date input, which sits outside the churn entirely. The cost was
+ * all latent: the first row-local state anyone adds, an inline note edit or a confirm
+ * step before unmarking, would have reset itself on every keystroke somewhere else on
+ * the form, and the symptom would not have pointed here.
+ */
+function DayOffRow({
+  entry,
+  pending,
+  onUnmark,
+}: {
+  entry: DayOff;
+  pending: boolean;
+  onUnmark: (entry: DayOff) => void;
+}) {
+  return (
+    <li className="flex items-center justify-between gap-4 py-2.5">
+      <div className="min-w-0">
+        <div className="text-[13px]">{formatDayKey(entry.day)}</div>
+        {entry.note && (
+          <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">{entry.note}</div>
+        )}
+      </div>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => onUnmark(entry)}
+        aria-label={`Unmark ${formatDayKey(entry.day)} as a day off`}
+        className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium transition-colors hover:border-zinc-500 disabled:opacity-60 dark:border-zinc-700 dark:hover:border-zinc-500"
+      >
+        Unmark
+      </button>
+    </li>
+  );
+}
 
 /**
  * Marking and unmarking the days the learner will not be studying.
@@ -130,32 +174,12 @@ export function DaysOffControl({
 
   const { upcoming, past } = splitDaysOff(daysOff, today);
 
-  /** One row, identical in both lists, so collapsing the earlier half changes nothing else. */
-  function DayOffRow({ entry }: { entry: DayOff }) {
-    return (
-      <li className="flex items-center justify-between gap-4 py-2.5">
-        <div className="min-w-0">
-          <div className="text-[13px]">{formatDayKey(entry.day)}</div>
-          {entry.note && (
-            <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">{entry.note}</div>
-          )}
-        </div>
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() =>
-            void run(
-              () => removeDayOff(entry.day),
-              `${formatDayKey(entry.day)} counts as a study day again.`,
-              "day",
-            )
-          }
-          aria-label={`Unmark ${formatDayKey(entry.day)} as a day off`}
-          className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium transition-colors hover:border-zinc-500 disabled:opacity-60 dark:border-zinc-700 dark:hover:border-zinc-500"
-        >
-          Unmark
-        </button>
-      </li>
+  /** Focus goes to the date field, not back to the row: the row is gone by then. */
+  function unmark(entry: DayOff) {
+    void run(
+      () => removeDayOff(entry.day),
+      `${formatDayKey(entry.day)} counts as a study day again.`,
+      "day",
     );
   }
 
@@ -237,7 +261,7 @@ export function DaysOffControl({
           ) : (
             <ul className="flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
               {upcoming.map((entry) => (
-                <DayOffRow key={entry.day} entry={entry} />
+                <DayOffRow key={entry.day} entry={entry} pending={pending} onUnmark={unmark} />
               ))}
             </ul>
           )}
@@ -261,7 +285,7 @@ export function DaysOffControl({
               </summary>
               <ul className="mt-1 flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
                 {past.map((entry) => (
-                  <DayOffRow key={entry.day} entry={entry} />
+                  <DayOffRow key={entry.day} entry={entry} pending={pending} onUnmark={unmark} />
                 ))}
               </ul>
             </details>
