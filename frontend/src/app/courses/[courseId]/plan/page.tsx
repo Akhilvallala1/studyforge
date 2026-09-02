@@ -75,6 +75,15 @@ function formatRate(value: number): string {
  * "about" has to come off the floor case or the prose says "about less than 0.1", which
  * hedges a bound that is already exact. Everything else keeps it, because a figure
  * rounded to one decimal is an approximation and should say so.
+ *
+ * THE SHARE SENTENCE LOOKS LIKE IT COULD REOPEN THAT, AND CANNOT, which is worth stating
+ * because the next reader will see the gap and not re-derive why it is shut. That
+ * sentence prefixes this with "About", so a floor result would read "About less than
+ * 0.1". It is unreachable by arithmetic rather than merely unlikely: the per-course rate
+ * is completions over a fixed 30-day window, so its smallest non-zero value is one
+ * completion, about 0.23 a week, comfortably above RATE_FLOOR, and exactly zero routes to
+ * `no_progress_in_this_course` and never reaches this function. A guard there would be
+ * dead code wearing the costume of defensiveness.
  */
 function ratePhrase(value: number): string {
   if (value !== 0 && value < RATE_FLOOR) return "less than 0.1";
@@ -226,7 +235,26 @@ function projectionSentence(plan: CoursePlan): string {
   if (plan.finish_projection == null || plan.observed_per_week_this_course == null) {
     return noDate;
   }
-  const share = `${ratePhrase(plan.observed_per_week_this_course)} of those is in this course, and that is the pace your finish date uses.`;
+  /*
+   * "of that", not "of those". "Those" refers to a set of lessons and forces a plural,
+   * which made the verb wrong above one: "about 1.4 of those is". "That" refers to the
+   * rate as a single quantity, so the singular is correct at every value and the sentence
+   * has no input at which it reads wrong. Fixed by the noun rather than by switching the
+   * verb on the number, because there is then no threshold to get wrong and no second
+   * string to keep in step with the first.
+   *
+   * THE EQUALITY BRANCH IS GATED ON THE UNDERLYING FLOATS, NOT THE ROUNDED DISPLAY. Two
+   * rates that both render as "1.4" can differ underneath, and "all of that" would then
+   * be the only thing on the page claiming they are the same while the projected date
+   * quietly disagreed. Exact equality makes the claim exactly true; anything else falls
+   * through to the share, even when the two printed numbers happen to match. It also
+   * fires correctly for a learner with several courses whose completions are all in this
+   * one, which is the same fact stated about a different situation.
+   */
+  const share =
+    plan.observed_per_week_this_course === plan.observed_per_week_all_courses
+      ? "All of that is in this course, and that is the pace your finish date uses."
+      : `${ratePhrase(plan.observed_per_week_this_course)} of that is in this course, and that is the pace your finish date uses.`;
   const finish = `At that pace you finish on ${formatDayKey(plan.finish_projection)}`;
   return plan.deadline != null && plan.status === "active"
     ? `${capitalize(share)} ${finish}; ${deadlineName(plan)} is on ${formatDayKey(plan.deadline)}.`
