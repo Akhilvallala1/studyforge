@@ -215,9 +215,24 @@ function PlanStat({ value, label }: { value: string; label: string }) {
  * it afterwards. The split is also the actionable part: with a tight deadline and three
  * courses open, "about 0.9 of that is in this course" says what to change.
  *
- * EXHAUSTIVE ON `projection_reason`, with the fallback deliberately saying nothing about
- * why. An unrecognised code must not render as a blank panel, and it must not invent a
- * cause either; the same discipline weakestExplanation follows on the concepts page.
+ * EXHAUSTIVE ON `projection_reason`, now enforced by a `never` check rather than claimed
+ * in a comment. The fallback still says nothing about why: an unrecognised code must not
+ * render as a blank panel, and must not invent a cause either, the same discipline
+ * weakestExplanation follows on the concepts page.
+ *
+ * `already_finished` CANNOT REACH THIS FUNCTION TODAY, and the reason is worth knowing
+ * before anyone moves the call. The server returns it exactly when lessons_remaining is
+ * zero, and the only call site guards on `plan.lessons_remaining > 0`. That guard is
+ * therefore LOAD-BEARING rather than incidental: it is what keeps a finished course out
+ * of here, and a second consumer added without it would reach this branch immediately.
+ *
+ * WHICH IS WHY THAT BRANCH ANSWERS RATHER THAN ASSERTS. Throwing would have been the
+ * tidier way to encode "unreachable", and it would be wrong here: this is a server
+ * component's render path, so a throw takes down the whole plan screen, deadline form and
+ * calendar file and days-off list included, for a course whose only sin is being finished.
+ * The caller that reaches it is a future one that forgot a guard, and the useful response
+ * to that is a true sentence on their screen rather than a broken page. The neighbouring
+ * default branch already answers rather than throwing, on strictly stranger input.
  */
 function projectionSentence(plan: CoursePlan): string {
   const noDate = "There is no finish date to project for this course just now.";
@@ -226,11 +241,30 @@ function projectionSentence(plan: CoursePlan): string {
       return "There is no finish date to project until you have finished a few more lessons.";
     case "no_progress_in_this_course":
       return "None of that has been in this course yet, so there is no finish date to project.";
+    case "already_finished":
+      // Unreachable today, and answered rather than asserted. See the header above.
+      return "You have finished this course, so there is no finish date left to project.";
     case null:
     case undefined:
       break;
-    default:
+    default: {
+      /*
+       * Two jobs, which is why this is not simply a return.
+       *
+       * The assignment is the COMPILE-TIME half: once every member of ProjectionReason is
+       * handled above, this narrows to `never` and the assignment is legal. Add a member
+       * to the union without a case for it and this line stops compiling and points here,
+       * which is the check that was missing when `already_finished` was added.
+       *
+       * The return is the RUNTIME half, and it is still needed, because the union is a
+       * hand-written copy of the server's constants: the server can send a code this file
+       * has never heard of, which no amount of type-checking sees. That case gets a
+       * sentence claiming nothing about why, rather than a blank panel or a guess.
+       */
+      const unhandled: never = plan.projection_reason;
+      void unhandled;
       return noDate;
+    }
   }
   if (plan.finish_projection == null || plan.observed_per_week_this_course == null) {
     return noDate;
