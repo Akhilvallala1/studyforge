@@ -63,6 +63,19 @@ export const dynamic = "force-dynamic";
  */
 const RATE_FLOOR = 0.05;
 
+/**
+ * The window both observed rates are measured over, in days.
+ *
+ * A constant rather than three literals because three sentences describe this window, and
+ * a copy edit that changes one number and not the others is the drift it exists to stop.
+ *
+ * MIRRORS PACE_WINDOW_DAYS in backend/app/planning.py, hand-written like ProjectionReason
+ * and with the same limit: nothing compares the two, so this keeps the sentences honest
+ * with EACH OTHER and cannot keep them honest with the server. If that constant moves,
+ * this one has to be changed to match.
+ */
+const PACE_WINDOW_DAYS = 30;
+
 function formatRate(value: number): string {
   if (value === 0) return "0";
   if (value < RATE_FLOOR) return "less than 0.1";
@@ -83,14 +96,22 @@ function formatRate(value: number): string {
  * an unconditional "about" here to tidy the branch away is what would produce "About less
  * than 0.1", which is why the rule lives in one place rather than at the call site.
  *
- * The floor branch is also unreachable from that sentence today, by arithmetic rather than
- * by luck: the per-course rate is completions over a fixed 30-day window, so its smallest
- * non-zero value is one completion at about 0.23 a week, well clear of RATE_FLOOR. Exactly
- * zero is the only value below the floor, and the server routes that to
- * `no_progress_in_this_course`, which returns before reaching here. That second argument
- * rests on the SERVER's routing rather than on anything this file enforces, which is
- * precisely why it is the backup reason and not the primary one: the prose being correct
- * either way is the property that does not depend on someone else's branch ordering.
+ * The floor branch is also unreachable from that sentence, and the argument is structural
+ * rather than a list of cases. The share sentence runs only where `projection_reason` is
+ * null, and the server produces a null reason only after its zero-share branch has already
+ * returned, so a rate arriving here from that path is truthy by construction. Above zero
+ * the floor cannot be hit either: the rate is completions over a fixed window, so its
+ * smallest non-zero value is one completion at about 0.23 a week, well clear of RATE_FLOOR.
+ *
+ * Deliberately NOT phrased as "zero routes to `no_progress_in_this_course`". That was the
+ * earlier wording and it went stale the moment `already_finished` was added, which also
+ * carries a zero share: an enumeration of the server's reason codes has to be revisited
+ * every time one is added, and this file has already been caught out by that once. The
+ * structural form covers every code, including ones not yet written.
+ *
+ * Both halves rest on the SERVER's branch ordering rather than on anything this file
+ * enforces, which is why they are the backup and not the primary reason. The prose reading
+ * correctly at the floor is the property that holds no matter what the server sends.
  */
 function ratePhrase(value: number): string {
   if (value !== 0 && value < RATE_FLOOR) return "less than 0.1";
@@ -247,7 +268,16 @@ function projectionSentence(plan: CoursePlan): string {
     case "no_pace_yet":
       return "There is no finish date to project until you have finished a few more lessons.";
     case "no_progress_in_this_course":
-      return "None of that has been in this course yet, so there is no finish date to project.";
+      /*
+       * SCOPED TO THE WINDOW, NOT TO THE LEARNER'S HISTORY, because this branch is reached
+       * two ways and the payload cannot say which. One is someone who has never opened this
+       * course. The other is someone whose lessons here were all finished before the window
+       * began: the in-window count is zero, the share is zero, and the server routes here
+       * exactly as designed. For that second learner "yet" was simply false. They have
+       * worked in this course, just not lately, and a screen telling them otherwise is
+       * wrong about the one thing they would know better than it does.
+       */
+      return `None of that has been in this course in the last ${PACE_WINDOW_DAYS} days, so there is no finish date to project.`;
     case "already_finished":
       // Unreachable today, and answered rather than asserted. See the header above.
       return "You have finished this course, so there is no finish date left to project.";
@@ -342,11 +372,11 @@ function paceSentences(plan: CoursePlan): string[] {
     );
   } else if (sample === 0) {
     lines.push(
-      "You have not finished a lesson in any course in the last 30 days, so there is no pace to measure yet.",
+      `You have not finished a lesson in any course in the last ${PACE_WINDOW_DAYS} days, so there is no pace to measure yet.`,
     );
   } else if (typeof sample === "number") {
     lines.push(
-      `You have finished ${lessonCount(sample)} across all your courses in the last 30 days, which is not enough to call a pace yet: a rate off a handful of lessons would swing every time one more landed.`,
+      `You have finished ${lessonCount(sample)} across all your courses in the last ${PACE_WINDOW_DAYS} days, which is not enough to call a pace yet: a rate off a handful of lessons would swing every time one more landed.`,
     );
   } else {
     // Claims no count, because a payload that stopped sending one is a payload whose
