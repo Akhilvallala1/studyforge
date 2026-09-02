@@ -524,12 +524,17 @@ export function coursePlanIcsUrl(id: number): string {
 /**
  * What the downloaded calendar file will be called, so the screen can say so.
  *
- * MIRRORS ics.download_filename, which owns this shape. Restating it rather than reading
- * it back off the response is safe for the same reason the server hardcodes it: the only
- * variable in the name is an integer primary key. The course title is deliberately not in
- * it, because a title is LLM output and a title in a Content-Disposition header is header
- * injection rather than a badly named file. That is what makes the shape stable enough to
- * mirror; if the server ever changes it, this changes with it.
+ * MIRRORS backend/app/ics.py download_filename, which OWNS this shape. Restating it
+ * rather than reading it back off the response is safe for the same reason the server
+ * hardcodes it: the only variable in the name is an integer primary key. The course
+ * title is deliberately not in it, because a title is LLM output and a title in a
+ * Content-Disposition header is header injection rather than a badly named file.
+ *
+ * IT CANNOT BE READ BACK. The download is a plain anchor, so the browser consumes the
+ * Content-Disposition header and this code never sees it; there is no response here to
+ * derive the name from. So this is a copy, and a copy is what can go stale: two backend
+ * tests pin the server side, and nothing at all pins this one. If that function is ever
+ * renamed, its docstring points here.
  */
 export function coursePlanIcsFilename(id: number): string {
   return `studyforge-course-${id}.ics`;

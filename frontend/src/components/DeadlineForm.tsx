@@ -13,7 +13,6 @@ const FIELD_CLASS =
 /** Which control should hold focus once the request has landed and the tree is committed. */
 type DeadlineFocus = "day" | "label" | "submit";
 
-
 /**
  * Setting, moving and clearing the one date this feature knows about.
  *
