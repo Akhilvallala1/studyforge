@@ -91,6 +91,7 @@ REASON_ALL_DAYS_OFF = "all_days_off"
 # off AND nothing finished here yet). One field would have to throw one answer away.
 REASON_NO_PACE_YET = "no_pace_yet"
 REASON_NO_PROGRESS_HERE = "no_progress_in_this_course"
+REASON_ALREADY_FINISHED = "already_finished"
 
 
 def _naive_utc(moment: datetime) -> datetime:
@@ -280,13 +281,23 @@ def _projection(
     different sentences. Ordered so each branch is a genuinely different state rather than
     a fallback for the one above it.
 
-    lessons_remaining == 0 short-circuits to today whatever the pace has been. A course
-    finished more than thirty days ago has no completions in the window at all, and
-    answering "nothing finished here recently" about a course they have already completed
-    would be true and useless.
+    lessons_remaining == 0 is checked FIRST and returns no date at all. It used to return
+    TODAY with a null reason, and that was a trap of exactly the kind this module spent a
+    commit removing elsewhere: "finishes today" is a true-looking sentence to print about
+    a course finished last year, and nothing in the payload said otherwise, so
+    finish_projection could not be read without also reading lessons_remaining. A field
+    that needs a second field to interpret, with no hint that it does, is a wrong answer
+    nobody goes looking for. A projection is a claim about remaining work; when there is
+    none, the honest answer is that there is nothing to project, and the reason carries
+    the meaning.
+
+    It stays FIRST because the two checks below would each give a true but useless answer
+    about a finished course: a course completed long ago has no completions inside the
+    window, so the zero-share branch would report "nothing finished here yet" about a
+    course that is entirely finished.
     """
     if lessons_remaining == 0:
-        return today(now).isoformat(), None
+        return None, REASON_ALREADY_FINISHED
     if per_week_all_courses is None:
         return None, REASON_NO_PACE_YET
     if not per_week_this_course:

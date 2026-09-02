@@ -482,6 +482,58 @@ def test_a_multi_course_projection_follows_this_courses_share_and_lands_later():
     assert plan["projection_reason"] is None
 
 
+def test_a_finished_course_has_no_date_to_project_and_says_so_in_the_payload():
+    """A PAYLOAD claim, not a rendering one, which is the whole point of the fix.
+
+    This used to return TODAY with a null reason. The page that consumed it happened to
+    suppress the sentence for a finished course, so nothing rendered wrongly, but the
+    payload was one a caller could not read without also reading lessons_remaining: "you
+    finish today" about a course finished last year, with nothing in the payload saying
+    so. The next consumer would not have known to check.
+    """
+    _make_course(
+        lesson_count=6,
+        completed=[(index, _completed(index + 1)) for index in range(6)],
+        title="Another Course",
+    )
+    course_id = _make_course(
+        lesson_count=3,
+        completed=[(0, _completed(3)), (1, _completed(2)), (2, _completed(1))],
+    )
+
+    plan = _plan(course_id)
+
+    assert plan["lessons_remaining"] == 0
+    # Not no_pace_yet, since there is plenty of sample, and not no_progress_in_this_course,
+    # since they finished it. Both would be true and neither would be the useful answer.
+    assert plan["observed_per_week_all_courses"] is not None
+    assert plan["finish_projection"] is None
+    assert plan["projection_reason"] == "already_finished"
+
+
+def test_a_course_finished_long_ago_still_reads_as_finished():
+    """THE ORDERING, pinned. Every completion here is outside the 30-day window, so this
+    course's share is zero, and the zero-share branch would answer "nothing finished here
+    yet" about a course that is entirely finished. Checking finished first is what makes
+    the answer the useful one rather than merely a true one."""
+    _make_course(
+        lesson_count=6,
+        completed=[(index, _completed(index + 1)) for index in range(6)],
+        title="Another Course",
+    )
+    course_id = _make_course(
+        lesson_count=2,
+        completed=[(0, _completed(300)), (1, _completed(280))],
+    )
+
+    plan = _plan(course_id)
+
+    assert plan["lessons_remaining"] == 0
+    assert plan["observed_per_week_this_course"] == 0.0
+    assert plan["finish_projection"] is None
+    assert plan["projection_reason"] == "already_finished"
+
+
 def test_below_the_minimum_across_every_course_is_still_a_dash():
     """The minimum SURVIVES the widening, which is the half of the decision that is easy
     to lose. Four completions spread over two courses is still four, and four is still not
