@@ -324,6 +324,21 @@ function projectionSentence(plan: CoursePlan): string {
    * through to the share, even when the two printed numbers happen to match. It also
    * fires correctly for a learner with several courses whose completions are all in this
    * one, which is the same fact stated about a different situation.
+   *
+   * DO NOT REPLACE THIS WITH A COMPARISON OF THE DISPLAYED STRINGS, however tempting the
+   * arithmetic makes it look. Both OBSERVED rates are count/30*7, so the smallest gap
+   * between two of them is 7/30, about 0.233, far wider than the 0.05 bucket that
+   * one-decimal rounding collapses: enumerating every reachable rate gives distinct
+   * displayed values with no collisions, so a display comparison would agree with this one
+   * on every input the system can produce today.
+   *
+   * THAT PROOF COVERS THE TWO OBSERVED RATES AND NOTHING ELSE, which is the part that gets
+   * over-read. required_per_week is lessons_remaining/available_days*7 and is NOT on that
+   * lattice, so it can display equal to an observed rate while differing underneath. The
+   * plan tiles now sit those two side by side, which is new, so the temptation to reach
+   * for the collision proof and apply it to that pair is new as well. Nothing compares
+   * them for equality and nothing should. This gate is right because it is right by
+   * construction, not because of a coincidence that holds for one of the three rates.
    */
   const share =
     plan.observed_per_week_this_course === plan.observed_per_week_all_courses
@@ -512,8 +527,26 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
               none here has a share that is genuinely measured and genuinely zero, while
               the dash means "not enough data to say", which would be a different and false
               claim. The dash appears only where the server nulls the rate, and it nulls
-              both rates together, so the two tiles can never disagree about whether a pace
-              exists at all.
+              both OBSERVED RATES together, so those two can never disagree about whether a
+              pace exists at all. That is also what made this swap safe: since the two
+              observed rates go null in lockstep, changing which one this tile renders
+              cannot change when a dash appears.
+
+              THE TWO TILES CAN STILL DISAGREE, and that is fine. Tile one is
+              required_per_week, which is not an observed rate and goes null for unrelated
+              reasons: no deadline, a deadline today, every remaining day marked off. So
+              "2.3 | dash" is reachable, for a learner with a deadline and under five
+              completions anywhere, and so is "dash | 0.9", for one with a pace and no
+              deadline. Both are coherent and the prose explains each; neither is a bug.
+
+              A FINISHED COURSE SHOWS 0 AGAINST 0 AND IS NOT SPECIAL-CASED, because
+              special-casing it would contradict the rule just above. Both zeroes are
+              measurements, not absences: nothing is needed because nothing remains, and
+              nothing was finished here inside the window. Replacing two true measurements
+              with a glyph that means "not enough data to say" is exactly the false claim
+              the zero-versus-dash rule exists to prevent, so the rule decides this case
+              rather than a judgement about how the pair looks. A course finished INSIDE
+              the window reads "0 | 2.3" for the same reason, and is equally fine.
             */}
             <PlanStat
               value={
