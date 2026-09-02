@@ -1,17 +1,20 @@
 """One error shape, across every route, whatever kind of bad request produced it.
 
-THE CLAIM THIS FILE EXISTS FOR, stated as a client would and SCOPED TO 422s, which is
-narrower than it is tempting to write it: every 422 from this API carries `detail` as an
-object with `error` and `message`, never as a list, WITH ONE KNOWN EXCEPTION named below.
+THE CLAIM THIS FILE EXISTS FOR, stated as a client would and SCOPED TO 422s: every 422
+from this API carries `detail` as an object with `error` and `message`, never as a list.
+No exceptions, and the sentence is worth having with no exceptions in it.
 
-THE EXCEPTION IS main.py's NoMaterial refusal on POST /review/cards/{id}/remediation,
-which raises HTTPException(422, NO_MATERIAL_MESSAGE) with a bare string. It was found by
-grepping every HTTPException in backend/app rather than by probing from the outside, which
-is how the two coded 400s below were found and is the reason the grep was run at all: an
-external sweep can only report what it happened to ask for. It is left alone here on
-instruction, so that fixing it stays a decision rather than becoming a sweep, and it is
-named rather than quietly excluded because an unqualified claim in this docstring would be
-FALSE, and a false compatibility promise is worse than a narrow true one.
+It had one for a while. main.py's NoMaterial refusal on POST /review/cards/{id}/remediation
+raised HTTPException(422, NO_MATERIAL_MESSAGE) with a bare string, which made an earlier
+version of this paragraph false. It was found by GREPPING every HTTPException in
+backend/app rather than by probing from the outside, one round after an external sweep had
+been the thing that missed it: a sweep can only report what it happened to ask for. It now
+answers `no_material`, the same code the tutor already uses for the same condition, so the
+claim above needs no qualifier.
+
+THE 422 SHAPE HAS ONE DEFINITION, main.py's _unprocessable, which the tutor and planning
+factories delegate to. That is what makes this claim maintainable rather than merely true
+today: there is one place to change and one place to get wrong.
 
 It is NOT true that a client now writes one parsing branch. A 404 still carries `detail`
 as a bare string, "Course not found", and test_a_404_is_not_reshaped_either pins that. So
@@ -41,6 +44,7 @@ the bottom pin the exact bodies of the ones that already worked, so a future wid
 this handler that started swallowing them fails here.
 """
 
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -332,28 +336,52 @@ def test_a_wrong_mode_keeps_its_own_message_rather_than_the_generic_one(client):
 
 @pytest.fixture
 def card_id() -> int:
-    """A real review card, RATED, because two different tests need it to be both.
+    """A real review card, RATED, FLAGGED, and with no course teaching its concept.
 
-    REAL, because the rating check sits BEHIND the card lookup: rating an id that does not
-    exist answers 404 and never reaches the rating branch at all, so a made-up id would
-    assert nothing about ratings. That is the same failure the security test in this file
-    fell into once, and the reason both 400 tests below assert the status as well as the
-    body.
+    Every one of those four is load bearing for some test below, and three of them are
+    guards that sit IN FRONT of the code under test. A fixture that clears only the first
+    produces tests that pass while asserting nothing, which is the failure this file has
+    already had once.
 
-    RATED, because the card outlives this test in the suite's shared database, and
+    REAL, because the rating check sits behind the card lookup: rating an id that does not
+    exist answers 404 and never reaches the rating branch, so a made-up id asserts nothing.
+
+    FLAGGED, because POST /remediation refuses an unflagged concept with 409 not_flagged
+    before it ever looks for material. Two lapses inside review.ATTENTION_WINDOW is what
+    needs_attention triggers on, and that trigger is the only way in. Found by asserting
+    the status: the first version of this fixture rated GOOD once and the remediation test
+    came back 409, not the 422 it was written for.
+
+    NO COURSE, which is what makes the material actually missing. A flagged concept that
+    something teaches gets re-taught rather than refused.
+
+    RATED, which the ratings above give for free, and which matters outside this file: the
+    card outlives the test in the suite's shared database, and
     test_planning.py::test_no_planning_endpoint_touches_the_scheduler snapshots every
-    review card and refuses to run against one with a NULL due date, on the grounds that a
-    card nothing can move contributes nothing to what it can catch. Its docstring says
-    that a test leaving an unrated card behind should rate it HERE rather than narrow that
-    test back to a row count, so that is what this does. Found by the full suite, not by
-    running this file alone, where it passes either way.
+    review card and refuses to run against one with a NULL due date. Its docstring asks
+    that such a card be rated at the source rather than that it narrow itself, so that is
+    what this does. Found by the full suite, not by running this file alone.
+
+    The stale-note delete is copied from test_usage_attribution._seed_struggling_concept
+    and is test hygiene rather than a guard against anything the app does: SQLite hands a
+    deleted row's id to the next insert, test_review.py deletes review cards between its
+    own tests, and a brand new card can therefore arrive already carrying another test's
+    remedial note and answer this endpoint with that note's cooldown instead.
     """
     session = SessionLocal()
     try:
         key = f"shape probe {uuid4().hex[:8]}"
-        review.record_review(session, key, "Probe", fsrs.GOOD)
+        moment = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=4)
+        for rating in (fsrs.AGAIN, fsrs.AGAIN, fsrs.GOOD):
+            review.record_review(session, key, "Probe", rating, now=moment)
+            moment += timedelta(days=1)
         session.commit()
-        return review.get_card(session, key).id
+        card = review.get_card(session, key)
+        session.query(models.RemediationNote).filter(
+            models.RemediationNote.card_id == card.id
+        ).delete()
+        session.commit()
+        return card.id
     finally:
         session.close()
 
@@ -407,6 +435,64 @@ def test_the_two_coded_400s_do_not_share_a_code(client, card_id):
         "a hand-rolled refusal took the generic handler's code, so a client cannot tell "
         "a refusal this endpoint chose from one the framework produced"
     )
+
+
+def test_the_remediation_refusal_carries_a_code(client, card_id):
+    """The 422 that used to be a bare string, and the reason it took a grep to find.
+
+    A concept with no lesson text cannot be re-taught, and the refusal said so in prose
+    with nothing to branch on. It reuses `no_material`, which the tutor already returns for
+    the same condition on a different route, because one condition answering to two codes
+    is the problem this whole line of work is about, one level up.
+
+    The fixture's card is flagged, so this gets past the 409 that refuses an unflagged
+    concept, and nothing teaches its concept, which is exactly the state that has no
+    material. Both are asserted by the status check rather than assumed.
+    """
+    response = client.post(f"/review/cards/{card_id}/remediation")
+
+    assert response.status_code == 422, response.text
+    assert _detail(response) == {"error": "no_material", "message": main.NO_MATERIAL_MESSAGE}
+
+
+@pytest.mark.parametrize("key", ["", "   ", "\t\n"], ids=["empty", "spaces", "whitespace"])
+def test_an_empty_concept_key_is_refused_by_both_tutor_endpoints(client, key):
+    """An empty key is an ABSENT concept, not an unknown one, and both routes now say so.
+
+    THE ASSERTION IS THE AGREEMENT rather than either refusal on its own. Before this, the
+    POST answered `no_material`, a true sentence about the wrong thing, and the GET
+    answered 200 with an empty transcript and a blank concept_label. One request, two
+    answers, and a client would have had to learn both. Checking only one endpoint would
+    have left that split in place and passed.
+
+    Whitespace is in the parametrization because normalize_concept turns it into nothing
+    real, so it is the same request wearing a different hat, and a fix that special-cased
+    the empty string alone would pass an empty-string-only test.
+    """
+    posted = client.post("/tutor/messages", json={"concept_key": key, "message": "m"})
+    fetched = client.get("/tutor/conversation", params={"concept_key": key})
+
+    expected = {"error": "concept_key_empty", "message": main.CONCEPT_KEY_EMPTY_MESSAGE}
+    assert posted.status_code == 422, posted.text
+    assert fetched.status_code == 422, fetched.text
+    assert _detail(posted) == expected
+    assert _detail(fetched) == expected
+
+
+def test_a_concept_nobody_has_asked_about_is_still_described_not_refused(client):
+    """The other side of that boundary, and the reason it is a boundary rather than a rule.
+
+    A key that names something real but has no conversation behind it MUST stay a 200. The
+    Today screen fans this endpoint out per concept, and a 4xx for every concept nobody has
+    asked about would make a page of ordinary answers look broken. Without this, the
+    obvious over-fix, refusing anything with no rows, passes every assertion above.
+    """
+    response = client.get("/tutor/conversation", params={"concept_key": "nobody asked this"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["messages"] == []
+    assert body["concept_label"] == "nobody asked this"
 
 
 def test_a_404_still_carries_a_bare_string_detail(client):

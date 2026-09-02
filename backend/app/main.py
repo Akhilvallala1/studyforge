@@ -133,6 +133,17 @@ async def invalid_request(request: Request, exc: RequestValidationError) -> JSON
     )
 
 
+def _unprocessable(code: str, message: str) -> HTTPException:
+    """422 in the shared refusal shape: the request parsed, and this API will not act on it.
+
+    ONE definition, because there were three identical ones and a fourth was about to be
+    written. _tutor_invalid and _planning_invalid now delegate here rather than each
+    spelling the dict out; they keep their names because a refusal reads better at the call
+    site when it says which feature is refusing.
+    """
+    return HTTPException(422, detail={"error": code, "message": message})
+
+
 def _bad_request(code: str, message: str) -> HTTPException:
     """400 in the shared refusal shape: a code to branch on, a sentence to read.
 
@@ -229,6 +240,10 @@ NO_SOURCE_MESSAGE = "Provide 'text' or 'url'"
 INVALID_RATING_MESSAGE = f"rating must be one of {list(fsrs.RATINGS)}"
 
 MESSAGE_EMPTY_MESSAGE = "Type a question before sending it."
+CONCEPT_KEY_EMPTY_MESSAGE = (
+    "Name the concept. An empty concept_key does not identify one, so there is nothing "
+    "to answer about."
+)
 MESSAGE_TOO_LONG_MESSAGE = (
     f"That message is longer than {tutor.MAX_MESSAGE_CHARS} characters. The tutor answers "
     "questions about one concept; material that long belongs in a course of its own."
@@ -839,7 +854,7 @@ def create_remediation(card_id: int, session: Session = Depends(get_session)):
     except remediation.NoMaterial as exc:
         session.rollback()
         logger.warning("remediation refused for card %s: %s", card_id, exc)
-        raise HTTPException(422, NO_MATERIAL_MESSAGE) from exc
+        raise _unprocessable("no_material", NO_MATERIAL_MESSAGE) from exc
     except CostLimitExceeded as exc:
         raise _cost_limit_exceeded(exc) from exc
     except ValueError as exc:
@@ -1184,9 +1199,35 @@ class TutorQuestion(BaseModel):
     )
 
 
+def _require_concept_key(raw: str) -> str:
+    """The normalized concept key, or a refusal. Used by BOTH tutor endpoints.
+
+    AN EMPTY KEY IS NOT AN UNKNOWN CONCEPT, and that is the whole of the argument.
+    normalize_concept can never return "" from a real label, so "" is unreachable as a
+    legitimate key and can only mean the caller failed to send one. That is the
+    null-versus-omitted rule stated at the top of this file, applied to a second field:
+    omitting the parameter is already a 422 from the validation handler, and sending it
+    empty is the same mistake spelled differently. Whitespace normalises to nothing real
+    either, so it takes the same path.
+
+    THE EVIDENCE THIS WAS WRONG was that the two endpoints disagreed. The POST refused an
+    empty key as `no_material`, which is a true sentence about the wrong thing, while the
+    GET answered 200 with an empty transcript and a blank concept_label. One request, two
+    answers, and a client would have had to learn both. They now give the same code.
+
+    Not a hazard for any caller that exists: ConceptTutor is passed entry.concept_key from
+    a server-provided needs_attention row, which is never empty. This refuses a shape only
+    a buggy client can produce, which is exactly when refusing is cheap and silence is not.
+    """
+    key = normalize_concept(raw)
+    if not key:
+        raise _tutor_invalid("concept_key_empty", CONCEPT_KEY_EMPTY_MESSAGE)
+    return key
+
+
 def _tutor_invalid(code: str, message: str) -> HTTPException:
     """422 for a request the tutor cannot act on, whatever the conversation looks like."""
-    return HTTPException(422, detail={"error": code, "message": message})
+    return _unprocessable(code, message)
 
 
 def _tutor_conflict(code: str, message: str, counts: tutor.TurnCounts) -> HTTPException:
@@ -1287,7 +1328,7 @@ def post_tutor_message(body: TutorQuestion, session: Session = Depends(get_sessi
     tutor_messages: a conversation is not a retrieval test, and folding one into the
     schedule would let a learner talk their way to a longer interval.
     """
-    concept_key = normalize_concept(body.concept_key)
+    concept_key = _require_concept_key(body.concept_key)
     message = body.message.strip()
     if not message:
         raise _tutor_invalid("message_empty", MESSAGE_EMPTY_MESSAGE)
@@ -1443,11 +1484,18 @@ def post_tutor_message(body: TutorQuestion, session: Session = Depends(get_sessi
 
 @app.get("/tutor/conversation")
 def get_tutor_conversation(concept_key: str, session: Session = Depends(get_session)):
-    """One concept's whole conversation, oldest first. It describes; it never refuses.
+    """One concept's whole conversation, oldest first. It describes; it barely refuses.
 
-    Any concept_key gets a 200, like get_remedial_practice. A concept nobody has asked
-    about is an empty conversation, which is a fact about it rather than an error, and
-    there is no card lookup here for the same reason the POST has none.
+    Any concept_key THAT NAMES SOMETHING gets a 200, like get_remedial_practice. A concept
+    nobody has asked about is an empty conversation, which is a fact about it rather than
+    an error, and there is no card lookup here for the same reason the POST has none. That
+    is worth defending: the Today screen fans this out per concept, and a 4xx per concept
+    would make a page of ordinary answers look broken.
+
+    The one refusal is an EMPTY key, which is not an unknown concept but an absent one.
+    See _require_concept_key; the short version is that "" cannot be a real key, so it can
+    only mean the caller sent nothing, and answering it with a blank-titled empty panel
+    described a concept that does not exist.
 
     Every message goes through tutor.message_payload, the same function the POST hands
     its two rows back through, so the rows a client appends and the rows it reloads are
@@ -1470,7 +1518,7 @@ def get_tutor_conversation(concept_key: str, session: Session = Depends(get_sess
     makes on open, and a GET that could change what it describes would let one tab move
     another tab's conversation between drawing it and answering in it.
     """
-    key = normalize_concept(concept_key)
+    key = _require_concept_key(concept_key)
     rows = tutor.conversation(session, key)
     now = review.now_utc()
     return {
@@ -1785,7 +1833,7 @@ class DayOffRequest(BaseModel):
 
 def _planning_invalid(code: str, message: str) -> HTTPException:
     """422 for a date this feature cannot use, in the shape the other 422s here take."""
-    return HTTPException(422, detail={"error": code, "message": message})
+    return _unprocessable(code, message)
 
 
 def _parse_day(value: str | None) -> date | None:
