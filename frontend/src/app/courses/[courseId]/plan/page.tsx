@@ -76,14 +76,21 @@ function formatRate(value: number): string {
  * hedges a bound that is already exact. Everything else keeps it, because a figure
  * rounded to one decimal is an approximation and should say so.
  *
- * THE SHARE SENTENCE LOOKS LIKE IT COULD REOPEN THAT, AND CANNOT, which is worth stating
- * because the next reader will see the gap and not re-derive why it is shut. That
- * sentence prefixes this with "About", so a floor result would read "About less than
- * 0.1". It is unreachable by arithmetic rather than merely unlikely: the per-course rate
- * is completions over a fixed 30-day window, so its smallest non-zero value is one
- * completion, about 0.23 a week, comfortably above RATE_FLOOR, and exactly zero routes to
- * `no_progress_in_this_course` and never reaches this function. A guard there would be
- * dead code wearing the costume of defensiveness.
+ * THE OMISSION ABOVE IS LOAD-BEARING AND MUST NOT BE "SIMPLIFIED" BACK. The share sentence
+ * interpolates this result and capitalizes the whole string; it does not prepend "About"
+ * of its own. So the floor branch already reads correctly there, "Less than 0.1 of that is
+ * in this course", and it is THIS function dropping the hedge that makes it so. Restoring
+ * an unconditional "about" here to tidy the branch away is what would produce "About less
+ * than 0.1", which is why the rule lives in one place rather than at the call site.
+ *
+ * The floor branch is also unreachable from that sentence today, by arithmetic rather than
+ * by luck: the per-course rate is completions over a fixed 30-day window, so its smallest
+ * non-zero value is one completion at about 0.23 a week, well clear of RATE_FLOOR. Exactly
+ * zero is the only value below the floor, and the server routes that to
+ * `no_progress_in_this_course`, which returns before reaching here. That second argument
+ * rests on the SERVER's routing rather than on anything this file enforces, which is
+ * precisely why it is the backup reason and not the primary one: the prose being correct
+ * either way is the property that does not depend on someone else's branch ordering.
  */
 function ratePhrase(value: number): string {
   if (value !== 0 && value < RATE_FLOOR) return "less than 0.1";
