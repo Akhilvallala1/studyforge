@@ -187,6 +187,46 @@ function PlanStat({ value, label }: { value: string; label: string }) {
 }
 
 /**
+ * The SECOND half of the pace pair: which slice of that throughput is this course, and
+ * therefore where the finish date came from.
+ *
+ * This sentence exists because the two numbers do not divide. A learner who reads "3 a
+ * week" and then sees a date that is not the remaining lessons over 3 would be looking at
+ * an error; naming the share answers that in the same breath instead of apologising for
+ * it afterwards. The split is also the actionable part: with a tight deadline and three
+ * courses open, "about 1 of those is here" says what to change.
+ *
+ * EXHAUSTIVE ON `projection_reason`, with the fallback deliberately saying nothing about
+ * why. An unrecognised code must not render as a blank panel, and it must not invent a
+ * cause either; the same discipline weakestExplanation follows on the concepts page.
+ */
+function projectionSentence(plan: CoursePlan): string {
+  switch (plan.projection_reason) {
+    case "no_pace_yet":
+      return "There is no finish date to project until you have finished a few more lessons.";
+    case "no_progress_in_this_course":
+      return "None of those have been in this course yet, so there is no finish date to project.";
+    case null:
+      break;
+    default:
+      return "There is no finish date to project for this course just now.";
+  }
+  if (plan.finish_projection === null || plan.observed_per_week_this_course === null) {
+    return "There is no finish date to project for this course just now.";
+  }
+  const share = `${ratePhrase(plan.observed_per_week_this_course)} of those is in this course, and that is the pace your finish date uses.`;
+  const finish = `At that pace you finish on ${formatDayKey(plan.finish_projection)}`;
+  return plan.deadline !== null && plan.status === "active"
+    ? `${capitalize(share)} ${finish}; ${deadlineName(plan)} is on ${formatDayKey(plan.deadline)}.`
+    : `${capitalize(share)} ${finish}.`;
+}
+
+/** Sentence-initial form, for a phrase that starts with a lower-case rate word. */
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
  * The two rates, in prose, with no comparison drawn between them.
  *
  * Reads as a report and stops: "you need about 5 a week, you have averaged 2, at that
@@ -209,27 +249,24 @@ function paceSentences(plan: CoursePlan): string[] {
     lines.push(requiredDashNote(plan));
   }
 
-  if (plan.observed_per_week !== null) {
+  if (plan.observed_per_week_all_courses !== null) {
+    // "all" is load-bearing and must survive any trimming of this sentence. Without it
+    // this is the old claim, which counted only this course, and it is now false.
     lines.push(
-      `Over the last 30 days you have averaged ${ratePhrase(plan.observed_per_week)} lessons a week in this course.`,
+      `Across all your courses, you have been finishing ${ratePhrase(plan.observed_per_week_all_courses)} lessons a week.`,
     );
-  } else if (plan.observed_sample === 0) {
+  } else if (plan.observed_sample_all_courses === 0) {
     lines.push(
-      "You have not finished a lesson in this course in the last 30 days, so there is no pace to measure yet.",
+      "You have not finished a lesson in any course in the last 30 days, so there is no pace to measure yet.",
     );
   } else {
     lines.push(
-      `You have finished ${lessonCount(plan.observed_sample)} in this course in the last 30 days, which is not enough to call a pace yet: a rate off a handful of lessons would swing every time one more landed.`,
+      `You have finished ${lessonCount(plan.observed_sample_all_courses)} across all your courses in the last 30 days, which is not enough to call a pace yet: a rate off a handful of lessons would swing every time one more landed.`,
     );
   }
 
-  if (plan.lessons_remaining > 0 && plan.finish_projection !== null) {
-    const finish = `At that pace you finish on ${formatDayKey(plan.finish_projection)}`;
-    lines.push(
-      plan.deadline !== null && plan.status === "active"
-        ? `${finish}; ${deadlineName(plan)} is on ${formatDayKey(plan.deadline)}.`
-        : `${finish}.`,
-    );
+  if (plan.lessons_remaining > 0) {
+    lines.push(projectionSentence(plan));
   }
 
   return lines;
@@ -329,11 +366,20 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
               }
               label="Lessons a week needed"
             />
+            {/*
+              THE DISPLAYED RATE IS THE ALL-COURSES ONE, and the label says so rather
+              than leaving "your pace" to be read as this course's. The per-course rate is
+              never a headline here: it is smaller, it is only the projection's input, and
+              two unlabelled rates side by side is exactly the pair that gets read
+              wrongly. The prose underneath names the share.
+            */}
             <PlanStat
               value={
-                plan.observed_per_week === null ? "–" : formatRate(plan.observed_per_week)
+                plan.observed_per_week_all_courses === null
+                  ? "–"
+                  : formatRate(plan.observed_per_week_all_courses)
               }
-              label="Lessons a week, your pace"
+              label="Lessons a week, all courses"
             />
           </dl>
           <div className="mt-5 max-w-2xl border-t border-zinc-200 pt-4 text-[13px] leading-relaxed text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
