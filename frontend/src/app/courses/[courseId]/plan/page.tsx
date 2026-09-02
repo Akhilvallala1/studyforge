@@ -213,7 +213,7 @@ function PlanStat({ value, label }: { value: string; label: string }) {
  * week" and then sees a date that is not the remaining lessons over 3 would be looking at
  * an error; naming the share answers that in the same breath instead of apologising for
  * it afterwards. The split is also the actionable part: with a tight deadline and three
- * courses open, "about 1 of those is here" says what to change.
+ * courses open, "about 0.9 of that is in this course" says what to change.
  *
  * EXHAUSTIVE ON `projection_reason`, with the fallback deliberately saying nothing about
  * why. An unrecognised code must not render as a blank panel, and it must not invent a
