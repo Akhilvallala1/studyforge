@@ -84,6 +84,18 @@ MAX_CHUNK_CHARS = 8000
 # sized to be the first cap those users ever meet, not the tightest defensible number.
 MAX_SOURCES = 5
 MAX_TOTAL_CHARS = 150_000
+# How long a source's label may be. `ref` is FULLY CALLER-CONTROLLED on every kind: the URL
+# they typed, the `ref` they sent, or the filename they uploaded under. It is echoed back in
+# the source_failed refusal, so an unbounded one is an unbounded string this API repeats to
+# whoever sent it, and it is read by whatever builds the generation prompt, where a label is
+# a structural marker rather than prose.
+#
+# THIS IS A BOUND, NOT A DEFUSING, and the distinction matters because the first looks like
+# the second. Truncating and flattening stops a label being enormous or spanning lines; it
+# does NOT stop one imitating whatever marker the prompt writes around it. That has to
+# happen where the marker grammar is known, the way tutor.py scrubs its own fences and
+# register labels through untrusted.as_data rather than trusting its inputs to be tame.
+MAX_REF_CHARS = 200
 # Ceiling on chunks, derived: each source contributes at least one partial chunk, and
 # beyond that chunks accrue at no worse than half of MAX_CHUNK_CHARS, because a paragraph
 # is packed whole and one just over half the limit leaves the rest of its chunk empty.
@@ -352,6 +364,25 @@ def _copy_for(copy: dict[str, str], code: str) -> str:
     return copy.get(code) or FALLBACK_COPY
 
 
+def clean_ref(raw: str) -> str:
+    """A source label, flattened to one line and cut to MAX_REF_CHARS.
+
+    Line breaks go first and that is the half worth explaining. A label is written into
+    single-line contexts, an error row and a prompt tag among them, so one carrying a
+    newline is a label that continues onto a line of its own where nothing expects it. That
+    is the same shape as the register-label forgery tutor.py defends against, one field
+    over, and flattening removes the cheapest version of it without pretending to be the
+    whole defence. See MAX_REF_CHARS.
+
+    The ellipsis is inside the budget rather than added to it, matching tutor._hard_cut, so
+    a truncated label is visibly truncated rather than looking like a shorter name.
+    """
+    flat = " ".join((raw or "").split())
+    if len(flat) <= MAX_REF_CHARS:
+        return flat
+    return flat[: MAX_REF_CHARS - 3].rstrip() + "..."
+
+
 def load_source(spec: SourceSpec, copy: dict[str, str]) -> Source:
     """Read one spec, or raise. `copy` maps a failure code to the sentence for it.
 
@@ -417,7 +448,10 @@ def load_sources(
 
     sources: list[Source] = []
     failures: list[SourceFailure] = []
-    for spec in specs:
+    for raw_spec in specs:
+        # Cleaned once, here, so the Source and the SourceFailure carry the same label and
+        # neither path can be the one that forgot.
+        spec = SourceSpec(kind=raw_spec.kind, ref=clean_ref(raw_spec.ref), value=raw_spec.value)
         try:
             sources.append(load_source(spec, copy))
         except SourceError as exc:
