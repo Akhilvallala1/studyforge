@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app import (
     days,
+    deletion,
     fsrs,
     generation,
     ics,
@@ -439,6 +440,43 @@ def get_course(course_id: int, session: Session = Depends(get_session)):
             for m in row.modules
         ],
     }
+
+
+@app.get("/courses/{course_id}/deletion-preview")
+def preview_course_deletion(course_id: int, session: Session = Depends(get_session)):
+    """What deleting this course would destroy, so the learner can see it first.
+
+    Writes nothing, and is safe to call repeatedly from a confirmation dialog the learner
+    may well abandon. Same payload shape as the delete itself: they consent to this and are
+    then told what happened, and two shapes would let those drift apart.
+
+    There is no refusal here and no coded error. A course is always deletable, so a 409 or
+    a 422 would be a code no client could ever branch on.
+    """
+    course = session.get(models.Course, course_id)
+    if not course:
+        raise HTTPException(404, "Course not found")
+    return deletion.deletion_preview(session, course)
+
+
+@app.delete("/courses/{course_id}")
+def delete_course(course_id: int, session: Session = Depends(get_session)):
+    """Delete a course, everything under it, and the scheduling state it was the last to
+    justify. Returns what was removed.
+
+    200 WITH A BODY, not 204: api.ts's request() ends in `return res.json()`
+    unconditionally, so a 204 throws in the client on the success path.
+
+    NOT IDEMPOTENT. A second call is a 404, deliberately unlike DELETE
+    /plan/days-off/{day}, which succeeds on an unmarked day. A day off is set membership
+    and removing an absent one leaves the learner where they asked to be; a course is an
+    entity, and answering 200 for one that does not exist would tell a client its delete
+    worked when there was nothing to delete.
+    """
+    course = session.get(models.Course, course_id)
+    if not course:
+        raise HTTPException(404, "Course not found")
+    return deletion.delete_course(session, course)
 
 
 @app.get("/lessons/{lesson_id}")
@@ -1693,20 +1731,29 @@ def _spend_groups(session: Session) -> list[dict]:
     rows = (
         session.query(
             models.LlmCall.course_id,
+            models.LlmCall.course_title_at_deletion,
             models.LlmCall.stage,
             func.count(models.LlmCall.id),
             func.sum(models.LlmCall.input_tokens),
             func.sum(models.LlmCall.output_tokens),
             func.sum(models.LlmCall.estimated_cost_usd),
         )
-        .group_by(models.LlmCall.course_id, models.LlmCall.stage)
+        .group_by(
+            models.LlmCall.course_id,
+            models.LlmCall.course_title_at_deletion,
+            models.LlmCall.stage,
+        )
         .all()
     )
-    buckets: dict[tuple[str, int | None], dict] = {}
-    for course_id, stage, stage_calls, stage_in, stage_out, stage_cost in rows:
+    # THE STAMP IS PART OF THE KEY, not just of the label. A deleted course's id can be
+    # reissued to a new course, and without this the old rows and the new ones would share
+    # a bucket and be reported as one course's spend. Grouping on the stamp keeps them
+    # apart even when the id is identical.
+    buckets: dict[tuple[str, int | None, str | None], dict] = {}
+    for course_id, stamped, stage, stage_calls, stage_in, stage_out, stage_cost in rows:
         group = GROUP_COURSE if course_id is not None else _unattributed_group(stage)
         bucket = buckets.setdefault(
-            (group, course_id),
+            (group, course_id, stamped),
             {"calls": 0, "input_tokens": 0, "output_tokens": 0, "estimated_cost_usd": 0.0},
         )
         bucket["calls"] += stage_calls
@@ -1716,20 +1763,41 @@ def _spend_groups(session: Session) -> list[dict]:
 
     rank = {GROUP_COURSE: 0, GROUP_REMEDIATION: 1, GROUP_TUTOR: 2, GROUP_FAILED_RUN: 3}
     groups = []
-    for (group, course_id), bucket in sorted(
-        buckets.items(), key=lambda item: (rank[item[0][0]], item[0][1] or 0)
+    for (group, course_id, stamped), bucket in sorted(
+        buckets.items(),
+        key=lambda item: (rank[item[0][0]], item[0][1] or 0, item[0][2] or ""),
     ):
-        course_row = session.get(models.Course, course_id) if group == GROUP_COURSE else None
+        # A STAMPED ROW IS NEVER LOOKED UP. The stamp means the course was deleted and its
+        # title recorded, so the id is free to have been reissued to somebody else, and
+        # resolving it is exactly how this row's money would be handed to the wrong course.
+        # Not looked up and then ignored: not looked up at all, so there is no live title
+        # here for a later edit to accidentally start preferring.
+        #
+        # A CONSEQUENCE THAT LOOKS LIKE A HOLE AND IS NOT: reordering the label below to
+        # `title or stamped` survives the whole suite. That is because this guard makes
+        # `title` provably None whenever `stamped` is set, so the ordering is unreachable
+        # belt-and-braces rather than the thing doing the work. Its inertness is evidence
+        # the guard holds; if the lookup ran and were merely ignored, that same mutation
+        # would be both catchable and dangerous.
+        course_row = (
+            session.get(models.Course, course_id)
+            if group == GROUP_COURSE and stamped is None
+            else None
+        )
         title = course_row.title if course_row else None
         groups.append(
             {
                 "group": group,
                 "course_id": course_id,
+                # The LIVE course's title, and None once it is deleted. A client can still
+                # read this as "does this course still exist"; the stamp is not put here,
+                # because a title that survives deletion would make that question
+                # unanswerable.
                 "title": title,
-                # The leftmost column. Usage history outlives the courses it came
-                # from (see models.LlmCall), so a deleted course keeps its spend and
-                # loses its name, and falls back to the id the row still carries.
-                "label": GROUP_LABELS.get(group) or title or f"Course #{course_id}",
+                # The leftmost column, in precedence order. The stamp comes before the
+                # resolved title and cannot be overtaken by it: a deleted course shows the
+                # name it actually had, and only a row with no stamp falls back to the id.
+                "label": GROUP_LABELS.get(group) or stamped or title or f"Course #{course_id}",
                 "note": GROUP_NOTES.get(group),
             }
             | bucket
