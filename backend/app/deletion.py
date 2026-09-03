@@ -40,8 +40,22 @@ error at any layer. They are deleted explicitly below and asserted explicitly in
 
 WHAT DELIBERATELY SURVIVES: LlmCall. Its course_id is a plain nullable integer with no
 ForeignKey, and its class docstring says why in as many words, "so usage history survives
-course deletion". Spend is money that was really spent; the /usage page keeps the row and
-loses the name, falling back to the id it still carries. Nothing here touches it.
+course deletion". Spend is money that was really spent.
+
+BUT SURVIVING ROWS ARE STAMPED, and that is not bookkeeping, it closes a real defect.
+courses.id is an INTEGER PRIMARY KEY with no AUTOINCREMENT, so SQLite reissues a deleted
+course's id to the next course created. A surviving row's course_id then RESOLVES, to a
+course that has nothing to do with it, and the old bill turns up under the new course's
+title. Measured: delete the highest-id course, generate another, and it inherits 0.25 of
+somebody else's spend. Before deletion existed no id was ever freed and this was
+unreachable.
+
+Writing the title onto the row at delete time makes it self-describing, so /usage never
+has to resolve the id for it again and a reused id has nothing to steal. Compare the
+alternative of clearing course_id: those rows would fall to _unattributed_group and be
+filed under GROUP_FAILED_RUN, whose note tells the learner a generation run failed before
+its course could be saved. That sentence would be false, and that grouping's own docstring
+names it as the defect it was rebuilt to remove.
 """
 
 from sqlalchemy import func
@@ -193,6 +207,24 @@ def _retire_cards(session: Session, retired: set[str]) -> None:
             session.delete(card)
 
 
+def _stamp_spend(session: Session, course: models.Course) -> None:
+    """Record the course's title on its spend rows, so they stop needing its id to resolve.
+
+    ONLY ROWS NOT ALREADY STAMPED. That filter is the whole reason this is a function
+    rather than a line, and the case it protects against is the one that motivated the
+    feature: delete a course, let a new one take its id, delete that one too, and an
+    unfiltered update would relabel the FIRST course's spend with the SECOND course's
+    title. A stamp is written once and is never revised, because it is a record of what
+    was true at a moment that has passed.
+    """
+    session.query(models.LlmCall).filter(models.LlmCall.course_id == course.id).filter(
+        models.LlmCall.course_title_at_deletion.is_(None)
+    ).update(
+        {models.LlmCall.course_title_at_deletion: course.title},
+        synchronize_session=False,
+    )
+
+
 def delete_course(session: Session, course: models.Course) -> dict:
     """Delete a course and retire the scheduling state it was the last to justify.
 
@@ -206,6 +238,8 @@ def delete_course(session: Session, course: models.Course) -> dict:
     """
     payload, retired = _summary(session, course)
     _retire_cards(session, retired)
+    # Before the delete, while course.title is still readable.
+    _stamp_spend(session, course)
     session.delete(course)
     session.commit()
     return payload

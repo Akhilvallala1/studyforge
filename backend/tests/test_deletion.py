@@ -352,6 +352,96 @@ def test_spend_survives_the_course_it_was_spent_on():
         session.close()
 
 
+def test_deleting_a_course_stamps_its_title_onto_its_spend_rows():
+    """The row stops needing its course_id to resolve, which is the whole point."""
+    course_id = _make_course([_key("stamp")], title="Machine Learning")
+    # Identified by run_id rather than course_id, because course_id no longer identifies
+    # one row: ids are reissued, so several courses' spend can share one, which is the
+    # whole reason this column exists.
+    run_id = uuid4().hex[:16]
+
+    session = SessionLocal()
+    try:
+        session.add(
+            models.LlmCall(
+                run_id=run_id,
+                course_id=course_id,
+                provider="anthropic",
+                model="claude-opus-5",
+                stage="outline",
+                input_tokens=10,
+                output_tokens=5,
+                estimated_cost_usd=0.1,
+            )
+        )
+        session.commit()
+        assert (
+            session.query(models.LlmCall)
+            .filter(models.LlmCall.run_id == run_id)
+            .one()
+            .course_title_at_deletion
+            is None
+        ), "unstamped while the course exists, which is what lets its id be resolved"
+    finally:
+        session.close()
+
+    _delete(course_id)
+
+    session = SessionLocal()
+    try:
+        row = session.query(models.LlmCall).filter(models.LlmCall.run_id == run_id).one()
+        assert row.course_title_at_deletion == "Machine Learning"
+        assert row.estimated_cost_usd == 0.1
+    finally:
+        session.close()
+
+
+def test_a_stamp_is_written_once_and_never_revised():
+    """The case the reuse defect creates, one turn further on.
+
+    Delete a course, let a new one take its id, delete that one too. An unfiltered update
+    would find the FIRST course's rows by id and relabel them with the SECOND course's
+    title, which would lose the very fact the stamp exists to preserve.
+    """
+    first = _make_course([_key("once")], title="First Course")
+    run_id = uuid4().hex[:16]
+    session = SessionLocal()
+    try:
+        session.add(
+            models.LlmCall(
+                run_id=run_id,
+                course_id=first,
+                provider="anthropic",
+                model="claude-opus-5",
+                stage="outline",
+                input_tokens=1,
+                output_tokens=1,
+                estimated_cost_usd=0.2,
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    _delete(first)
+
+    second = _make_course([_key("once")], title="Second Course")
+    assert second == first, "this test needs the id to be reissued"
+    _delete(second)
+
+    session = SessionLocal()
+    try:
+        stamps = [
+            row.course_title_at_deletion
+            for row in session.query(models.LlmCall)
+            .filter(models.LlmCall.run_id == run_id)
+            .all()
+        ]
+    finally:
+        session.close()
+    assert stamps == ["First Course"]
+
+
 def test_a_course_with_no_lessons_deletes_cleanly():
     """Nothing to count and nothing to retire, and no branch that divides by any of it.
 

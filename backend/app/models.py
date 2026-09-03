@@ -160,6 +160,13 @@ class LlmCall(Base):
 
     course_id is a plain nullable integer (no foreign key) so usage history
     survives course deletion.
+
+    THAT SURVIVAL HAS A SHARP EDGE, which is what course_title_at_deletion exists for.
+    courses.id is an INTEGER PRIMARY KEY with no AUTOINCREMENT, so SQLite hands a deleted
+    course's id to the next one created. A surviving row's course_id then resolves, but to
+    the WRONG course, and the deleted course's spend appears under a new course's title
+    with nothing anywhere saying so. Measured: delete the highest-id course and generate
+    another, and it inherits the whole bill.
     """
 
     __tablename__ = "llm_calls"
@@ -175,6 +182,12 @@ class LlmCall(Base):
     output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     estimated_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     approximate: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The course's title as it stood at the moment the course was deleted, NULL for as
+    # long as the course exists. NOT a denormalised copy of the live title: it is written
+    # once, by deletion, and never tracks anything afterwards, which is why the name says
+    # at_deletion. Its presence is also the signal that the row's course_id must not be
+    # resolved, because resolving it is precisely how the spend reaches the wrong course.
+    course_title_at_deletion: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
 
 class AppSetting(Base):

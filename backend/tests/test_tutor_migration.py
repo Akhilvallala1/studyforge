@@ -255,11 +255,34 @@ def _seed_tutor_message(connection, tables) -> None:
     )
 
 
+def _seed_llm_call(connection, tables) -> None:
+    """One recorded provider call, so a base that has llm_calls has a ROW in it.
+
+    Required by test_every_altered_table_is_seeded now that ADDED_COLUMNS alters this
+    table. llm_calls exists at every pin, so this runs against both bases.
+    """
+    connection.execute(
+        tables["llm_calls"]
+        .insert()
+        .values(
+            run_id="seedrun",
+            course_id=1,
+            provider="anthropic",
+            model="claude-opus-5",
+            stage="outline",
+            input_tokens=100,
+            output_tokens=50,
+            estimated_cost_usd=0.01,
+        )
+    )
+
+
 # Tables this file knows how to put a row in. Every seeder whose table exists in a given
 # base is run, so the base is as realistic as that revision allows.
 SEEDERS = {
     "courses": _seed_course_chain,
     NEW_TABLE: _seed_tutor_message,
+    "llm_calls": _seed_llm_call,
 }
 
 # Tables _seed_course_chain fills, which is more than the one it is keyed by.

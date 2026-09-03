@@ -8,6 +8,8 @@ could reasonably make the other way, so each says why.
 
 from uuid import uuid4
 
+import pytest
+
 from app import fsrs, models, review
 from app.db import SessionLocal
 
@@ -27,6 +29,27 @@ PAYLOAD_KEYS = {
 
 def _key(prefix):
     return f"{prefix}-{uuid4().hex[:10]}"
+
+
+def _spend(course_id, amount):
+    """Attribute one recorded provider call to a course."""
+    session = SessionLocal()
+    try:
+        session.add(
+            models.LlmCall(
+                run_id=uuid4().hex[:16],
+                course_id=course_id,
+                provider="anthropic",
+                model="claude-opus-5",
+                stage="outline",
+                input_tokens=10,
+                output_tokens=5,
+                estimated_cost_usd=amount,
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
 
 
 def _make_course(concepts, title="Course"):
@@ -160,10 +183,9 @@ def test_a_shared_concept_still_answers_over_http(client):
 def test_usage_still_answers_and_still_reports_the_deleted_courses_spend(client):
     """Spend outlives the course, and /usage was already built for it.
 
-    _spend_groups looks the course up to name the row and falls back to the id when the
-    lookup returns nothing, with a comment saying deletion is why. So this is a check that
-    an existing degradation still holds rather than a new one: the row keeps its money,
-    loses its title, and labels itself from the id it still carries.
+    The row keeps its money and its NAME, because deletion stamps the title onto it.
+    `title` stays None, which is still how a client asks whether the course exists; the
+    stamp shows up in `label`, which is what the learner reads.
     """
     course_id = _make_course([_key("usage")], title="Costly")
     session = SessionLocal()
@@ -201,7 +223,66 @@ def test_usage_still_answers_and_still_reports_the_deleted_courses_spend(client)
     row = orphaned[0]
     assert row["estimated_cost_usd"] == 0.5
     assert row["title"] is None
-    assert row["label"] == f"Course #{course_id}"
+    assert row["label"] == "Costly"
+
+
+def test_a_reused_course_id_does_not_inherit_the_deleted_courses_spend(client):
+    """THE DEFECT, reproduced exactly as it was found.
+
+    courses.id is an INTEGER PRIMARY KEY with no AUTOINCREMENT, so SQLite reissues a
+    deleted course's id to the next course created. Before the stamp, the surviving spend
+    rows resolved to that new course and its bill silently absorbed the old one's.
+
+    The id-reuse assertion is not decoration. If SQLite ever stopped reissuing the id this
+    test would prove nothing at all, and it should say so rather than pass quietly.
+    """
+    doomed = _make_course([_key("reuse")], title="Old Course")
+    _spend(doomed, 0.25)
+    before_total = client.get("/usage").json()["totals"]["estimated_cost_usd"]
+
+    client.delete(f"/courses/{doomed}")
+
+    fresh = _make_course([_key("reuse")], title="New Course")
+    assert fresh == doomed, (
+        "this test needs the deleted id to actually be reissued; without that it cannot "
+        "distinguish a working stamp from no stamp at all"
+    )
+    _spend(fresh, 0.10)
+
+    body = client.get("/usage").json()
+    rows = [row for row in body["per_course"] if row["course_id"] == doomed]
+
+    # SEVERAL rows can share one id, one per course that has ever held it, and in the
+    # shared suite database more than two usually do. That is the mechanism working: each
+    # course's spend stays with the title it had. So this asserts on the two courses this
+    # test created rather than on the total number of rows.
+    assert len(rows) >= 2, [row["label"] for row in rows]
+    by_label = {row["label"]: row for row in rows}
+    assert "Old Course" in by_label and "New Course" in by_label
+    assert by_label["Old Course"]["estimated_cost_usd"] == 0.25
+    assert by_label["Old Course"]["title"] is None
+    assert by_label["New Course"]["estimated_cost_usd"] == 0.10
+    assert by_label["New Course"]["title"] == "New Course"
+
+    # And nothing was lost or double counted along the way. approx because these are
+    # floats and the suite-wide running total is rarely exactly representable.
+    assert body["totals"]["estimated_cost_usd"] == pytest.approx(before_total + 0.10)
+
+
+def test_an_unstamped_row_still_resolves_the_old_way(client):
+    """The upgrade path. Rows written before this column existed carry NULL, and NULL has
+    to keep meaning "resolve my course_id", or an existing install would lose or relabel
+    every historical attribution the moment it upgraded."""
+    course_id = _make_course([_key("unstamped")], title="Still Alive")
+    _spend(course_id, 0.05)
+
+    row = next(
+        row
+        for row in client.get("/usage").json()["per_course"]
+        if row["course_id"] == course_id
+    )
+    assert row["title"] == "Still Alive"
+    assert row["label"] == "Still Alive"
 
 
 def test_deleting_a_course_leaves_the_review_queue_answerable(client):
