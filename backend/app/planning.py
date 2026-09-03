@@ -77,9 +77,10 @@ ACTIVE = "active"
 PASSED = "passed"
 
 # Why required_per_week is null, when it is. Null with no reason would make the UI
-# guess, and the three cases want different sentences: a passed deadline wants
-# "your deadline was the 14th", an all-days-off window wants "you have marked every
-# remaining day off".
+# guess, and each case wants a different sentence: a passed deadline wants "your deadline
+# was the 14th", an all-days-off window wants "you have marked every remaining day off".
+# Said as "each" rather than as a count, so that adding a fifth does not quietly make this
+# sentence wrong.
 REASON_NO_DEADLINE = "no_deadline"
 REASON_DEADLINE_PASSED = "deadline_passed"
 REASON_DEADLINE_TODAY = "deadline_today"
@@ -237,9 +238,16 @@ def observed_pace(
     the window at its new timestamp.
 
     Lessons of a DELETED course stop counting, because Course cascades to modules and
-    lessons, so the history goes with it and this rate drops retroactively. Nothing
-    deletes a course today, so that is a property to know before an endpoint does rather
-    than a bug to fix now.
+    lessons, so the history goes with it and this rate drops retroactively. That is LIVE
+    behaviour, not a hypothetical: DELETE /courses/{course_id} exists.
+
+    Note how far the effect reaches, because it is wider than it first looks. This rate
+    counts completions across every course, so deleting one lowers the figure displayed on
+    all the OTHERS, and if the remaining total falls under PACE_MIN_LESSONS they lose their
+    rate and their projected date entirely. Nothing is wrong when that happens: the rate is
+    a measurement over surviving history, and the history really did get smaller. Keeping
+    it stable across deletions would mean an append-only completion log, which is a larger
+    thing than this one number is worth.
 
     THE WINDOW IS UNCHANGED: a fixed 720 HOURS, and still the one piece of day arithmetic
     in this module NOT built out of days.py. It copies review.retention
