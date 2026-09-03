@@ -459,6 +459,131 @@ def test_chunk_sources_never_lets_a_chunk_span_two_sources():
     assert not any("AAA" in chunk and "BBB" in chunk for chunk in chunks)
 
 
+def _worst_packing_text(chars: int) -> str:
+    """Text whose paragraphs waste the most of every chunk.
+
+    chunk_text packs whole paragraphs and never splits one below MAX_CHUNK_CHARS, so a
+    paragraph just over half the chunk size fits exactly one per chunk. That is the worst
+    case for chunk count at a given character total, and it is what a cap has to survive.
+    """
+    paragraph = "w" * (ingest.MAX_CHUNK_CHARS // 2 + 1)
+    out: list[str] = []
+    while sum(len(part) for part in out) < chars:
+        out.append(paragraph + "\n\n")
+    return "".join(out)[:chars]
+
+
+def test_neither_cap_bounds_the_chunk_count_on_its_own():
+    """The measurement that corrects the obvious reading of these two constants.
+
+    The chunk count is what generation routes on and what the outline prompt is built from,
+    so it is the quantity the caps exist to bound. NEITHER BOUNDS IT ALONE, because
+    chunk_sources chunks per source and so every source contributes at least one chunk
+    however short it is:
+
+      MAX_SOURCES tiny sources are MAX_SOURCES chunks, at a character total the size cap
+      does not even notice.
+
+      One source at the character cap is many chunks, at a source count the count cap does
+      not even notice.
+
+    Which is why "the character cap is the one doing the real work" is half true and the
+    half that is missing is the one that surprises people. Both caps do work, on different
+    axes, and only the pair bounds anything.
+    """
+    tiny = [
+        ingest.Source(key="", kind="text", ref=str(index), text="short.")
+        for index in range(ingest.MAX_SOURCES)
+    ]
+    assert len(ingest.chunk_sources(tiny)) == ingest.MAX_SOURCES, (
+        "each source contributes a chunk of its own, so the count cap is what bounds this "
+        "case and the character cap contributes nothing to it"
+    )
+    assert ingest.total_chars(tiny) < ingest.MAX_TOTAL_CHARS // 100
+
+    one_big = [ingest.Source(key="", kind="text", ref="big", text="x" * ingest.MAX_TOTAL_CHARS)]
+    assert len(ingest.chunk_sources(one_big)) > ingest.MAX_SOURCES, (
+        "one document at the character cap already exceeds the source cap in chunks, so "
+        "the count cap contributes nothing to this case"
+    )
+
+
+def test_the_two_caps_together_bound_the_chunk_count():
+    """MAX_TOTAL_CHUNKS is derived from the other two, and this is what keeps it true.
+
+    Raise MAX_SOURCES or MAX_TOTAL_CHARS without thinking about the other and the ceiling
+    moves with them, because it is computed rather than written down. What this asserts is
+    that the worst arrangement ALLOWED by both caps still lands under it: the maximum number
+    of sources, each large enough that the character total is at the limit too.
+    """
+    each = ingest.MAX_TOTAL_CHARS // ingest.MAX_SOURCES
+    worst = [
+        ingest.Source(key="", kind="text", ref=str(index), text=_worst_packing_text(each))
+        for index in range(ingest.MAX_SOURCES)
+    ]
+
+    assert ingest.total_chars(worst) <= ingest.MAX_TOTAL_CHARS
+    chunks = len(ingest.chunk_sources(worst))
+    assert chunks <= ingest.MAX_TOTAL_CHUNKS
+    # And the input is genuinely adversarial rather than incidentally fine. An earlier
+    # version of this used one unbroken paragraph, which packs PERFECTLY, and so passed
+    # against a ceiling that was wrong by thirteen chunks.
+    naive = -(-ingest.MAX_TOTAL_CHARS // ingest.MAX_CHUNK_CHARS)
+    assert chunks > naive, (
+        "this text is packing too well to test the bound; the point is a paragraph length "
+        "that wastes half of every chunk"
+    )
+
+
+def test_the_chunk_count_is_the_one_generation_routes_on(client, monkeypatch):
+    """The identity that stops this measuring a different quantity from the one that counts.
+
+    generate_course is handed this list unchanged and never re-chunks, so len() of it is
+    exactly what SEGMENT_ROUTING_MIN_CHUNKS is compared against. The eval harness had a bug
+    of precisely this shape, measuring the concatenated corpus while generation measured per
+    document, and reporting a routed run as unrouted.
+
+    So this pins the divergence rather than trusting it is absent: five short sources are
+    five chunks here and one concatenated, and the outline prompt says five.
+    """
+    from app import generation
+
+    sources = [
+        ingest.Source(key="", kind="text", ref=str(index), text=f"Document {index}. " * 20)
+        for index in range(5)
+    ]
+    per_source = ingest.chunk_sources(sources)
+    concatenated = ingest.chunk_text("\n\n".join(source.text for source in sources))
+
+    assert len(per_source) == 5
+    assert len(concatenated) == 1, (
+        "if this ever equals the per-source count the two measurements have converged and "
+        "this test no longer distinguishes them; pick shorter sources"
+    )
+    assert len(per_source) >= generation.SEGMENT_ROUTING_MIN_CHUNKS
+    assert len(concatenated) < generation.SEGMENT_ROUTING_MIN_CHUNKS, (
+        "the concatenated measurement calls this unrouted while generation routes it, "
+        "which is the harness bug this identity exists to keep out of the app"
+    )
+
+    seen: list[str] = []
+
+    class Recorder(FakeProvider):
+        def generate(self, system: str, prompt: str, max_tokens: int = 64000):
+            seen.append(prompt)
+            return super().generate(system, prompt, max_tokens)
+
+    monkeypatch.setattr(main, "get_provider", lambda: Recorder())
+    response = _generate(
+        client, {"sources": [_text_source(source.text) for source in sources]}
+    )
+
+    assert response.status_code == 200, response.text
+    assert f"has {len(per_source)} segments" in seen[0], (
+        "the outline was told a different segment count than chunk_sources produced"
+    )
+
+
 def test_the_lifted_source_is_the_one_the_evals_use():
     """The lift did not fork the type, asserted by identity rather than by shape.
 
