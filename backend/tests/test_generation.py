@@ -469,3 +469,43 @@ def test_unrouted_material_is_never_counted_as_a_fallback():
     useless for the decision it exists to inform."""
     assert generation.segments_are_fallback({}, 2) is False
     assert generation.segments_are_fallback({"segments": []}, 1) is False
+
+
+# Invisible characters named by code point rather than pasted, for the reason
+# test_tutor.py gives: a test file holding the literals would be as unreviewable as the
+# attack it describes.
+NBSP = chr(0x00A0)
+ZWSP = chr(0x200B)
+SOFT_HYPHEN = chr(0x00AD)
+
+
+def test_the_label_neutralizer_boundary_is_pinned_on_both_sides():
+    """What it catches, and what it is KNOWN not to catch. Both are assertions.
+
+    The second half locks in a gap on purpose, the way test_tutor.py's "WHAT STILL GETS
+    THROUGH" note does, but executably. A described boundary is a claim nobody checks; a
+    pinned one fails the day it stops being true, which is exactly when the comment above
+    defuse_segment_labels needs rewriting.
+
+    WHEN THE FIX LANDS this test is the thing that proves it landed. Closing the gap
+    means lifting tutor.py's prefix class into untrusted.py so both callers share one
+    table, and on that day the second half of this test flips from `is False` to
+    `is True`. If it does not flip, the lift did not reach this caller.
+    """
+    caught = ["[segment 3]", "   [segment 3]", "\t[segment 3]", "[document: pep8]"]
+    for text in caught:
+        assert generation.defuse_segment_labels(text) != text, repr(text)
+        assert generation.NEUTRALIZED_LABEL in generation.defuse_segment_labels(text)
+
+    # KNOWN GAP. Every one of these still renders to a reader as a label at what looks
+    # like column zero. Measured, not assumed: each was driven through the function.
+    gets_through = [
+        "- [segment 3]",
+        "> [segment 3]",
+        "| [segment 3]",
+        NBSP + "[segment 3]",
+        ZWSP + "[segment 3]",
+        SOFT_HYPHEN + "[segment 3]",
+    ]
+    for text in gets_through:
+        assert generation.defuse_segment_labels(text) == text, repr(text)
