@@ -149,6 +149,14 @@ def _summary(session: Session, course: models.Course) -> tuple[dict, set[str]]:
     spend = (
         session.query(func.sum(models.LlmCall.estimated_cost_usd))
         .filter(models.LlmCall.course_id == course.id)
+        # UNSTAMPED ROWS ONLY, the same condition _spend_groups reads by and _stamp_spend
+        # writes by. Without it this sum absorbs the spend of every previous holder of
+        # this id, and it is the number shown while asking a learner to consent to an
+        # irreversible deletion, which makes it the worst of the three places to get
+        # wrong. The filter is exact rather than approximate: nothing could delete a
+        # course before this branch, so no orphan row can carry a NULL stamp, and every
+        # NULL stamp therefore belongs to a course that still exists.
+        .filter(models.LlmCall.course_title_at_deletion.is_(None))
         .scalar()
         or 0.0
     )

@@ -269,6 +269,33 @@ def test_a_reused_course_id_does_not_inherit_the_deleted_courses_spend(client):
     assert body["totals"]["estimated_cost_usd"] == pytest.approx(before_total + 0.10)
 
 
+def test_a_reused_course_id_does_not_inherit_the_spend_in_the_preview_either(client):
+    """THE SAME DEFECT ON THE CONSENT PATH, which is the half that matters more.
+
+    /usage is a report somebody consults after the fact. The preview is the number on
+    screen while a learner is being asked to agree to something irreversible, so it is the
+    one place an inflated figure changes a decision rather than a reading.
+
+    Mirrors test_a_reused_course_id_does_not_inherit_the_deleted_courses_spend, including
+    asserting the id really was reissued: without that this cannot tell a working filter
+    from no filter at all.
+    """
+    doomed = _make_course([_key("prev")], title="Old Course")
+    _spend(doomed, 0.25)
+    client.delete(f"/courses/{doomed}")
+
+    fresh = _make_course([_key("prev")], title="New Course")
+    assert fresh == doomed, (
+        "this test needs the deleted id to actually be reissued; without that it cannot "
+        "distinguish a working stamp filter from none"
+    )
+    _spend(fresh, 0.10)
+
+    assert client.get(f"/courses/{fresh}/deletion-preview").json()["spend_usd"] == 0.10
+    # And what the delete reports agrees with the preview the learner consented to.
+    assert client.delete(f"/courses/{fresh}").json()["spend_usd"] == 0.10
+
+
 def test_an_unstamped_row_still_resolves_the_old_way(client):
     """The upgrade path. Rows written before this column existed carry NULL, and NULL has
     to keep meaning "resolve my course_id", or an existing install would lose or relabel

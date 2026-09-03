@@ -445,14 +445,9 @@ def test_a_stamp_is_written_once_and_never_revised():
 def test_a_course_with_no_lessons_deletes_cleanly():
     """Nothing to count and nothing to retire, and no branch that divides by any of it.
 
-    spend_usd is deliberately NOT asserted to be zero here. This test asserts that an empty
-    course counts as empty, and a brand new course's spend is not actually guaranteed to be
-    zero: courses.id is an INTEGER PRIMARY KEY with no AUTOINCREMENT, so SQLite hands a
-    freed id to the next insert, and llm_calls rows carry a plain integer course_id with no
-    ForeignKey and are deliberately left behind by deletion. A new course can therefore
-    inherit a deleted one's spend. That is a real defect, measured and reported, and it is
-    not this test's job either to enforce it away or to bless it: an assertion here would
-    have been passing on the accident that no earlier test had freed an id.
+    spend_usd is asserted again now that _summary filters on the stamp. It could not be,
+    briefly: a new course could inherit a deleted one's spend through a reissued id, so
+    zero here would have been asserting only that no earlier test had freed one.
     """
     course_id = _make_course([], title="Empty")
 
@@ -464,6 +459,7 @@ def test_a_course_with_no_lessons_deletes_cleanly():
     assert result["concepts_total"] == 0
     assert result["concepts_retired"] == 0
     assert result["concepts_kept"] == 0
+    assert result["spend_usd"] == 0.0
 
     session = SessionLocal()
     try:

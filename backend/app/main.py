@@ -1772,6 +1772,13 @@ def _spend_groups(session: Session) -> list[dict]:
         # resolving it is exactly how this row's money would be handed to the wrong course.
         # Not looked up and then ignored: not looked up at all, so there is no live title
         # here for a later edit to accidentally start preferring.
+        #
+        # A CONSEQUENCE THAT LOOKS LIKE A HOLE AND IS NOT: reordering the label below to
+        # `title or stamped` survives the whole suite. That is because this guard makes
+        # `title` provably None whenever `stamped` is set, so the ordering is unreachable
+        # belt-and-braces rather than the thing doing the work. Its inertness is evidence
+        # the guard holds; if the lookup ran and were merely ignored, that same mutation
+        # would be both catchable and dangerous.
         course_row = (
             session.get(models.Course, course_id)
             if group == GROUP_COURSE and stamped is None
