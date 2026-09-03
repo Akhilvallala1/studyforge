@@ -257,14 +257,23 @@ NEUTRALIZED_LABEL = "[segment marker]"
 # "[segment 0]" claims material the outline believes came from source A. With one
 # document that is a curiosity. With five it is one document reaching into another.
 #
-# WHAT IT DOES NOT CATCH, and this is the boundary as designed rather than as hoped.
-# Only plain leading whitespace is allowed in front of the label. A markdown list marker,
-# a quote marker, or an invisible code point in front of it defeats this, and tutor.py
-# carries a 13-range enumeration of exactly those code points for the same class of
-# attack. That enumeration is NOT copied here: it belongs in one place, and the place is
-# untrusted.py, which is a lift neither this branch nor this feature should be doing. See
-# the note to the lead. What is left is the accidental and the casual case, which is what
-# a document containing the literal text "[segment 3]" actually is.
+# WHAT IT DOES NOT CATCH. This is the boundary as designed rather than as hoped, and it
+# is a real gap rather than a theoretical one, so do not read this function as complete.
+#
+# LEADING WHITESPACE ONLY. Spaces and tabs in front of the label are stripped before
+# matching, and nothing else is. A markdown list marker ("- [segment 3]"), a quote marker
+# ("> [segment 3]"), a table cell ("| [segment 3]") or an invisible code point all defeat
+# it, and all of them still render to a reader as a label at what looks like column zero.
+#
+# tutor.py carries a 13-range enumeration of exactly those invisible code points, built
+# for the register-label forgery, which is the same class of attack. It is NOT copied
+# here, deliberately: the enumeration's own problem is that it drifts, and a second copy
+# makes that worse rather than better. Closing this properly means lifting that prefix
+# class out of tutor.py into untrusted.py so both callers share one table, which is a
+# refactor of shipped tutor code and belongs in its own change with its own review.
+#
+# What IS closed is the accidental and the casual case, which is what a document
+# containing the literal text "[segment 3]" actually is.
 _SEGMENT_LABEL_FORGERY = re.compile(
     r"^[ \t]*\[\s*(?:segment\b[^\]\n]*|document\s*:[^\]\n]*)\]",
     re.MULTILINE | re.IGNORECASE,
@@ -277,6 +286,12 @@ def defuse_segment_labels(text: str) -> str:
     The surrounding prose survives, exactly as untrusted.as_data leaves hostile text
     readable: the material is still what the course has to be written from, and a
     document that happens to discuss segments in square brackets should still teach.
+
+    PARTIAL, AND KNOWN TO BE. It matches a label preceded by spaces or tabs and by
+    nothing else, so a list marker, a quote marker or an invisible code point in front of
+    one gets through while still rendering as a label to a reader. See the note on
+    _SEGMENT_LABEL_FORGERY above for the full boundary and for why the fix is a lift into
+    untrusted.py rather than another copy of tutor.py's prefix table.
     """
     return _SEGMENT_LABEL_FORGERY.sub(NEUTRALIZED_LABEL, text or "")
 
