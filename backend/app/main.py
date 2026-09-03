@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFi
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -204,9 +204,72 @@ def startup() -> None:
         )
 
 
+class SourceInput(BaseModel):
+    """One source in a generate request: what kind it is and where its content comes from.
+
+    `value` is the text itself for a text source and the address for a URL. `ref` is the
+    label a refusal names it by, and it defaults to the value for a URL, because a URL is
+    already its own name, and to a positional label for text, because a wall of pasted
+    prose is not.
+
+    PDFs are not a kind here. They arrive as an upload on the other endpoint, and mixing a
+    PDF alongside a URL in one request needs both endpoints collapsed into one multipart
+    route, which is deliberately out of scope.
+    """
+
+    kind: str
+    value: str
+    ref: str | None = None
+
+
 class GenerateRequest(BaseModel):
+    """Material for one course, as one or more sources.
+
+    `sources` IS THE ONLY FIELD ANYTHING DOWNSTREAM SEES. `text` and `url` are the original
+    single-source spellings, kept working and normalized into a one-element `sources` by
+    the validator below, so no code past this class knows they exist.
+
+    THAT IS WHY THEY ARE KEPT RATHER THAN REMOVED. The rot in a compatibility alias is two
+    CODE PATHS, not two spellings: a second path is a second thing to change, and the one
+    nobody uses is the one that quietly stops working. A spelling that collapses into the
+    canonical shape at the edge costs one validator and leaves exactly one path forever.
+    test_the_alias_and_the_canonical_form_produce_the_same_course is what proves it, and if
+    that test ever fails there are two paths again whatever this docstring says.
+
+    DEPRECATED, and with a date rather than an aspiration: `text` and `url` are removed in
+    0.4.0. Until then they are supported, not merely tolerated.
+    """
+
+    sources: list[SourceInput] | None = None
     text: str | None = None
     url: str | None = None
+
+    @model_validator(mode="after")
+    def _normalize_aliases(self) -> "GenerateRequest":
+        """Fold the deprecated single-source fields into `sources`.
+
+        `sources` wins when both are sent. A request carrying both is confused, and the
+        canonical field is the one to believe; refusing instead would be a new error shape
+        for a case no client produces.
+
+        `text` before `url`, which is the precedence the old endpoint had when both were
+        set, kept so that a client relying on it is not quietly re-pointed at the other one.
+        """
+        if self.sources is not None:
+            return self
+        if self.text:
+            self.sources = [SourceInput(kind="text", value=self.text)]
+        elif self.url:
+            self.sources = [SourceInput(kind="url", value=self.url)]
+        return self
+
+    def used_canonical_field(self) -> bool:
+        """Whether the caller spelled it `sources` rather than using a deprecated alias.
+
+        Read by the refusal translation, and by nothing else. See _generation_refusal for
+        why the shape of a failure depends on this and the shape of a SUCCESS does not.
+        """
+        return self.text is None and self.url is None
 
 
 # User-facing copy for generation failures. The raw exception goes to the server
@@ -229,15 +292,47 @@ NO_MATERIAL_MESSAGE = (
 TUTOR_FAILURE_MESSAGE = (
     "The tutor could not answer that just now. Nothing was saved, so try asking again."
 )
-# The two refusals QA found still answering with a bare string. Both keep their exact
-# wording; only the shape around them changed, so a client that was matching on the prose
-# is no worse off and one reading `detail.error` now gets something.
-#
 # INVALID_RATING_MESSAGE is derived from fsrs.RATINGS rather than spelling the numbers out,
 # for the reason the tutor's mode enum is derived from TUTOR_MODES: two spellings of one
 # list is a divergence nothing would catch, and the message would go on naming a rating the
 # scheduler had stopped accepting.
-NO_SOURCE_MESSAGE = "Provide 'text' or 'url'"
+#
+# NO_SOURCE_MESSAGE is the one refusal message this feature CHANGED rather than reshaped.
+# Its code and status are untouched and its test passes verbatim, because that test compares
+# against this constant. The wording moved because the old one named only the deprecated
+# fields, and a refusal that tells you to use `text` or `url` while `sources` is the field
+# to use is a message that will be wrong before it is old.
+# Names `sources` first because that is the field to use, and still names the aliases
+# because they work until 0.4.0 and a message that hid them would be telling half the
+# truth to anyone reading it from an older client.
+NO_SOURCE_MESSAGE = "Provide 'sources', or the deprecated 'text' or 'url'"
+SOURCE_FAILED_MESSAGE = (
+    "Some of your sources could not be read. Nothing was generated and nothing was "
+    "charged, so fix the ones listed and send them again."
+)
+# The per-source copy, passed into app.ingest so that these sentences have one definition
+# and that module holds none of them. Keyed by the failure codes ingest reports.
+SOURCE_FAILURE_COPY = {
+    ingest.FETCH_FAILED: URL_FETCH_MESSAGE,
+    ingest.PDF_UNREADABLE: PDF_PARSE_MESSAGE,
+    ingest.NO_USABLE_TEXT: "No usable text found in the source",
+}
+
+
+def too_many_sources_message(sent: int) -> str:
+    """Names the cap AND the count sent, because a cap alone leaves the caller counting."""
+    return (
+        f"That request has {sent} sources and the limit is {ingest.MAX_SOURCES}. "
+        f"Generation runs while you wait, so the limit is what keeps that wait finite."
+    )
+
+
+def source_too_large_message(total: int) -> str:
+    return (
+        f"Those sources come to {total:,} characters and the limit is "
+        f"{ingest.MAX_TOTAL_CHARS:,}. Nothing was generated and nothing was charged. "
+        f"Try fewer or shorter documents."
+    )
 INVALID_RATING_MESSAGE = f"rating must be one of {list(fsrs.RATINGS)}"
 
 MESSAGE_EMPTY_MESSAGE = "Type a question before sending it."
@@ -380,32 +475,128 @@ def _run_generation(session: Session, chunks: list[str]) -> dict:
     }
 
 
+def _source_failed(failures: list[ingest.SourceFailure]) -> HTTPException:
+    """422 naming every source that failed, individually.
+
+    INDIVIDUALLY IS THE WHOLE POINT. "One of your five URLs failed" is useless: the caller
+    cannot tell which to fix, and the frontend cannot keep the good rows and mark the bad
+    ones. The list carries the same {kind, ref, error, message} for each, so a client
+    renders one row per source with the sentence that belongs to it.
+    """
+    return HTTPException(
+        422,
+        detail={
+            "error": "source_failed",
+            "message": SOURCE_FAILED_MESSAGE,
+            "sources": [failure.payload() for failure in failures],
+        },
+    )
+
+
+def _legacy_refusal(failure: ingest.SourceFailure, stage: str) -> HTTPException:
+    """The refusal the single-source endpoints have always returned, unchanged.
+
+    A COMPATIBILITY SEAM WITH AN EXPIRY, not a second design. Requests that use the
+    deprecated `text` or `url` fields, and single-file PDF uploads, keep the exact status
+    and bare-string body they have always had, because every existing client and every
+    existing test was written against them. Anything using `sources`, and any multi-file
+    upload, gets the one shape.
+
+    This dies with the aliases in 0.4.0. It is tied to them deliberately: a seam with no
+    end date is a second path, which is the thing GenerateRequest's docstring says this
+    design does not have.
+
+    The mapping is exactly what the old code did. An unsafe URL keeps the guard's own
+    message and its 400; a fetch failure keeps its 502; a bad PDF and an empty source keep
+    their 400s. generation_failure is not reused here because it takes a live exception and
+    wants a traceback, and by this point the failure is a value that was already logged.
+    """
+    if failure.error == ingest.UNSAFE_URL:
+        return HTTPException(400, failure.message)
+    if failure.error == ingest.FETCH_FAILED:
+        return HTTPException(502, URL_FETCH_MESSAGE)
+    if failure.error == ingest.PDF_UNREADABLE:
+        return HTTPException(400, PDF_PARSE_MESSAGE)
+    if stage == "pdf":
+        return HTTPException(400, "No usable text found in the PDF")
+    return HTTPException(400, "No usable text found in the source")
+
+
+def _ingest_or_refuse(
+    specs: list[ingest.SourceSpec], *, legacy: bool, stage: str
+) -> list[str]:
+    """Read every source, refuse the whole request if any failed, and return the chunks.
+
+    FAIL CLOSED, AND IT COSTS NOTHING TO DO SO. Everything here happens before the first
+    token is bought: the fetching and the parsing are done, the caps are applied, and only
+    then does _run_generation call a provider. So refusing costs the caller a corrected
+    resubmit, while best-effort would cost them a course built from three of five documents,
+    paid for in full, and discovered afterwards when the missing material is not in it.
+
+    The order is deliberate. Count first, because it is the only check that can be made
+    before any fetching and an over-limit request should cost zero requests to other
+    people's servers. Failures next, because a caller with a broken source has to fix it
+    whatever the total size turns out to be. Size last, on what actually arrived.
+    """
+    if not specs:
+        raise _bad_request("no_source", NO_SOURCE_MESSAGE)
+
+    try:
+        sources, failures = ingest.load_sources(specs, SOURCE_FAILURE_COPY)
+    except ingest.TooManySources as exc:
+        raise _unprocessable("too_many_sources", too_many_sources_message(len(specs))) from exc
+
+    if failures:
+        for failure in failures:
+            logger.warning(
+                "source refused (%s %s): %s", failure.kind, failure.ref, failure.error
+            )
+        raise _legacy_refusal(failures[0], stage) if legacy else _source_failed(failures)
+
+    total = ingest.total_chars(sources)
+    if total > ingest.MAX_TOTAL_CHARS:
+        raise _unprocessable("source_too_large", source_too_large_message(total))
+    return ingest.chunk_sources(sources)
+
+
 @app.post("/courses/generate")
 def generate_from_text(body: GenerateRequest, session: Session = Depends(get_session)):
-    """Generate a course from pasted text or a URL. Synchronous for the MVP -
-    expect it to take a minute or more for large material."""
-    if body.text:
-        chunks = ingest.chunk_text(body.text)
-    elif body.url:
-        try:
-            chunks = ingest.chunk_text(ingest.extract_url(body.url))
-        except Exception as exc:
-            raise generation_failure(exc, "url") from exc
-    else:
-        raise _bad_request("no_source", NO_SOURCE_MESSAGE)
-    if not chunks:
-        raise HTTPException(400, "No usable text found in the source")
+    """Generate a course from one or more sources. Synchronous for the MVP -
+    expect it to take a minute or more for large material.
+
+    One outline call whatever the source count: the sources are chunked into one segment
+    list and the pipeline below is the same one a single paste has always used.
+    """
+    specs = [
+        ingest.SourceSpec(
+            kind=source.kind,
+            ref=source.ref or (source.value if source.kind == "url" else f"source {index + 1}"),
+            value=source.value,
+        )
+        for index, source in enumerate(body.sources or [])
+    ]
+    chunks = _ingest_or_refuse(
+        specs, legacy=not body.used_canonical_field(), stage="url"
+    )
     return _run_generation(session, chunks)
 
 
 @app.post("/courses/generate/pdf")
-def generate_from_pdf(file: UploadFile, session: Session = Depends(get_session)):
-    try:
-        chunks = ingest.chunk_text(ingest.extract_pdf(file.file.read()))
-    except Exception as exc:
-        raise generation_failure(exc, "pdf") from exc
-    if not chunks:
-        raise HTTPException(400, "No usable text found in the PDF")
+def generate_from_pdf(file: list[UploadFile], session: Session = Depends(get_session)):
+    """One or more PDFs, uploaded under the field name `file`.
+
+    STILL `file` AND NOT `files`, which is not a naming slip. FastAPI collects every part
+    with that name into the list, so a client sending one part is unchanged and a client
+    sending five needs no new field. Renaming it would have broken every existing caller to
+    buy nothing.
+    """
+    specs = [
+        ingest.SourceSpec(
+            kind="pdf", ref=upload.filename or f"upload {index + 1}", value=upload.file.read()
+        )
+        for index, upload in enumerate(file)
+    ]
+    chunks = _ingest_or_refuse(specs, legacy=len(specs) <= 1, stage="pdf")
     return _run_generation(session, chunks)
 
 
