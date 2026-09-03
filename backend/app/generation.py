@@ -30,8 +30,36 @@ every segment number must appear in at least one lesson's "segments", and roughl
 segments deserve roughly more lessons. Material near the end is not an appendix: work through \
 the segments in order and keep going to the last one. """
 
+# The same rules for a corpus that is SEVERAL documents rather than one. Every sentence
+# the single-source version phrases in terms of "the document" has to be rephrased,
+# because with five sources "the whole document" names something that does not exist and
+# "keep going to the last segment" reaches across a boundary between unrelated works.
+#
+# THE SENTENCE THAT IS NOT IN THE SINGLE-SOURCE VERSION AT ALL is the one about
+# continuity. Segment numbers run continuously over the whole corpus, so segment 4 and
+# segment 5 look adjacent whether or not they are from the same work; nothing in the
+# numbering says otherwise, and a model reading them as continuing prose will write a
+# lesson bridging two documents that have nothing to do with each other. The document
+# tag on each segment is the only thing that says where the seams are, so the rules have
+# to point at it.
+#
+# The last sentence is a permission and not only a prohibition, deliberately. Two sources
+# covering the same idea is the ordinary reason someone uploads two sources, and a rule
+# that forbade cross-document lessons outright would make the feature worse than pasting
+# the documents together by hand.
+_SEGMENTS_RULES_MULTI = """The material is several separate documents, split into numbered \
+segments, and each segment is tagged with the document it came from. "segments" lists the \
+numbers of the segments a lesson is drawn from, normally one or two. Cover every document: \
+every segment number must appear in at least one lesson's "segments", and roughly longer \
+segments deserve roughly more lessons. Material near the end of a document is not an appendix: \
+work through each document's segments in order and keep going to that document's last one. \
+Segment numbers run continuously across the documents but the documents do not: two \
+consecutive numbers with different document tags are unrelated text, not continuing prose, and \
+no lesson should read across that seam as though it were. A lesson may draw on more than one \
+document where they genuinely cover the same idea, and should not otherwise. """
 
-def outline_system(chunk_count: int) -> str:
+
+def outline_system(chunk_count: int, source_count: int = 1) -> str:
     """The outline instructions, asking for segment routing only where it is used.
 
     Routing earns its keep on a long document: it makes coverage structural rather
@@ -41,11 +69,31 @@ def outline_system(chunk_count: int) -> str:
     answerability from 43% to 12%, because a handful of dense lessons range further
     from the material any single question is drawn from. So the instruction now
     appears exactly where lesson_segments will act on it.
+
+    MULTI-SOURCE MAKES ROUTING THE NORMAL CASE RATHER THAN THE EXCEPTION, and that is
+    worth saying out loud because it is not a decision anyone took. One eval source
+    chunks to 2, which is under SEGMENT_ROUTING_MIN_CHUNKS, so a good share of
+    single-source runs today are unrouted. Two documents almost always clear the
+    threshold between them. So adding a second source turns routing on, and the
+    paragraph above is the record of what happened last time routing met material it
+    did not suit.
+
+    `source_count` KEEPS ITS DEFAULT, unlike some required arguments elsewhere in this
+    codebase, and the difference is worth naming. Every existing caller is genuinely
+    single-source, so 1 is the truth for them rather than a guess that papers over a
+    missing decision, and the default is what makes this change provably inert for
+    them: see test_the_single_source_outline_prompt_is_unchanged.
     """
     routed = chunk_count >= SEGMENT_ROUTING_MIN_CHUNKS
+    if not routed:
+        rules = ""
+    elif source_count > 1:
+        rules = _SEGMENTS_RULES_MULTI
+    else:
+        rules = _SEGMENTS_RULES
     return _OUTLINE_BASE % {
         "segments_field": _SEGMENTS_FIELD if routed else "",
-        "segments_rules": _SEGMENTS_RULES if routed else "",
+        "segments_rules": rules,
     }
 
 
@@ -190,22 +238,122 @@ def generate_json(
     return parse_json_response(meter.generate(stage, system, retry_prompt, max_tokens))
 
 
-def label_segments(chunks: list[str], indexes: list[int] | None = None) -> str:
-    """Source material with each segment numbered, so the outline can refer to them."""
+# What a forged segment label is rewritten to, in the shape untrusted.NEUTRALIZED uses.
+NEUTRALIZED_LABEL = "[segment marker]"
+
+# A line that could pass for one of the labels label_segments writes.
+#
+# WHY THIS IS NOT untrusted.as_data. That function neutralizes ANGLE-BRACKET FENCES and
+# a three-dash separator, because those are the shapes re-teaching and the tutor reserve.
+# A segment label is a third shape and matches neither pattern, so as_data over this text
+# would return it unchanged while looking like protection had been applied. This lives
+# beside it rather than inside it for the reason untrusted's own docstring gives for
+# per-caller markers: generalizing one pattern over every shape any caller uses starts
+# neutralizing text that caller never writes.
+#
+# WHAT IT IS FOR is different from what as_data is for, which is why it is worth its own
+# few lines. A forged fence tries to make the model follow instructions. A forged segment
+# label tries to make the ROUTER put real material in the wrong lesson: source B writing
+# "[segment 0]" claims material the outline believes came from source A. With one
+# document that is a curiosity. With five it is one document reaching into another.
+#
+# WHAT IT DOES NOT CATCH, and this is the boundary as designed rather than as hoped.
+# Only plain leading whitespace is allowed in front of the label. A markdown list marker,
+# a quote marker, or an invisible code point in front of it defeats this, and tutor.py
+# carries a 13-range enumeration of exactly those code points for the same class of
+# attack. That enumeration is NOT copied here: it belongs in one place, and the place is
+# untrusted.py, which is a lift neither this branch nor this feature should be doing. See
+# the note to the lead. What is left is the accidental and the casual case, which is what
+# a document containing the literal text "[segment 3]" actually is.
+_SEGMENT_LABEL_FORGERY = re.compile(
+    r"^[ \t]*\[\s*(?:segment\b[^\]\n]*|document\s*:[^\]\n]*)\]",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+
+def defuse_segment_labels(text: str) -> str:
+    """Source text with anything that could pass for a segment label taken away.
+
+    The surrounding prose survives, exactly as untrusted.as_data leaves hostile text
+    readable: the material is still what the course has to be written from, and a
+    document that happens to discuss segments in square brackets should still teach.
+    """
+    return _SEGMENT_LABEL_FORGERY.sub(NEUTRALIZED_LABEL, text or "")
+
+
+def label_segments(
+    chunks: list[str],
+    indexes: list[int] | None = None,
+    owners: list[str] | None = None,
+) -> str:
+    """Source material with each segment numbered, so the outline can refer to them.
+
+    `owners` is a list parallel to `chunks` naming the document each chunk came from.
+    When it is absent, or names only one distinct document, the output is byte for byte
+    what this function produced before multi-source existed, apart from any forged label
+    the source text was carrying. Single-source generation is therefore untouched by
+    this feature, which is the property that makes the eval gate a question about
+    multi-source material rather than a question about whether anything regressed.
+    """
     picked = range(len(chunks)) if indexes is None else indexes
-    return "\n\n".join(f"[segment {i}]\n{chunks[i]}" for i in picked)
+    tagged = owners is not None and len(set(owners)) > 1
+    parts = []
+    for i in picked:
+        label = f"[segment {i}]"
+        if tagged:
+            # The tag goes on the label line rather than into the text, so the seam
+            # between two documents is exactly as visible as the numbering is.
+            label = f"{label} [document: {defuse_segment_labels(owners[i])}]"
+        parts.append(f"{label}\n{defuse_segment_labels(chunks[i])}")
+    return "\n\n".join(parts)
 
 
-def generate_outline(meter: Meter, chunks: list[str]) -> dict:
+def chunk_sources(documents: list[tuple[str, str]]) -> tuple[list[str], list[str]]:
+    """Several documents into one corpus, remembering which document each chunk is from.
+
+    Returns (chunks, owners), two parallel lists, which is the pair label_segments and
+    generate_outline both take. Chunking each document separately rather than
+    concatenating first is the whole point: a chunk that straddled two documents would
+    have no single owner to tag it with, and the seam would be inside a segment where
+    nothing can point at it.
+    """
+    from app import ingest
+
+    chunks: list[str] = []
+    owners: list[str] = []
+    for label, text in documents:
+        for chunk in ingest.chunk_text(text):
+            chunks.append(chunk)
+            owners.append(label)
+    return chunks, owners
+
+
+def generate_outline(meter: Meter, chunks: list[str], owners: list[str] | None = None) -> dict:
+    """The outline call. `owners` names the document each chunk came from, if several.
+
+    The unrouted branch does NOT defuse forged labels, and that is not an oversight: it
+    writes no labels, so there is nothing for the source to forge. Neutralizing there
+    would edit source text to guard a structure the prompt never contains.
+    """
     routed = len(chunks) >= SEGMENT_ROUTING_MIN_CHUNKS
+    source_count = len(set(owners)) if owners else 1
     if routed:
-        material = label_segments(chunks)
-        prompt = f"The source material has {len(chunks)} segments.\n\nSource material:\n\n{material}"
+        material = label_segments(chunks, owners=owners)
+        if source_count > 1:
+            preamble = (
+                f"The source material is {source_count} separate documents, "
+                f"split into {len(chunks)} segments in total."
+            )
+        else:
+            preamble = f"The source material has {len(chunks)} segments."
+        prompt = f"{preamble}\n\nSource material:\n\n{material}"
     else:
         # No segment numbering either: labels the model is told nothing about are
         # noise in the middle of the text it is meant to be reading.
         prompt = "Source material:\n\n" + "\n\n".join(chunks)
-    outline = generate_json(meter, OUTLINE_STAGE, outline_system(len(chunks)), prompt)
+    outline = generate_json(
+        meter, OUTLINE_STAGE, outline_system(len(chunks), source_count), prompt
+    )
     if not outline.get("modules"):
         raise ValueError("Outline has no modules")
     return outline
@@ -229,6 +377,40 @@ def lesson_segments(stub: dict, chunk_count: int) -> list[int]:
         if 0 <= index < chunk_count:
             picked.add(index)
     return sorted(picked) or list(range(chunk_count))
+
+
+def segments_are_fallback(stub: dict, chunk_count: int) -> bool:
+    """Did this lesson stub give lesson_segments nothing it could use?
+
+    THE SAME DECISION lesson_segments takes, asked as a question instead of answered
+    with a list, because the list cannot be read backwards. On a 4-chunk corpus a stub
+    that said [0,1,2,3] and a stub that said nothing at all both produce [0,1,2,3], and
+    the difference between them is the difference between a routed lesson and one that
+    is about to re-send the whole corpus.
+
+    THE COST THIS MEASURES. lesson_segments falls back to every chunk, so a fallback
+    lesson's prompt carries the entire corpus rather than its one or two segments. That
+    multiplier scales with how many documents were uploaded rather than with how long
+    the lesson is, which is why it is worth counting rather than estimating: a provider
+    that cannot follow the "segments" field at all falls back on EVERY lesson, and the
+    bill for a five-document course is then the whole five documents times every lesson.
+
+    Kept next to lesson_segments and deliberately not folded into it. Returning a tuple
+    would change a function three call sites already use, to carry a diagnostic none of
+    them wants.
+    """
+    if chunk_count < SEGMENT_ROUTING_MIN_CHUNKS:
+        # Unrouted material is not a fallback. Nothing was asked for and nothing was
+        # ignored: the whole corpus is the intended answer below the threshold.
+        return False
+    for raw in stub.get("segments") or []:
+        try:
+            index = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= index < chunk_count:
+            return False
+    return True
 
 
 def _clean_concepts(raw: object) -> list[str]:
@@ -298,7 +480,7 @@ def generate_lesson(
     return lesson
 
 
-def generate_course(meter: Meter, chunks: list[str]) -> dict:
+def generate_course(meter: Meter, chunks: list[str], owners: list[str] | None = None) -> dict:
     """Full pipeline. Returns {title, description, modules: [{title, lessons: [...]}]}
     where each lesson has title, content, concepts, quiz, and the source segments it
     was written from.
@@ -306,19 +488,33 @@ def generate_course(meter: Meter, chunks: list[str]) -> dict:
     A lesson that will not parse even after its retry is dropped and the rest of the
     course is kept: one bad reply out of twelve should cost one lesson, not the whole
     run and everything already spent on it.
+
+    COURSE-FORMAT ADDITION, called out because course shape is a compatibility promise:
+    a successful course now also carries a top-level "segment_routing" dict. It is
+    additive and optional, in the same position as "dropped_lessons", so no existing
+    reader breaks. It exists because the fallback in lesson_segments is invisible in the
+    output it produces: a lesson that fell back and a lesson deliberately routed to every
+    segment both end up with the same "segments" list, and only the decision itself can
+    tell them apart. That decision is the cost of this feature, so it is recorded where
+    it is taken rather than guessed at afterwards.
     """
-    outline = generate_outline(meter, chunks)
+    outline = generate_outline(meter, chunks, owners)
     course = {
         "title": outline.get("title", "Untitled course"),
         "description": outline.get("description", ""),
         "modules": [],
     }
     failures: list[dict] = []
+    planned = 0
+    fell_back = 0
     for module in outline["modules"]:
         built = {"title": module.get("title", "Module"), "lessons": []}
         for lesson_stub in module.get("lessons", []):
             title = lesson_stub.get("title", "Lesson")
             segments = lesson_segments(lesson_stub, len(chunks))
+            planned += 1
+            if segments_are_fallback(lesson_stub, len(chunks)):
+                fell_back += 1
             try:
                 authored = generate_lesson(
                     meter, title, lesson_stub.get("summary", ""), chunks, segments
@@ -335,4 +531,11 @@ def generate_course(meter: Meter, chunks: list[str]) -> dict:
         raise ValueError(f"No lesson could be generated ({len(failures)} failed)")
     if failures:
         course["dropped_lessons"] = failures
+    course["segment_routing"] = {
+        "routed": len(chunks) >= SEGMENT_ROUTING_MIN_CHUNKS,
+        "chunks": len(chunks),
+        "sources": len(set(owners)) if owners else 1,
+        "lessons_planned": planned,
+        "lessons_fell_back": fell_back,
+    }
     return course
