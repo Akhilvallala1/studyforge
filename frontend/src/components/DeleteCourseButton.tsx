@@ -145,6 +145,7 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
 
   if (!ctx) throw new Error("DeleteCourseButton must be rendered inside CourseDeletionProvider");
   const { onDeleted, refreshing } = ctx;
@@ -166,11 +167,38 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
     }
   }
 
-  // Move to the confirming button once the panel is open, so a keyboard learner is not
-  // left on a control that has just changed meaning underneath them.
+  /**
+   * Place focus once the panel has settled into one of its two shapes.
+   *
+   * OPENING THE PANEL UNMOUNTS THE TRIGGER, so from the moment of the press until this
+   * runs there is nothing focused at all. Both outcomes therefore have to place focus,
+   * and the error branch used to be the one that did not: the request failed, the alert
+   * appeared, and focus stayed on the body. It was recoverable, since one Tab reaches
+   * Cancel, but it was the only path on this feature that left the learner nowhere, and
+   * it was the easy one.
+   *
+   * AN ERROR GOES TO CANCEL RATHER THAN TO THE CONFIRMING BUTTON, and not merely because
+   * it is the likeliest next action. This panel exists to state what a delete would
+   * destroy, so a failed preview is precisely the case where that has NOT been said.
+   * Making the destructive control the default target at the moment we know least about
+   * its consequences is the wrong way round. Cancel is the safe default, and re-opening
+   * retries the preview.
+   *
+   * GUARDED ON THE BODY like every other restore in this codebase, which closes a second
+   * gap in the same breath. Without the guard this steals focus twice over: from a
+   * learner who tabbed away while the preview was loading, and from one whose DELETE
+   * failed, because that sets `error` too while their focus is still on the button they
+   * just pressed. The guard tells "nothing has focus because the trigger vanished" apart
+   * from "the learner is somewhere on purpose", without this effect needing to know which
+   * request failed.
+   */
   useEffect(() => {
-    if (open && preview) confirmRef.current?.focus();
-  }, [open, preview]);
+    if (!open) return;
+    // Still loading: neither shape has arrived, so there is nothing to place focus on yet.
+    if (!preview && !error) return;
+    if (document.activeElement !== document.body) return;
+    (error ? cancelRef : confirmRef).current?.focus();
+  }, [open, preview, error]);
 
   async function confirmDelete() {
     // The re-entry guard, which is why the confirming button below is NOT disabled while
@@ -233,6 +261,7 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
       <div className="mt-3.5 flex flex-wrap items-center gap-3">
         <button
           type="button"
+          ref={cancelRef}
           onClick={() => {
             setOpen(false);
             setPreview(null);
@@ -248,7 +277,16 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
           onClick={() => void confirmDelete()}
           className="rounded-lg bg-red-700 px-3.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-800 dark:bg-red-800 dark:hover:bg-red-700"
         >
-          {busy && preview ? "Deleting…" : "Delete permanently"}
+          {/*
+            A WAITING LABEL RATHER THAN A DISABLE, which keeps both properties. Pressing
+            this while the preview loads is already refused by the `pending` check in
+            confirmDelete, so nothing was broken, but a live-looking button that does
+            nothing reads as a dropped press. Saying so costs nothing and avoids putting
+            the control into and out of the tab order mid-interaction, which a real
+            `disabled` would do, and avoids the blur this component deliberately does not
+            risk on its confirming control.
+          */}
+          {!preview && !error ? "Checking…" : busy ? "Deleting…" : "Delete permanently"}
         </button>
       </div>
     </div>

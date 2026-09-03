@@ -40,6 +40,14 @@
  *     is what makes that test worth its own case rather than a variant of the first
  *   - never announce (DeleteCourseButton)        -> its live-region test fails
  *   - always render the shared-concept clause    -> the omit-when-zero test fails
+ *   - restore the panel effect to its pre-fix
+ *     form, `if (open && preview) focus confirm` -> the preview-failure test and the
+ *     tabbed-away-while-loading test fail, and NOT the failed-delete one, because that
+ *     form does not depend on `error` at all and so never re-runs to steal anything
+ *   - drop the body guard from the panel effect  -> both of the panel's decline tests
+ *     fail, the tabbed-away one and the failed-delete one
+ *   - send an error to the confirming button
+ *     instead of Cancel                          -> the preview-failure test fails
  *
  * One of those exposed a COUPLING worth recording, since the fix is the reusable part:
  * the delete decline test first synchronised on the live region, so dropping the
@@ -324,6 +332,12 @@ describe("DaysOffControl focus restoration", () => {
  * the list these tests render. The blur below stands in for that unmount. It means these
  * tests pin the RESPONSE to focus being nowhere, never its arrival, and the browser pass
  * remains the only coverage of the trigger.
+ *
+ * THE PANEL'S OWN FOCUS IS A SECOND, SEPARATE PLACEMENT from the post-delete one, and
+ * both are asserted here. Opening the panel unmounts the trigger, so the body-focus state
+ * these tests rely on is REAL on that path rather than established: React removes the
+ * pressed button, and jsdom drops focus to the body when it does. That is why the
+ * preview-failure test needs no blur of its own, while the post-delete tests still do.
  */
 describe("DeleteCourseButton focus restoration", () => {
   const preview: CourseDeletion = {
@@ -441,6 +455,66 @@ describe("DeleteCourseButton focus restoration", () => {
         "the row announcing the deletion is gone by the time it would speak, so the region lives above the list",
       ).toHaveTextContent("Organic Chemistry deleted."),
     );
+  });
+
+  test("sends focus to Cancel when the preview fails", async () => {
+    vi.mocked(getDeletionPreview).mockRejectedValue(new ApiError(503, "Could not reach the server."));
+    render(
+      <CourseDeletionProvider>
+        <a id="new-course" href="#top">
+          New course
+        </a>
+        <DeleteCourseButton courseId={1} title="Organic Chemistry" />
+      </CourseDeletionProvider>,
+    );
+    // Pressing Delete unmounts the trigger, so nothing holds focus while the preview runs.
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(
+      screen.getByRole("button", { name: "Cancel" }),
+      "a failed preview is the one case where the panel never said what would be destroyed, so the safe control takes focus rather than the destructive one",
+    ).toHaveFocus();
+  });
+
+  test("declines to take focus when the learner tabbed away while the preview loaded", async () => {
+    const preview_ = deferred<CourseDeletion>();
+    vi.mocked(getDeletionPreview).mockReturnValue(preview_.promise);
+    render(
+      <CourseDeletionProvider>
+        <a id="new-course" href="#top">
+          New course
+        </a>
+        <DeleteCourseButton courseId={1} title="Organic Chemistry" />
+        <input aria-label="Search" />
+      </CourseDeletionProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const search = screen.getByLabelText("Search");
+    act(() => search.focus());
+
+    await act(async () => preview_.resolve(preview));
+
+    expect(
+      search,
+      "the panel arriving is not a reason to haul back a learner who moved on while it loaded",
+    ).toHaveFocus();
+  });
+
+  test("declines to take focus when the delete itself fails", async () => {
+    const { confirm, removal } = await renderList();
+    fireEvent.click(confirm);
+    // The confirming button is never disabled, so it still holds focus here. A failed
+    // delete sets the same `error` the preview failure does, and must not relocate them.
+    act(() => confirm.focus());
+
+    await act(async () => removal.reject(new ApiError(503, "Could not reach the server.")));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+    expect(
+      confirm,
+      "the learner is standing on the button they pressed; an error beneath it is not a reason to move them",
+    ).toHaveFocus();
   });
 
   test("omits the shared-concept clause rather than saying nought more", async () => {
