@@ -33,8 +33,22 @@
  *     fails, via the reseed path that re-runs the effect without arming an intent
  *   - drop the focusAtSend disjunct (ConceptTutor) -> the keyboard-parity test fails,
  *     reintroducing the Ctrl+Enter bug ff876af fixed
+ *   - drop the guard (DeleteCourseButton)        -> its decline test fails
+ *   - drop the focus call (DeleteCourseButton)   -> both of its restore tests fail
+ *   - drop the empty-state fallback in the id
+ *     lookup (DeleteCourseButton)                -> only the empty-list test fails, which
+ *     is what makes that test worth its own case rather than a variant of the first
+ *   - never announce (DeleteCourseButton)        -> its live-region test fails
+ *   - always render the shared-concept clause    -> the omit-when-zero test fails
  *
- * Two clear-ordering mutants are KNOWN SURVIVORS, and honestly so:
+ * One of those exposed a COUPLING worth recording, since the fix is the reusable part:
+ * the delete decline test first synchronised on the live region, so dropping the
+ * announcement turned it red for a reason that had nothing to do with focus. It now
+ * relies on the act flush instead, and its ability to fail rests on the guard mutation
+ * rather than on what it waits for. A test that waits on a neighbouring feature reports
+ * that feature's bugs under its own name.
+ *
+ * Three clear-ordering mutants are KNOWN SURVIVORS, and honestly so:
  *   - ConceptTutor: its guard is a statement, not an early return, so the clear runs
  *     unconditionally wherever it sits and moving it changes nothing. The invariant
  *     there is non-consumption, which the stale-intent test pins.
@@ -43,6 +57,12 @@
  *     clear-after-guard is behaviourally equivalent today. Killing it would mean
  *     reading component internals. The ordering stays a convention there until the
  *     component grows an intent-free effect path like DeadlineForm's reseed.
+ *   - DeleteCourseButton: the same shape for a simpler reason. Its effect depends on
+ *     `refreshing` alone, and the only thing that toggles it is onDeleted, which arms
+ *     the intent on its way past. So there is no path that re-runs the effect with a
+ *     stale intent still set, and clear-after-guard cannot be observed. The ordering is
+ *     kept because it stops being equivalent the moment anything else drives that
+ *     effect, which is exactly how DeadlineForm's reseed made it observable there.
  */
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -51,15 +71,18 @@ import { describe, expect, test, vi } from "vitest";
 import { ConceptTutor } from "@/components/ConceptTutor";
 import { DaysOffControl } from "@/components/DaysOffControl";
 import { DeadlineForm } from "@/components/DeadlineForm";
+import { CourseDeletionProvider, DeleteCourseButton } from "@/components/DeleteCourseButton";
 import type { TutorOutcome } from "@/lib/api";
 import {
   ApiError,
+  deleteCourse,
+  getDeletionPreview,
   getTutorConversation,
   removeDayOff,
   sendTutorMessage,
   setCourseDeadline,
 } from "@/lib/api";
-import type { CoursePlan, DayOffRemoval } from "@/lib/types";
+import type { CourseDeletion, CoursePlan, DayOffRemoval } from "@/lib/types";
 
 import { conversation, deferred, plan, tutorRow, turnOutcome } from "./fixtures";
 
@@ -71,6 +94,8 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   clearCourseDeadline: vi.fn(),
   addDayOff: vi.fn(),
   removeDayOff: vi.fn(),
+  getDeletionPreview: vi.fn(),
+  deleteCourse: vi.fn(),
 }));
 
 // Both forms refresh the route after a save; the refresh is a no-op here because the
@@ -279,5 +304,152 @@ describe("DaysOffControl focus restoration", () => {
       note,
       "a learner who moved into the note field mid-request keeps their place; the date field must not steal it",
     ).toHaveFocus();
+  });
+});
+
+/**
+ * Deleting a course, where the control that was pressed is destroyed by its own success.
+ *
+ * The difference from the three components above: those keep a surviving sibling to
+ * return to, and this one does not. The row unmounts, so the restore is owned by the
+ * provider above the list, and its target is resolved by id at the moment it is needed
+ * because WHICH target exists is exactly what the deletion changes. Deleting the last
+ * course swaps the header's "New course" for the empty state's "Create your first
+ * course", so a target captured beforehand would be the one element guaranteed to be gone.
+ *
+ * THE BODY-FOCUS PREMISE IS ESTABLISHED HERE TOO, and for a sharper reason than
+ * elsewhere in this file. The confirming button is deliberately never disabled, so
+ * nothing in jsdom blurs it: in a browser it is the row UNMOUNTING that drops focus to
+ * the body, and jsdom will not unmount it here because the mocked refresh cannot change
+ * the list these tests render. The blur below stands in for that unmount. It means these
+ * tests pin the RESPONSE to focus being nowhere, never its arrival, and the browser pass
+ * remains the only coverage of the trigger.
+ */
+describe("DeleteCourseButton focus restoration", () => {
+  const preview: CourseDeletion = {
+    course_id: 1,
+    title: "Organic Chemistry",
+    lessons: 12,
+    lessons_completed: 8,
+    quiz_items: 36,
+    attempts: 47,
+    concepts_total: 12,
+    concepts_retired: 9,
+    concepts_kept: 3,
+    spend_usd: 0.42,
+  };
+
+  async function renderList(options: { empty?: boolean; kept?: number } = {}) {
+    vi.mocked(getDeletionPreview).mockResolvedValue({
+      ...preview,
+      concepts_kept: options.kept ?? preview.concepts_kept,
+    });
+    render(
+      <CourseDeletionProvider>
+        {/*
+          Only one of these ever exists on the real page. Each test renders the one whose
+          branch it is asserting, which is what makes the id lookup meaningful rather
+          than a lucky match against whichever element happened to be first.
+        */}
+        {/*
+          Plain anchors with a placeholder href, not next/link. What the restore needs
+          from these is an id and focusability; routing is irrelevant here and a real
+          page path would make the Next lint rule ask for a Link, which would drag the
+          router into a test about focus.
+        */}
+        {options.empty ? (
+          <a id="create-first-course" href="#top">
+            Create your first course
+          </a>
+        ) : (
+          <a id="new-course" href="#top">
+            New course
+          </a>
+        )}
+        <DeleteCourseButton courseId={1} title="Organic Chemistry" />
+        <input aria-label="Search" />
+      </CourseDeletionProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const confirm = await screen.findByRole("button", { name: "Delete permanently" });
+    const removal = deferred<CourseDeletion>();
+    vi.mocked(deleteCourse).mockReturnValue(removal.promise);
+    return { confirm, removal };
+  }
+
+  test("sends focus to New course after a delete that left focus nowhere", async () => {
+    const { confirm, removal } = await renderList();
+    fireEvent.click(confirm);
+    // Stands in for the row unmounting, which is what drops focus in a browser.
+    act(() => confirm.blur());
+
+    await act(async () => removal.resolve(preview));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("link", { name: "New course" }),
+        "the deleted row is gone once the refresh lands, so the header control is the nearest thing the learner would act on next",
+      ).toHaveFocus(),
+    );
+  });
+
+  test("sends focus to Create your first course when the list empties", async () => {
+    const { confirm, removal } = await renderList({ empty: true });
+    fireEvent.click(confirm);
+    act(() => confirm.blur());
+
+    await act(async () => removal.resolve(preview));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("link", { name: "Create your first course" }),
+        "deleting the last course removes the New course control entirely, so the restore has to find the empty state's link instead",
+      ).toHaveFocus(),
+    );
+  });
+
+  test("declines to move focus when the learner moved on mid-request", async () => {
+    const { confirm, removal } = await renderList();
+    const search = screen.getByLabelText("Search");
+    fireEvent.click(confirm);
+    // The learner started typing in the search box while the delete was in flight.
+    act(() => search.focus());
+
+    // Deliberately NOT synchronised on the live region: waiting for the announcement
+    // would make this test fail whenever the announcement broke, which is a different
+    // concern with its own test. Awaiting the act flushes the transition and the effect,
+    // which is the only thing this assertion needs to have happened. That the test can
+    // still fail is established by mutation, not by its wait: removing the guard turns
+    // it red.
+    await act(async () => removal.resolve(preview));
+
+    expect(
+      search,
+      "a learner who moved to the search box mid-request keeps their place; the header link must not steal it",
+    ).toHaveFocus();
+  });
+
+  test("names the deleted course in the live region", async () => {
+    const { confirm, removal } = await renderList();
+    fireEvent.click(confirm);
+
+    await act(async () => removal.resolve(preview));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("status"),
+        "the row announcing the deletion is gone by the time it would speak, so the region lives above the list",
+      ).toHaveTextContent("Organic Chemistry deleted."),
+    );
+  });
+
+  test("omits the shared-concept clause rather than saying nought more", async () => {
+    await renderList({ kept: 0 });
+
+    expect(screen.getByText(/9 concepts stop being reviewed/)).toBeInTheDocument();
+    expect(
+      screen.queryByText(/0 more/),
+      "a learner with no concepts taught elsewhere should not be told about a category that is empty for them",
+    ).not.toBeInTheDocument();
   });
 });

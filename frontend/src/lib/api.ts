@@ -4,6 +4,7 @@ import type {
   AnswerResult,
   CompleteResult,
   CourseConcepts,
+  CourseDeletion,
   CourseDetail,
   CoursePlan,
   CourseSummary,
@@ -145,6 +146,39 @@ function putJson<T>(path: string, body: unknown): Promise<T> {
 
 export function listCourses(): Promise<CourseSummary[]> {
   return get("/courses");
+}
+
+/**
+ * What deleting this course would destroy, without destroying it. Costs nothing.
+ *
+ * Fetched when the confirmation OPENS rather than when the list renders. The list page
+ * holds only id, title and description, so these counts are not already in hand, and
+ * asking for every card on every render would be N requests to draw a page on which
+ * usually nothing is deleted.
+ */
+export function getDeletionPreview(id: number): Promise<CourseDeletion> {
+  return get(`/courses/${id}/deletion-preview`);
+}
+
+/**
+ * Delete a course and get back what went with it, in the preview's shape.
+ *
+ * IRREVERSIBLE, and wider than the word "course" suggests: the cascade takes the
+ * modules, the lessons, the quiz items and every answer the learner ever gave in it, and
+ * the server retires review cards for concepts no surviving course teaches. The caller
+ * is expected to have shown those counts first.
+ *
+ * A 404 here carries a BARE STRING detail, "Course not found", not the coded object the
+ * 422s use. `request` already handles both, returning the string as the message and
+ * reading `message` out of an object, so the two parsing branches are one call site's
+ * concern rather than this function's. That asymmetry is pinned by a backend test, so it
+ * is deliberate and not drift.
+ *
+ * Goes through plain `request`. There is no 409 carrying a payload on either endpoint,
+ * so neither needs the bespoke fetch that requestRemediation and sendTutorMessage use.
+ */
+export function deleteCourse(id: number): Promise<CourseDeletion> {
+  return request(`/courses/${id}`, { method: "DELETE" });
 }
 
 export function getCourse(id: number): Promise<CourseDetail> {
