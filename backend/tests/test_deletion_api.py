@@ -1,0 +1,238 @@
+"""The two deletion endpoints, and the contract decisions that are easy to undo by accident.
+
+Four of the assertions here exist to pin choices rather than to catch bugs: the 404 detail
+is a bare string, the success is 200 with a body rather than 204, a second delete is a 404
+rather than a success, and there is no refusal code at all. Each is a decision somebody
+could reasonably make the other way, so each says why.
+"""
+
+from uuid import uuid4
+
+from app import fsrs, models, review
+from app.db import SessionLocal
+
+PAYLOAD_KEYS = {
+    "course_id",
+    "title",
+    "lessons",
+    "lessons_completed",
+    "quiz_items",
+    "attempts",
+    "concepts_total",
+    "concepts_retired",
+    "concepts_kept",
+    "spend_usd",
+}
+
+
+def _key(prefix):
+    return f"{prefix}-{uuid4().hex[:10]}"
+
+
+def _make_course(concepts, title="Course"):
+    session = SessionLocal()
+    try:
+        course = models.Course(title=title, description="")
+        module = models.Module(title="M", position=0)
+        for index, concept in enumerate(concepts):
+            lesson = models.Lesson(
+                title=f"L{index}", position=index, content="# L", concepts=[concept]
+            )
+            lesson.quiz_items.append(
+                models.QuizItem(
+                    question="Q?", kind="short", options=[], answer="a", concept=concept
+                )
+            )
+            module.lessons.append(lesson)
+        course.modules.append(module)
+        session.add(course)
+        session.commit()
+        return course.id
+    finally:
+        session.close()
+
+
+def test_deleting_a_course_answers_200_with_a_body(client):
+    """200 AND A BODY, never 204. api.ts's request() ends in `return res.json()`
+    unconditionally, so a 204 throws in the client on the success path, which is the worst
+    place to put a throw. Both existing DELETE routes already return bodies."""
+    course_id = _make_course([_key("api")], title="Doomed")
+
+    response = client.delete(f"/courses/{course_id}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert set(body) == PAYLOAD_KEYS
+    assert body["course_id"] == course_id
+    assert body["title"] == "Doomed"
+    assert body["lessons"] == 1
+
+
+def test_the_preview_answers_the_same_shape_without_deleting(client):
+    """Same keys, because the learner consents to one and is then shown the other."""
+    course_id = _make_course([_key("api"), _key("api")], title="Preview Me")
+
+    preview = client.get(f"/courses/{course_id}/deletion-preview")
+
+    assert preview.status_code == 200
+    assert set(preview.json()) == PAYLOAD_KEYS
+    assert preview.json()["lessons"] == 2
+    assert client.get(f"/courses/{course_id}").status_code == 200
+
+    # And the two agree, over HTTP and not only in the module.
+    assert client.delete(f"/courses/{course_id}").json() == preview.json()
+
+
+def test_a_missing_course_is_404_with_a_bare_string_detail(client):
+    """A BARE STRING, matching the other course routes, and asserted as a string rather
+    than merely as "not a coded object". A client writes two branches here on purpose:
+    one for the shapeless 404s that mean the thing is not there, one for the coded 422s
+    that mean the request was wrong. Giving this a code would quietly move it between
+    them."""
+    for response in (
+        client.delete("/courses/987654"),
+        client.get("/courses/987654/deletion-preview"),
+    ):
+        assert response.status_code == 404
+        detail = response.json()["detail"]
+        assert isinstance(detail, str)
+        assert detail == "Course not found"
+
+
+def test_deleting_twice_is_a_404_and_not_a_success(client):
+    """NOT IDEMPOTENT, deliberately unlike DELETE /plan/days-off/{day}.
+
+    A day off is set membership, so removing an absent one leaves the learner in exactly
+    the state they asked for and a 200 is honest. A course is an entity: the second call
+    names something that does not exist, and answering 200 would tell a client its delete
+    worked when there was nothing to delete, which hides a bug in the caller rather than
+    the caller's own.
+    """
+    course_id = _make_course([_key("twice")], title="Once")
+
+    assert client.delete(f"/courses/{course_id}").status_code == 200
+    second = client.delete(f"/courses/{course_id}")
+    assert second.status_code == 404
+    assert second.json()["detail"] == "Course not found"
+
+
+def test_the_course_disappears_from_the_list(client):
+    course_id = _make_course([_key("listed")], title="Listed")
+    assert any(row["id"] == course_id for row in client.get("/courses").json())
+
+    client.delete(f"/courses/{course_id}")
+
+    assert not any(row["id"] == course_id for row in client.get("/courses").json())
+    assert client.get(f"/courses/{course_id}").status_code == 404
+
+
+def test_a_shared_concept_still_answers_over_http(client):
+    """The guard, through the endpoint rather than the module, because the endpoint is
+    what the learner actually reaches. concepts_kept is asserted first so this cannot pass
+    with a survivor that does not really name the concept."""
+    shared = _key("httpshared")
+    session = SessionLocal()
+    try:
+        review.record_review(session, shared, shared, fsrs.GOOD)
+        session.commit()
+    finally:
+        session.close()
+
+    doomed = _make_course([shared], title="Doomed")
+    _make_course([shared], title="Survivor")
+
+    body = client.delete(f"/courses/{doomed}").json()
+    assert body["concepts_kept"] == 1
+    assert body["concepts_retired"] == 0
+
+    session = SessionLocal()
+    try:
+        assert (
+            session.query(models.ReviewCard)
+            .filter(models.ReviewCard.concept_key == shared)
+            .count()
+            == 1
+        )
+    finally:
+        session.close()
+
+
+def test_usage_still_answers_and_still_reports_the_deleted_courses_spend(client):
+    """Spend outlives the course, and /usage was already built for it.
+
+    _spend_groups looks the course up to name the row and falls back to the id when the
+    lookup returns nothing, with a comment saying deletion is why. So this is a check that
+    an existing degradation still holds rather than a new one: the row keeps its money,
+    loses its title, and labels itself from the id it still carries.
+    """
+    course_id = _make_course([_key("usage")], title="Costly")
+    session = SessionLocal()
+    try:
+        session.add(
+            models.LlmCall(
+                run_id=uuid4().hex[:16],
+                course_id=course_id,
+                provider="anthropic",
+                model="claude-opus-5",
+                stage="outline",
+                input_tokens=10,
+                output_tokens=5,
+                estimated_cost_usd=0.5,
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    before = client.get("/usage").json()
+    assert before["totals"]["estimated_cost_usd"] >= 0.5
+
+    client.delete(f"/courses/{course_id}")
+
+    after = client.get("/usage")
+    assert after.status_code == 200
+    body = after.json()
+
+    # The money is still in the total.
+    assert body["totals"]["estimated_cost_usd"] == before["totals"]["estimated_cost_usd"]
+
+    orphaned = [row for row in body["per_course"] if row["course_id"] == course_id]
+    assert len(orphaned) == 1
+    row = orphaned[0]
+    assert row["estimated_cost_usd"] == 0.5
+    assert row["title"] is None
+    assert row["label"] == f"Course #{course_id}"
+
+
+def test_deleting_a_course_leaves_the_review_queue_answerable(client):
+    """THE DEFECT THIS FEATURE EXISTS FOR, asserted end to end.
+
+    Before the retirement step, a card whose only quiz items were deleted stayed due
+    forever: Today counted it, the button rendered, and the session served nothing, with
+    no action the learner could take to clear it. The queue and the due count now agree
+    again after a delete.
+    """
+    concept = _key("queue")
+    session = SessionLocal()
+    try:
+        review.record_review(session, concept, concept, fsrs.AGAIN)
+        session.commit()
+    finally:
+        session.close()
+
+    course_id = _make_course([concept], title="Sole Source")
+
+    client.delete(f"/courses/{course_id}")
+
+    queue = client.get("/review/queue").json()
+    assert not any(card["concept_key"] == concept for card in queue["cards"])
+    session = SessionLocal()
+    try:
+        assert (
+            session.query(models.ReviewCard)
+            .filter(models.ReviewCard.concept_key == concept)
+            .count()
+            == 0
+        )
+    finally:
+        session.close()

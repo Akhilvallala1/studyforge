@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app import (
     days,
+    deletion,
     fsrs,
     generation,
     ics,
@@ -439,6 +440,43 @@ def get_course(course_id: int, session: Session = Depends(get_session)):
             for m in row.modules
         ],
     }
+
+
+@app.get("/courses/{course_id}/deletion-preview")
+def preview_course_deletion(course_id: int, session: Session = Depends(get_session)):
+    """What deleting this course would destroy, so the learner can see it first.
+
+    Writes nothing, and is safe to call repeatedly from a confirmation dialog the learner
+    may well abandon. Same payload shape as the delete itself: they consent to this and are
+    then told what happened, and two shapes would let those drift apart.
+
+    There is no refusal here and no coded error. A course is always deletable, so a 409 or
+    a 422 would be a code no client could ever branch on.
+    """
+    course = session.get(models.Course, course_id)
+    if not course:
+        raise HTTPException(404, "Course not found")
+    return deletion.deletion_preview(session, course)
+
+
+@app.delete("/courses/{course_id}")
+def delete_course(course_id: int, session: Session = Depends(get_session)):
+    """Delete a course, everything under it, and the scheduling state it was the last to
+    justify. Returns what was removed.
+
+    200 WITH A BODY, not 204: api.ts's request() ends in `return res.json()`
+    unconditionally, so a 204 throws in the client on the success path.
+
+    NOT IDEMPOTENT. A second call is a 404, deliberately unlike DELETE
+    /plan/days-off/{day}, which succeeds on an unmarked day. A day off is set membership
+    and removing an absent one leaves the learner where they asked to be; a course is an
+    entity, and answering 200 for one that does not exist would tell a client its delete
+    worked when there was nothing to delete.
+    """
+    course = session.get(models.Course, course_id)
+    if not course:
+        raise HTTPException(404, "Course not found")
+    return deletion.delete_course(session, course)
 
 
 @app.get("/lessons/{lesson_id}")
