@@ -1,16 +1,45 @@
-"""Turn source material (PDF bytes, plain text, or a URL) into cleaned text chunks."""
+"""Turn source material (PDF bytes, plain text, or a URL) into cleaned text chunks.
+
+ONE COURSE CAN BE BUILT FROM SEVERAL SOURCES, and `Source` is what one of them is once
+it has been read. The dataclass was written for the eval harness, which deliberately
+ingests through this module so that it measures the text the generator actually receives.
+It lives here now and evals/sources.py imports it: it was already describing this module's
+output, and two spellings of it would have drifted the moment either side gained a field.
+"""
 
 import io
 import ipaddress
 import os
 import re
 import socket
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 import httpx
 from pypdf import PdfReader
 
 MAX_CHUNK_CHARS = 8000
+
+# HOW MANY SOURCES ONE COURSE CAN BE BUILT FROM, and how much text they may amount to.
+# These are not tidiness. Generation is synchronous: the whole ingested text goes into the
+# outline call, and every lesson the outline invents costs another sequential call, so
+# total characters is the one input that bounds both the largest prompt and the number of
+# calls after it. Without a ceiling, five long documents turn one request into a wall-clock
+# time nothing in the stack is prepared to wait for.
+#
+# ON THE NUMBERS, and what is and is not measured. MAX_TOTAL_CHARS is about 19 segments at
+# MAX_CHUNK_CHARS, the same order as the largest single paste anyone makes today, and
+# roughly 37k tokens, which sits comfortably inside Anthropic's window and far outside the
+# 8192-token one Ollama defaults to. That last part is not new: a single large paste
+# already exceeded it, and ollama_provider refuses from Ollama's own reported counts rather
+# than from arithmetic here.
+#
+# WHAT IS NOT BOUNDED, stated because the comment would otherwise claim more than it has:
+# the LESSON COUNT is the model's choice, not a function of these numbers, so wall time is
+# bounded only indirectly. If generation starts timing out below these caps, the lesson
+# count is the thing to look at, not this constant.
+MAX_SOURCES = 5
+MAX_TOTAL_CHARS = 150_000
 
 # Real chains stack up (http to https, apex to www, locale, consent), so 5 was tight
 # enough to refuse legitimate pages. httpx itself defaults to 20.
@@ -178,3 +207,174 @@ def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> list[str]:
     if current:
         chunks.append("\n\n".join(current))
     return chunks
+
+
+# --------------------------------------------------------------------------
+# One course, several sources
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class Source:
+    """One piece of source material, after it has been read into text.
+
+    Lifted from evals/sources.py rather than copied. `key` is a short stable handle the
+    eval harness groups by; the app leaves it empty, because nothing in the request path
+    needs to name a source twice.
+    """
+
+    key: str
+    kind: str  # "url" | "text" | "pdf"
+    ref: str
+    text: str
+
+    def meta(self) -> dict:
+        return {"key": self.key, "kind": self.kind, "ref": self.ref}
+
+
+@dataclass
+class SourceSpec:
+    """One piece of source material BEFORE it has been read: what to fetch, not what was.
+
+    A separate type from Source and deliberately not the same one carrying an empty `text`.
+    The whole point of the pair is that a spec can fail to become a source, and a type that
+    could be either would have to be checked at every use to find out which it was.
+    """
+
+    kind: str
+    ref: str
+    value: str | bytes
+
+
+@dataclass
+class SourceFailure:
+    """One source that could not be read, and why, in the terms the caller reports.
+
+    `error` is a code a client branches on and `message` is a sentence a person reads,
+    matching the refusal shape the rest of this API uses. The message is the SAME copy the
+    single-source path has always returned, so multi-source reporting is that message
+    repeated per source rather than a second vocabulary.
+    """
+
+    kind: str
+    ref: str
+    error: str
+    message: str
+
+    def payload(self) -> dict:
+        return {"kind": self.kind, "ref": self.ref, "error": self.error, "message": self.message}
+
+
+class TooManySources(ValueError):
+    """More sources than MAX_SOURCES. Raised before anything is fetched."""
+
+
+# The per-source failure codes and the copy that goes with them. The copy is duplicated
+# from main.py's constants ON PURPOSE not at all: main.py passes it in, so there is one
+# definition of each sentence and this module holds none of it.
+UNSAFE_URL = "unsafe_url"
+FETCH_FAILED = "fetch_failed"
+PDF_UNREADABLE = "pdf_unreadable"
+NO_USABLE_TEXT = "no_usable_text"
+
+
+def from_url(key: str, url: str) -> Source:
+    return Source(key=key, kind="url", ref=url, text=extract_url(url))
+
+
+def from_text(key: str, label: str, text: str) -> Source:
+    return Source(key=key, kind="text", ref=label, text=clean_text(text))
+
+
+def from_pdf_bytes(key: str, label: str, data: bytes) -> Source:
+    return Source(key=key, kind="pdf", ref=label, text=extract_pdf(data))
+
+
+def load_source(spec: SourceSpec, copy: dict[str, str]) -> Source:
+    """Read one spec, or raise. `copy` maps a failure code to the sentence for it.
+
+    The copy is injected rather than held here because those sentences are user-facing
+    product text that already lives in main.py, and a second copy of a sentence is a second
+    thing to edit. This module knows which failure happened; main.py knows how to say it.
+    """
+    if spec.kind == "text":
+        source = from_text("", spec.ref, spec.value if isinstance(spec.value, str) else "")
+    elif spec.kind == "url":
+        try:
+            source = from_url("", str(spec.value))
+        except UnsafeURLError as exc:
+            # The guard's OWN message, not a generic one. It names the host and says how a
+            # self-hoster turns the check off, which is the whole value of it.
+            raise SourceError(UNSAFE_URL, str(exc)) from exc
+        except Exception as exc:
+            raise SourceError(FETCH_FAILED, copy[FETCH_FAILED]) from exc
+    elif spec.kind == "pdf":
+        try:
+            data = spec.value if isinstance(spec.value, bytes) else str(spec.value).encode()
+            source = from_pdf_bytes("", spec.ref, data)
+        except Exception as exc:
+            raise SourceError(PDF_UNREADABLE, copy[PDF_UNREADABLE]) from exc
+    else:
+        raise ValueError(f"Unknown source kind: {spec.kind!r}")
+
+    if not source.text.strip():
+        # A URL that fetched cleanly and a PDF that parsed cleanly can both yield nothing:
+        # a scanned page, a JavaScript-rendered site, an empty paste. That is a failure of
+        # THIS source rather than of the request, so it is reported like the others.
+        raise SourceError(NO_USABLE_TEXT, copy[NO_USABLE_TEXT])
+    return source
+
+
+class SourceError(Exception):
+    """One source failed. Carries the code and the sentence, nothing else."""
+
+    def __init__(self, error: str, message: str):
+        super().__init__(message)
+        self.error = error
+        self.message = message
+
+
+def load_sources(
+    specs: list[SourceSpec], copy: dict[str, str]
+) -> tuple[list[Source], list[SourceFailure]]:
+    """Read every spec and return BOTH what worked and what did not.
+
+    EVERY OUTCOME, NOT THE FIRST FAILURE, and that is the point of the function. A caller
+    that stopped at the first bad URL would make someone fix five sources one request at a
+    time, learning about the second only after correcting the first. The loop has no early
+    exit for exactly that reason, and the test that matters mixes good and bad and counts
+    both lists.
+
+    The count cap is checked BEFORE the loop, so an over-limit request costs no fetches at
+    all rather than MAX_SOURCES of them. The size cap is not checked here, because the size
+    is not known until the fetching is done; the caller applies MAX_TOTAL_CHARS to what
+    comes back.
+    """
+    if len(specs) > MAX_SOURCES:
+        raise TooManySources(len(specs))
+
+    sources: list[Source] = []
+    failures: list[SourceFailure] = []
+    for spec in specs:
+        try:
+            sources.append(load_source(spec, copy))
+        except SourceError as exc:
+            failures.append(
+                SourceFailure(kind=spec.kind, ref=spec.ref, error=exc.error, message=exc.message)
+            )
+    return sources, failures
+
+
+def total_chars(sources: list[Source]) -> int:
+    return sum(len(source.text) for source in sources)
+
+
+def chunk_sources(sources: list[Source]) -> list[str]:
+    """Every source chunked, in order, with no chunk spanning two sources.
+
+    Chunking per source rather than concatenating first. The texts are unrelated documents,
+    so a chunk straddling the join would be a segment the outline is asked to summarise as
+    one topic when it is two, and provenance (a later task) needs the boundary to survive
+    anyway.
+    """
+    return [chunk for source in sources for chunk in chunk_text(source.text)]
