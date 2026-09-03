@@ -373,6 +373,94 @@ def test_a_text_source_is_named_by_position_when_it_has_no_ref(client, monkeypat
 # --------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("kind", ["foo", "", "URL", "Text", "pdf", "TEXT ", 7, None])
+def test_a_kind_nobody_reads_is_a_parseable_refusal_and_never_a_500(client, monkeypatch, kind):
+    """The gap this feature shipped with, and the two rows that made it urgent.
+
+    `kind` was an unvalidated `str`, so anything outside text/url reached a bare ValueError
+    inside ingestion. load_sources catches SourceError and nothing else, so it escaped as a
+    500: THE ONE REFUSAL ON THIS API WITH NO `detail` AT ALL, on the field every client is
+    being told to migrate to.
+
+    "URL" and "Text" are why it mattered rather than being a curiosity. They are a
+    capitalisation slip by the first client integrating against a new field, which is the
+    single most likely wrong value anyone will send, and they crashed.
+
+    The irony that made the gap plainest: "pdf", the kind the docstring says is NOT
+    supported here, degraded correctly, because PdfReader's failure happened inside a try.
+    The unsupported kind was handled and the mistyped supported one crashed.
+
+    raise_server_exceptions is off because TestClient re-raises by default, which would
+    make a 500 look like an exception in the test rather than the response a real client
+    receives. That default is exactly what hid this.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
+
+    with __import__("fastapi").testclient.TestClient(
+        main.app, raise_server_exceptions=False
+    ) as raw:
+        response = raw.post(
+            "/courses/generate", json={"sources": [{"kind": kind, "value": GOOD_TEXT}]}
+        )
+
+    assert response.status_code == 422, f"kind={kind!r} did not refuse cleanly"
+    detail = response.json()["detail"]
+    assert isinstance(detail, dict), "a 500 carries no detail, which is the whole bug"
+    assert detail["error"] == main.INVALID_REQUEST_ERROR
+    assert "kind" in detail["message"], "the message must name the field that was wrong"
+
+
+def test_the_legal_kinds_are_published_in_the_schema():
+    """A Literal rather than a hand-rolled check, so the values reach /docs for free.
+
+    This is the opposite decision from TutorQuestion.mode, and deliberately. Widening that
+    to Any bought a message naming the legal values, which was worth a hand-rolled check
+    because a learner's own button puts `mode` in flight. Nothing a learner does produces
+    `kind`; it is set once by client code, and what that client needs is the enum in the
+    schema and a refusal it can already parse.
+    """
+    prop = main.SourceInput.model_json_schema()["properties"]["kind"]
+
+    assert prop["enum"] == ["text", "url"]
+    assert prop["type"] == "string"
+
+
+def test_no_source_message_still_names_the_canonical_field():
+    """The content claim the new wording makes, asserted where nothing else asserts it.
+
+    test_error_shape.py compares this message against the constant, which is right for its
+    purpose, since hard-coding prose would fail on every copy edit. The cost is that the
+    change to this string was invisible to the whole suite: a typo, or a named field that
+    does not exist, would have shipped green.
+
+    So this asserts the substantive half and not the wording. The message exists to point a
+    new integrator at the field to use, at the moment they are looking for it, and the old
+    one pointed them at the two this feature deprecates.
+    """
+    assert "sources" in main.NO_SOURCE_MESSAGE
+
+
+def test_an_incomplete_copy_dict_does_not_escape_as_a_crash():
+    """The latent snag, closed rather than documented.
+
+    load_source used to subscript the copy dict directly, so a missing entry raised
+    KeyError INSIDE ingestion. That is not a SourceError, so load_sources would not catch
+    it, and it would leave as another 500 with no detail: the same shapeless failure the
+    unvalidated kind produced, reached a different way.
+
+    Only main.py calls this and its dict is complete, so this is theoretical. It is closed
+    anyway because the cost is one line and the failure mode is the one this branch spent a
+    review round removing.
+    """
+    specs = [ingest.SourceSpec(kind="text", ref="blank", value="   ")]
+
+    sources, failures = ingest.load_sources(specs, {})
+
+    assert sources == []
+    assert failures[0].error == ingest.NO_USABLE_TEXT
+    assert failures[0].message == ingest.FALLBACK_COPY
+
+
 def test_a_deprecated_single_source_keeps_its_original_refusal(client, monkeypatch):
     """The compatibility seam, asserted as the exact old shape rather than as "a 4xx".
 

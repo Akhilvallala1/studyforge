@@ -3,7 +3,7 @@ import os
 import uuid
 from collections import defaultdict
 from datetime import UTC, date, datetime
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
@@ -215,9 +215,24 @@ class SourceInput(BaseModel):
     PDFs are not a kind here. They arrive as an upload on the other endpoint, and mixing a
     PDF alongside a URL in one request needs both endpoints collapsed into one multipart
     route, which is deliberately out of scope.
+
+    `kind` IS A Literal AND NOT A PLAIN str, which is the opposite of what TutorQuestion.mode
+    does and is right for the opposite reason. Widening `mode` to Any bought a specific
+    message that names the legal values and says the field may be omitted, and that was
+    worth a hand-rolled check because a learner's own button puts `mode` in flight. Nothing
+    a learner does produces `kind`: it is set by client code once, so what that client needs
+    is the legal values in the OpenAPI schema and a refusal it can already parse, both of
+    which a Literal gives for free.
+
+    IT WAS A str AND THAT WAS A 500. An unknown kind reached a bare ValueError inside
+    ingestion, which load_sources does not catch, so it escaped as the one refusal on this
+    API with no `detail` at all. "URL" and "Text" are the cases that mattered: a
+    capitalisation slip by the first client integrating against this field, on the field
+    every client is being told to migrate to. The Literal moves that to `invalid_request`
+    from the shared handler, before any fetching, naming the field.
     """
 
-    kind: str
+    kind: Literal["text", "url"]
     value: str
     ref: str | None = None
 
@@ -496,15 +511,26 @@ def _source_failed(failures: list[ingest.SourceFailure]) -> HTTPException:
 def _legacy_refusal(failure: ingest.SourceFailure, stage: str) -> HTTPException:
     """The refusal the single-source endpoints have always returned, unchanged.
 
-    A COMPATIBILITY SEAM WITH AN EXPIRY, not a second design. Requests that use the
-    deprecated `text` or `url` fields, and single-file PDF uploads, keep the exact status
-    and bare-string body they have always had, because every existing client and every
-    existing test was written against them. Anything using `sources`, and any multi-file
-    upload, gets the one shape.
+    A COMPATIBILITY SEAM, and it has TWO HALVES WITH DIFFERENT LIFETIMES. Saying it is
+    "keyed on the spelling, not the count" is true of the JSON body only, and the
+    distinction matters enough to write down rather than leave implied.
 
-    This dies with the aliases in 0.4.0. It is tied to them deliberately: a seam with no
-    end date is a second path, which is the thing GenerateRequest's docstring says this
-    design does not have.
+    THE JSON HALF is keyed purely on spelling: a request using `text` or `url` keeps the
+    bare-string body it always had, and anything using `sources` gets the one shape however
+    many sources it carries. That half DIES WITH THE ALIASES IN 0.4.0, because removing the
+    fields removes the only way to reach it.
+
+    THE PDF HALF IS KEYED ON COUNT, `len(specs) <= 1`, and HAS NO END DATE. There is no
+    spelling signal available: the upload field is deliberately still `file` so that every
+    existing caller keeps working, so a one-file request is indistinguishable from a
+    pre-feature one. That is the same count-keying rejected on the JSON side, accepted here
+    only because the alternative is renaming the field and breaking every caller to buy a
+    cleaner seam.
+
+    SO DO NOT DELETE THIS FUNCTION WITH THE ALIASES. Removing `text` and `url` implies
+    nothing about single-file uploads, and deleting this would silently change that
+    contract too. Retiring the PDF half needs its own decision: either a second field name
+    that means "I understand the new shape", or a major version that accepts the break.
 
     The mapping is exactly what the old code did. An unsafe URL keeps the guard's own
     message and its 400; a fetch failure keeps its 502; a bad PDF and an empty source keep
