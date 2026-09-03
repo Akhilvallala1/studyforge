@@ -844,7 +844,10 @@ def test_the_chunk_count_is_the_one_generation_routes_on(client, monkeypatch):
     )
 
     assert response.status_code == 200, response.text
-    assert f"has {len(per_source)} segments" in seen[0], (
+    # Five distinct documents, so the multi-document preamble is what states the count.
+    # The number is what this pins, not the wording: it has to be the length of what
+    # chunk_sources returned, because that list is what generation routes on.
+    assert f"{len(per_source)} segments in total" in seen[0], (
         "the outline was told a different segment count than chunk_sources produced"
     )
 
