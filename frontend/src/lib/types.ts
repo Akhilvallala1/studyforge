@@ -840,3 +840,30 @@ export interface DayOffRemoval {
   day: string;
   removed: boolean;
 }
+
+/**
+ * What deleting a course destroys, in the same shape whether it is being previewed or
+ * has just happened. The preview endpoint says what WILL go; the delete says what DID.
+ *
+ * THESE NUMBERS ARE THE FEATURE, not decoration on a confirmation. Deleting a course
+ * already cascades through modules, lessons, quiz items and EVERY ANSWER the learner
+ * ever gave in it, and the server additionally retires review cards for concepts no
+ * surviving course teaches. A generic "are you sure" hides all of that; these counts are
+ * the only thing standing between a learner and silently destroying their history with a
+ * course, so the confirmation must render them rather than a fixed sentence.
+ */
+export interface CourseDeletion {
+  course_id: number;
+  title: string;
+  lessons: number;
+  lessons_completed: number;
+  quiz_items: number;
+  attempts: number;
+  concepts_total: number;
+  /** Concepts no surviving course teaches: their review cards and history are removed. */
+  concepts_retired: number;
+  /** Concepts another course also teaches: they keep their cards and their history. */
+  concepts_kept: number;
+  /** Spend attributed to this course. Kept in Usage after the course is gone. */
+  spend_usd: number;
+}
