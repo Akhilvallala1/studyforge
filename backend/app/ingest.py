@@ -21,25 +21,75 @@ from pypdf import PdfReader
 MAX_CHUNK_CHARS = 8000
 
 # HOW MANY SOURCES ONE COURSE CAN BE BUILT FROM, and how much text they may amount to.
-# These are not tidiness. Generation is synchronous: the whole ingested text goes into the
-# outline call, and every lesson the outline invents costs another sequential call, so
-# total characters is the one input that bounds both the largest prompt and the number of
-# calls after it. Without a ceiling, five long documents turn one request into a wall-clock
-# time nothing in the stack is prepared to wait for.
 #
-# ON THE NUMBERS, and what is and is not measured. MAX_TOTAL_CHARS is about 19 segments at
-# MAX_CHUNK_CHARS, the same order as the largest single paste anyone makes today, and
-# roughly 37k tokens, which sits comfortably inside Anthropic's window and far outside the
-# 8192-token one Ollama defaults to. That last part is not new: a single large paste
-# already exceeded it, and ollama_provider refuses from Ollama's own reported counts rather
-# than from arithmetic here.
+# THE QUANTITY THAT ACTUALLY COSTS MONEY IS THE CHUNK COUNT, not either of these directly.
+# Chunks are what generation routes on (generation.SEGMENT_ROUTING_MIN_CHUNKS, currently 3)
+# and what the outline prompt is built from, and lessons accrue on top of that. So the
+# caps are worth reading as a joint bound on chunks rather than as two independent limits.
 #
-# WHAT IS NOT BOUNDED, stated because the comment would otherwise claim more than it has:
-# the LESSON COUNT is the model's choice, not a function of these numbers, so wall time is
-# bounded only indirectly. If generation starts timing out below these caps, the lesson
-# count is the thing to look at, not this constant.
+# NEITHER CAP BOUNDS THE CHUNK COUNT ON ITS OWN, which is the part that is easy to get
+# wrong and was. Measured, with MAX_CHUNK_CHARS at 8,000:
+#
+#   sources  chars each   total    chunks  routed
+#         1       3,000    3,000        1  no
+#         2       3,000    6,000        2  no
+#         3       3,000    9,000        3  YES
+#         5       1,000    5,000        5  YES
+#         1      10,640   10,640        2  no
+#         1      24,000   24,000        3  YES
+#
+# Read the fourth row against the fifth. FIVE THOUSAND CHARACTERS IS ROUTED AND TEN
+# THOUSAND IS NOT, because chunk_sources chunks PER SOURCE, so every source contributes at
+# least one chunk however short it is. Routing is therefore not purely a size effect: three
+# documents of any length at all cross the threshold, while one document of 10,640 does
+# not. A character cap alone leaves the many-small-documents case unbounded, and a source
+# cap alone leaves the one-huge-document case unbounded. Together they bound it, and that
+# is the only reason both exist.
+#
+# WHAT ACTUALLY MOVES THE CHUNK COUNT IS PARAGRAPH LENGTH, not source count, and this was
+# measured only after two people had guessed otherwise. chunk_text packs whole paragraphs
+# greedily and never splits one below MAX_CHUNK_CHARS, so a paragraph just over half the
+# chunk size fits ONE per chunk and wastes the rest. Chunks for 150,000 characters:
+#
+#   paragraph   1 doc  2 docs  3 docs  5 docs
+#         200      20      20      21      20
+#       1,500      20      20      21      20
+#       2,700      28      28      27      30
+#       4,001      37      36      36      35   <- worst packing
+#       5,000      30      30      30      30
+#       7,999      19      20      21      20
+#
+# Source count moves it by about one. Paragraph length nearly DOUBLES it. So a ceiling of
+# the form chars/MAX_CHUNK_CHARS is a LOWER bound and not an upper one, which is the error
+# the constant below used to encode: it read 24 while the real worst case was 37.
+#
+# THE DERIVED CEILING is MAX_TOTAL_CHUNKS, computed from the other two so that raising
+# either cap moves it. The factor of two is the packing slack above: a chunk is guaranteed
+# only to be more than half full, never to be full.
+# test_the_two_caps_together_bound_the_chunk_count is what stops one cap being raised
+# without the other being thought about, and it feeds the WORST-PACKING paragraph length
+# rather than a convenient one, because the earlier version of it used a single unbroken
+# paragraph, which is the BEST case, and passed against a ceiling that was wrong by 13.
+#
+# WHAT THESE NUMBERS ARE NOT. They do not make a run fit a proxy timeout, and a comment
+# claiming they did would be false precision: the LESSON COUNT is the model's choice, not a
+# function of any of this, and nginx's default proxy_read_timeout of 60 seconds is already
+# short for a single-source run today. That is a deployment note, not something a cap can
+# fix. What a cap can do is keep the worst case a known multiple of the ordinary one.
+#
+# WHY MAX_TOTAL_CHARS IS AS HIGH AS IT IS, since the temptation is to tighten it: this cap
+# applies to EVERY request, including the single-source path that has been uncapped since
+# the project started. Anything below roughly this figure would start refusing pastes that
+# work today, which is a regression for existing users dressed up as a safety limit. It is
+# sized to be the first cap those users ever meet, not the tightest defensible number.
 MAX_SOURCES = 5
 MAX_TOTAL_CHARS = 150_000
+# Ceiling on chunks, derived: each source contributes at least one partial chunk, and
+# beyond that chunks accrue at no worse than half of MAX_CHUNK_CHARS, because a paragraph
+# is packed whole and one just over half the limit leaves the rest of its chunk empty.
+# Not enforced separately, because a third cap on the same quantity is a third thing to
+# keep consistent; it exists so the joint bound has a name and a test.
+MAX_TOTAL_CHUNKS = MAX_SOURCES + 2 * -(-MAX_TOTAL_CHARS // MAX_CHUNK_CHARS)
 
 # Real chains stack up (http to https, apex to www, locale, consent), so 5 was tight
 # enough to refuse legitimate pages. httpx itself defaults to 20.
@@ -376,5 +426,12 @@ def chunk_sources(sources: list[Source]) -> list[str]:
     so a chunk straddling the join would be a segment the outline is asked to summarise as
     one topic when it is two, and provenance (a later task) needs the boundary to survive
     anyway.
+
+    THIS IS ALSO THE COUNT GENERATION SEES, and that identity is worth protecting. The list
+    returned here is passed to generation.generate_course unchanged and never re-chunked, so
+    len() of it is exactly the number routing keys off. Anything that measured chunks by
+    concatenating first would be measuring a different quantity: five 1,000-character
+    sources are FIVE chunks here and ONE concatenated, so a concatenating measurement
+    reports an unrouted run for a routed one. The eval harness had precisely that bug.
     """
     return [chunk for source in sources for chunk in chunk_text(source.text)]
