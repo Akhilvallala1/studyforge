@@ -230,14 +230,38 @@ def latency_and_cost(records: list[CallRecord], cost_rows: list[dict]) -> dict:
     }
 
 
-def run_course_eval(name: str, text: str, source_meta: dict, provider=None) -> dict:
+def run_course_eval(
+    name: str,
+    text: str,
+    source_meta: dict,
+    provider=None,
+    documents: list[tuple[str, str]] | None = None,
+    tag_sources: bool = True,
+) -> dict:
     """Generate one course from `text` and measure it. Returns a JSON-safe result dict.
 
     A failed generation still returns a result: the call records up to the failure
     are the most interesting data a failure produces, and losing them to an
     exception would waste money already spent.
+
+    `documents` makes this a MULTI-SOURCE run: (label, text) pairs chunked separately so
+    every chunk knows which document it came from. `text` is still passed and is still
+    what the metrics score against, because grounding asks whether an answer is in the
+    corpus and the corpus is all of it.
+
+    `tag_sources` is the A/B switch, and it is a switch rather than a prompt variant on
+    purpose. Passing owners=None reproduces the pre-feature code path EXACTLY rather than
+    approximately: label_segments and outline_system both branch on whether owners names
+    more than one document, so the untagged arm is byte for byte the prompt that shipped
+    before multi-source existed. A variants.py entry would have been a second copy of
+    that wording, which is the thing that drifts.
     """
-    chunks = ingest.chunk_text(text)
+    if documents is not None:
+        chunks, owners = generation.chunk_sources(documents)
+    else:
+        chunks, owners = ingest.chunk_text(text), None
+    if not tag_sources:
+        owners = None
     run_id = uuid.uuid4().hex
     # Raw responses are kept so a hard parse failure can be diagnosed from the result
     # file instead of from a truncated exception message. Only the failing response is
@@ -246,7 +270,7 @@ def run_course_eval(name: str, text: str, source_meta: dict, provider=None) -> d
     started = time.monotonic()
     outcome = RunOutcome(name=name, ok=False, chunks=chunks)
     try:
-        outcome.course = generation.generate_course(meter, chunks)
+        outcome.course = generation.generate_course(meter, chunks, owners)
         outcome.ok = True
     except Exception as exc:  # noqa: BLE001  (deliberate: see docstring)
         outcome.error = f"{type(exc).__name__}: {exc}"
@@ -265,6 +289,10 @@ def run_course_eval(name: str, text: str, source_meta: dict, provider=None) -> d
             "chars": len(text),
             "chunks": len(chunks),
             "chunk_chars": [len(c) for c in chunks],
+            # Recorded on every run, single-source included, so a bundle says which arm
+            # produced it without anyone having to remember the flags.
+            "documents": [label for label, _ in documents] if documents else None,
+            "source_tags": bool(documents) and tag_sources,
         },
         "wall_clock_s": round(outcome.wall_clock_s, 2),
         "parse_reliability": parse_reliability(meter.records),

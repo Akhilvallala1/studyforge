@@ -23,6 +23,11 @@ SECONDARY = [
     ("grounding.hallucination_candidates", "Hallucination candidates"),
     ("structure.quiz_items", "Quiz items"),
     ("structure.lessons", "Lessons"),
+    # Not a quality measure, which is why it sits here rather than in PRIMARY, but it
+    # is the number that decides whether a multi-source course is affordable at all. A
+    # lesson that falls back re-sends the entire corpus instead of its own segments,
+    # and that multiplier grows with the number of documents uploaded.
+    ("routing.fallback_rate", "Segment fallback rate"),
 ]
 
 
