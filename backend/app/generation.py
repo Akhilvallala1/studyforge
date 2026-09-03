@@ -190,16 +190,45 @@ def generate_json(
     return parse_json_response(meter.generate(stage, system, retry_prompt, max_tokens))
 
 
-def label_segments(chunks: list[str], indexes: list[int] | None = None) -> str:
-    """Source material with each segment numbered, so the outline can refer to them."""
-    picked = range(len(chunks)) if indexes is None else indexes
-    return "\n\n".join(f"[segment {i}]\n{chunks[i]}" for i in picked)
+def label_segments(
+    chunks: list[str], indexes: list[int] | None = None, owners: list[str] | None = None
+) -> str:
+    """Source material with each segment numbered, and named when there is more than one.
+
+    `owners[i]` is the label of the document segment i was cut from, from
+    ingest.chunk_sources. When the material comes from several documents the tag becomes
+    `[segment N] [document: <label>]`, which a measured A/B put 11 points ahead on both
+    answerability and groundedness against the same material untagged.
+
+    THE TAG IS OMITTED FOR A SINGLE DOCUMENT, and that is not an optimisation. A course
+    built from one paste has nothing to disambiguate, and a tag naming the only document
+    there is is noise in the middle of the text the model is meant to be reading, which is
+    the same argument the unrouted branch below makes for omitting segment numbers. It also
+    keeps single-source output byte-identical to what shipped before multi-source existed.
+
+    SANITISING BELONGS HERE, and only half of it is here yet. ingest.clean_ref already
+    flattens a label to one line and turns square brackets into round ones, which closes
+    the breakout demonstrated against this tag. What is still owed is the prompt-boundary
+    scrub in the shape untrusted.as_data provides for tutor.py's fences: this function
+    writes the marker, so this function is the only place that can be sure it caught every
+    spelling of it, including the fullwidth and zero-width lookalikes an ingestion-time
+    translate table does not know about. ai-guided-prompt owns that and is writing it.
+    """
+    picked = list(range(len(chunks))) if indexes is None else indexes
+    named = owners is not None and len(set(owners)) > 1
+    parts = []
+    for i in picked:
+        tag = f"[segment {i}]"
+        if named and i < len(owners):
+            tag = f"{tag} [document: {owners[i]}]"
+        parts.append(f"{tag}\n{chunks[i]}")
+    return "\n\n".join(parts)
 
 
-def generate_outline(meter: Meter, chunks: list[str]) -> dict:
+def generate_outline(meter: Meter, chunks: list[str], owners: list[str] | None = None) -> dict:
     routed = len(chunks) >= SEGMENT_ROUTING_MIN_CHUNKS
     if routed:
-        material = label_segments(chunks)
+        material = label_segments(chunks, owners=owners)
         prompt = f"The source material has {len(chunks)} segments.\n\nSource material:\n\n{material}"
     else:
         # No segment numbering either: labels the model is told nothing about are
@@ -284,12 +313,13 @@ def generate_lesson(
     lesson_summary: str,
     chunks: list[str],
     segments: list[int] | None = None,
+    owners: list[str] | None = None,
 ) -> dict:
     indexes = list(range(len(chunks))) if segments is None else segments
     prompt = (
         f"Lesson title: {lesson_title}\n"
         f"Lesson summary: {lesson_summary}\n\n"
-        f"Source material:\n\n{label_segments(chunks, indexes)}"
+        f"Source material:\n\n{label_segments(chunks, indexes, owners)}"
     )
     lesson = generate_json(meter, LESSON_STAGE, LESSON_SYSTEM, prompt)
     lesson["content"] = lesson.get("content") or ""
@@ -298,7 +328,9 @@ def generate_lesson(
     return lesson
 
 
-def generate_course(meter: Meter, chunks: list[str]) -> dict:
+def generate_course(
+    meter: Meter, chunks: list[str], owners: list[str] | None = None
+) -> dict:
     """Full pipeline. Returns {title, description, modules: [{title, lessons: [...]}]}
     where each lesson has title, content, concepts, quiz, and the source segments it
     was written from.
@@ -306,8 +338,14 @@ def generate_course(meter: Meter, chunks: list[str]) -> dict:
     A lesson that will not parse even after its retry is dropped and the rest of the
     course is kept: one bad reply out of twelve should cost one lesson, not the whole
     run and everything already spent on it.
+
+    `owners` is optional and DEFAULTS TO NONE SO THE SINGLE-SOURCE PATH IS UNCHANGED, but
+    a caller with several documents that omits it does not fail: it silently gets
+    single-source wording on multi-source material, which is the losing arm of a measured
+    A/B. That is why main.py's call site is covered by a test that reds when the argument
+    is dropped, rather than by this docstring.
     """
-    outline = generate_outline(meter, chunks)
+    outline = generate_outline(meter, chunks, owners)
     course = {
         "title": outline.get("title", "Untitled course"),
         "description": outline.get("description", ""),
@@ -321,7 +359,7 @@ def generate_course(meter: Meter, chunks: list[str]) -> dict:
             segments = lesson_segments(lesson_stub, len(chunks))
             try:
                 authored = generate_lesson(
-                    meter, title, lesson_stub.get("summary", ""), chunks, segments
+                    meter, title, lesson_stub.get("summary", ""), chunks, segments, owners
                 )
             except ValueError as exc:
                 logger.error("dropping lesson %r: %s", title, exc)

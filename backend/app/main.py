@@ -454,13 +454,13 @@ def _save_course(session: Session, course: dict) -> models.Course:
     return row
 
 
-def _run_generation(session: Session, chunks: list[str]) -> dict:
+def _run_generation(session: Session, chunks: list[str], owners: list[str]) -> dict:
     """Run the metered generation pipeline, save the course, backfill the run's
     llm_calls rows with the new course id, and return the generate-endpoint response."""
     run_id = uuid.uuid4().hex
     meter = MeteredLLM(get_provider(), run_id)
     try:
-        course = generation.generate_course(meter, chunks)
+        course = generation.generate_course(meter, chunks, owners)
     except CostLimitExceeded as exc:
         raise _cost_limit_exceeded(exc) from exc
     except Exception as exc:
@@ -550,8 +550,8 @@ def _legacy_refusal(failure: ingest.SourceFailure, stage: str) -> HTTPException:
 
 def _ingest_or_refuse(
     specs: list[ingest.SourceSpec], *, legacy: bool, stage: str
-) -> list[str]:
-    """Read every source, refuse the whole request if any failed, and return the chunks.
+) -> tuple[list[str], list[str]]:
+    """Read every source, refuse if any failed, and return its chunks and their labels.
 
     FAIL CLOSED, AND IT COSTS NOTHING TO DO SO. Everything here happens before the first
     token is bought: the fetching and the parsing are done, the caps are applied, and only
@@ -585,6 +585,12 @@ def _ingest_or_refuse(
     return ingest.chunk_sources(sources)
 
 
+def _run_generation_from(session: Session, ingested: tuple[list[str], list[str]]) -> dict:
+    """Unpack what _ingest_or_refuse returns and run the pipeline on both halves."""
+    chunks, owners = ingested
+    return _run_generation(session, chunks, owners)
+
+
 @app.post("/courses/generate")
 def generate_from_text(body: GenerateRequest, session: Session = Depends(get_session)):
     """Generate a course from one or more sources. Synchronous for the MVP -
@@ -596,15 +602,18 @@ def generate_from_text(body: GenerateRequest, session: Session = Depends(get_ses
     specs = [
         ingest.SourceSpec(
             kind=source.kind,
-            ref=source.ref or (source.value if source.kind == "url" else f"source {index + 1}"),
+            # clean_ref FIRST, then the fallback. The other order let a whitespace-only
+            # `ref` through: it is truthy, so it won the `or`, and clean_ref then reduced
+            # it to nothing, producing exactly the blank label the fallback exists to
+            # prevent. Only a caller sending literal whitespace reaches it.
+            ref=ingest.clean_ref(source.ref or "")
+            or (source.value if source.kind == "url" else f"source {index + 1}"),
             value=source.value,
         )
         for index, source in enumerate(body.sources or [])
     ]
-    chunks = _ingest_or_refuse(
-        specs, legacy=not body.used_canonical_field(), stage="url"
-    )
-    return _run_generation(session, chunks)
+    ingested = _ingest_or_refuse(specs, legacy=not body.used_canonical_field(), stage="url")
+    return _run_generation_from(session, ingested)
 
 
 @app.post("/courses/generate/pdf")
@@ -618,12 +627,14 @@ def generate_from_pdf(file: list[UploadFile], session: Session = Depends(get_ses
     """
     specs = [
         ingest.SourceSpec(
-            kind="pdf", ref=upload.filename or f"upload {index + 1}", value=upload.file.read()
+            kind="pdf",
+            ref=ingest.clean_ref(upload.filename or "") or f"upload {index + 1}",
+            value=upload.file.read(),
         )
         for index, upload in enumerate(file)
     ]
-    chunks = _ingest_or_refuse(specs, legacy=len(specs) <= 1, stage="pdf")
-    return _run_generation(session, chunks)
+    ingested = _ingest_or_refuse(specs, legacy=len(specs) <= 1, stage="pdf")
+    return _run_generation_from(session, ingested)
 
 
 @app.get("/courses")

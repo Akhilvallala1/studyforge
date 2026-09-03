@@ -96,6 +96,9 @@ MAX_TOTAL_CHARS = 150_000
 # happen where the marker grammar is known, the way tutor.py scrubs its own fences and
 # register labels through untrusted.as_data rather than trusting its inputs to be tame.
 MAX_REF_CHARS = 200
+# The delimiters of generation's document tag, mapped to their round equivalents. See
+# clean_ref on why translated rather than stripped.
+_DELIMITERS = str.maketrans({"[": "(", "]": ")"})
 # Ceiling on chunks, derived: each source contributes at least one partial chunk, and
 # beyond that chunks accrue at no worse than half of MAX_CHUNK_CHARS, because a paragraph
 # is packed whole and one just over half the limit leaves the rest of its chunk empty.
@@ -376,8 +379,24 @@ def clean_ref(raw: str) -> str:
 
     The ellipsis is inside the budget rather than added to it, matching tutor._hard_cut, so
     a truncated label is visibly truncated rather than looking like a shorter name.
+
+    SQUARE BRACKETS BECOME ROUND ONES, and that one IS a defusing rather than a bound.
+    generation.label_segments writes each label inside `[document: ...]`, so a label
+    containing `]` closes that tag early and renames the document to whatever came before
+    it. That was demonstrated, not theorised: a hostile ref ended a segment tag and left
+    instructions sitting at column zero looking like corpus prose.
+
+    Translated rather than stripped because a stripped bracket is a silently mangled name
+    and an IPv6 URL is a legitimate label full of them: http://[::1]/ reads as
+    http://(::1)/ rather than as http:///. Neither can close the tag.
+
+    THIS IS NOT THE WHOLE DEFENCE AND MUST NOT BE READ AS IT. It handles one grammar's
+    delimiters at the point the label is created. The authoritative scrub belongs where the
+    marker is written, for the reason tutor.py scrubs at the prompt boundary: the module
+    that owns a marker is the only one that can be sure it caught every spelling, including
+    the fullwidth and zero-width lookalikes this translate table does not know about.
     """
-    flat = " ".join((raw or "").split())
+    flat = " ".join((raw or "").split()).translate(_DELIMITERS)
     if len(flat) <= MAX_REF_CHARS:
         return flat
     return flat[: MAX_REF_CHARS - 3].rstrip() + "..."
@@ -465,8 +484,16 @@ def total_chars(sources: list[Source]) -> int:
     return sum(len(source.text) for source in sources)
 
 
-def chunk_sources(sources: list[Source]) -> list[str]:
-    """Every source chunked, in order, with no chunk spanning two sources.
+def chunk_sources(sources: list[Source]) -> tuple[list[str], list[str]]:
+    """Every source chunked, in order, with the label each chunk came from.
+
+    Returns (chunks, owners) where owners[i] is the `ref` of the source chunk i was cut
+    from. THE PAIR IS THE POINT: generation tags each segment with its document, and a
+    measured A/B put tagged multi-source material 11 points ahead on both answerability
+    and groundedness. Returning chunks alone made that mapping unrecoverable downstream,
+    since a flat list of segments has nothing left saying which document each came from.
+    ONE CHUNK BELONGS TO EXACTLY ONE SOURCE, which is what makes the mapping total. See
+    below on why chunking is per source.
 
     Chunking per source rather than concatenating first. The texts are unrelated documents,
     so a chunk straddling the join would be a segment the outline is asked to summarise as
@@ -480,4 +507,10 @@ def chunk_sources(sources: list[Source]) -> list[str]:
     sources are FIVE chunks here and ONE concatenated, so a concatenating measurement
     reports an unrouted run for a routed one. The eval harness had precisely that bug.
     """
-    return [chunk for source in sources for chunk in chunk_text(source.text)]
+    chunks: list[str] = []
+    owners: list[str] = []
+    for source in sources:
+        for chunk in chunk_text(source.text):
+            chunks.append(chunk)
+            owners.append(source.ref)
+    return chunks, owners
