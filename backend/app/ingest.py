@@ -340,6 +340,18 @@ def from_pdf_bytes(key: str, label: str, data: bytes) -> Source:
     return Source(key=key, kind="pdf", ref=label, text=extract_pdf(data))
 
 
+# What a caller is told when the copy dict is missing an entry. Theoretical today, since
+# main.py is the only caller and its dict is complete, and closed anyway: a KeyError raised
+# inside ingestion is not a SourceError, so load_sources would not catch it and it would
+# escape as a 500 with no `detail` at all. That is the same shapeless failure the unvalidated
+# `kind` used to produce, and one line is cheaper than trusting a dict to stay complete.
+FALLBACK_COPY = "That source could not be read."
+
+
+def _copy_for(copy: dict[str, str], code: str) -> str:
+    return copy.get(code) or FALLBACK_COPY
+
+
 def load_source(spec: SourceSpec, copy: dict[str, str]) -> Source:
     """Read one spec, or raise. `copy` maps a failure code to the sentence for it.
 
@@ -357,13 +369,13 @@ def load_source(spec: SourceSpec, copy: dict[str, str]) -> Source:
             # self-hoster turns the check off, which is the whole value of it.
             raise SourceError(UNSAFE_URL, str(exc)) from exc
         except Exception as exc:
-            raise SourceError(FETCH_FAILED, copy[FETCH_FAILED]) from exc
+            raise SourceError(FETCH_FAILED, _copy_for(copy, FETCH_FAILED)) from exc
     elif spec.kind == "pdf":
         try:
             data = spec.value if isinstance(spec.value, bytes) else str(spec.value).encode()
             source = from_pdf_bytes("", spec.ref, data)
         except Exception as exc:
-            raise SourceError(PDF_UNREADABLE, copy[PDF_UNREADABLE]) from exc
+            raise SourceError(PDF_UNREADABLE, _copy_for(copy, PDF_UNREADABLE)) from exc
     else:
         raise ValueError(f"Unknown source kind: {spec.kind!r}")
 
@@ -371,7 +383,7 @@ def load_source(spec: SourceSpec, copy: dict[str, str]) -> Source:
         # A URL that fetched cleanly and a PDF that parsed cleanly can both yield nothing:
         # a scanned page, a JavaScript-rendered site, an empty paste. That is a failure of
         # THIS source rather than of the request, so it is reported like the others.
-        raise SourceError(NO_USABLE_TEXT, copy[NO_USABLE_TEXT])
+        raise SourceError(NO_USABLE_TEXT, _copy_for(copy, NO_USABLE_TEXT))
     return source
 
 
