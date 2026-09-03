@@ -215,6 +215,12 @@ def test_sharing_is_decided_across_quiz_items_as_well_as_lesson_concepts():
 
     Reading only lesson.concepts would retire a card that a surviving course still asks
     questions about, which is the sharing bug with a smaller blast radius.
+
+    The survivor spells the concept DIFFERENTLY on its quiz item, which is what makes this
+    the only test where the quiz path's normalization stands on its own. Everywhere else
+    the same string goes into both sources, so breaking normalization on one leaves the
+    other to find the match, and a mutation that drops it from the quiz path survives. It
+    did, until this spelling changed.
     """
     shared = _key("viaquiz")
     card_id = _schedule(shared)
@@ -230,7 +236,11 @@ def test_sharing_is_decided_across_quiz_items_as_well_as_lesson_concepts():
         lesson = models.Lesson(title="L", position=0, content="# L", concepts=["something else"])
         lesson.quiz_items.append(
             models.QuizItem(
-                question="Q?", kind="short", options=[], answer="a", concept=shared
+                question="Q?",
+                kind="short",
+                options=[],
+                answer="a",
+                concept=f"  {shared.upper()}. ",
             )
         )
         module.lessons.append(lesson)
