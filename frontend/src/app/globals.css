@@ -288,14 +288,18 @@
  * The one focus convention for the whole app. Unscoped on purpose: it must also reach
  * the programmatic focus targets elsewhere in the app (elements with tabIndex={-1} that
  * receive .focus() after a mutation lands), not just <button>/<a>/<input>, or a keyboard
- * user moved there has no visible sign of where they landed. `border-radius: inherit`
- * keeps the ring following whatever shape the focused element already has instead of
- * squaring off a pill or a card corner.
+ * user moved there has no visible sign of where they landed.
+ *
+ * Deliberately no `border-radius` here. Browsers already draw the outline following the
+ * focused element's own corners, so the ring needs no help; and because border-radius is
+ * not an inherited property, `border-radius: inherit` would not mean "keep your shape",
+ * it would replace the element's radius with its PARENT's. On a rounded button inside a
+ * square container that squares the button off at the moment it takes focus, which is
+ * the opposite of the intent.
  */
 :focus-visible {
   outline: 2px solid var(--color-focus);
   outline-offset: 2px;
-  border-radius: inherit;
 }
 
 @media (prefers-reduced-motion: reduce) {
