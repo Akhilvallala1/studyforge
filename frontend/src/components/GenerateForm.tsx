@@ -111,10 +111,22 @@ function newRowId(prefix: string): string {
 }
 
 /*
- * No `focus:outline-none` here (the raw version had one): globals.css's app-wide
- * `:focus-visible` rule is unlayered and always beats Tailwind's own layered utilities,
- * the same reasoning DaysOffControl's and DeadlineForm's FIELD_CLASS already state.
- * Dropping the utility changes no rendered pixel.
+ * No `outline-none` here. What main carried was the bare, unconditional `outline-none`,
+ * not `focus:outline-none`. The bare form is the broader of the two: it emits
+ * `outline-style: none` in every state, not only on focus. It was inert either way,
+ * because globals.css's app-wide `:focus-visible` rule is unlayered and an unlayered
+ * declaration always beats Tailwind's own layered utilities whatever the specificity.
+ * DaysOffControl's and DeadlineForm's FIELD_CLASS already state that reasoning.
+ *
+ * Removing it changes no rendered pixel. Scope that sentence to the removal, not to the
+ * constant: this string is NOT pixel-identical to main's, because it newly carries
+ * `transition-colors duration-fast ease-standard`, which main's two input constants did
+ * not have. So the hover and focus border-colour change now animates over 120ms instead
+ * of snapping. The focus RING is unaffected either way: outline-color is in the built
+ * transition-colors property list, but outline-style is not, so the ring still appears at
+ * full width the instant :focus-visible matches. The added utilities match the FIELD_CLASS
+ * string DaysOffControl and DeadlineForm already carry on main, and globals.css zeroes
+ * transition-duration under prefers-reduced-motion.
  */
 const inputClasses =
   "mt-2 w-full rounded-control border border-line-strong bg-transparent p-2.5 text-ui text-ink " +
