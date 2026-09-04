@@ -59,14 +59,32 @@ export type AfterDelete = "restore-focus" | "navigate-to-list";
  * that already happened.
  *
  * Read through `useSyncExternalStore` below, not `useState` seeded from a mount
- * effect: this is a value that can already differ between the server-rendered
- * markup and the client's first render (a fresh server render never has anything
- * stashed; a client hydrating after a same-tab handoff might), and `getServerSnapshot`
- * is what lets that first render be correct on both sides instead of committing the
- * server's answer and only correcting it after hydration. What DOES still go through
- * `useState`, deliberately, is the announcement text derived from this value: see the
- * handoff effect below for why that extra commit is paid for on purpose rather than
- * avoided.
+ * effect. The hook is the tidier read for a value sourced outside React, and on the
+ * path that actually matters it is also the earliest one: `router.replace` is a client
+ * transition with no hydration in it, so `getSnapshot` runs on this provider's very
+ * first render and the stashed title is in hand immediately.
+ *
+ * `getServerSnapshot` is for the OTHER path, the full navigation Next can fall back to,
+ * and it is worth being exact about what it does there, because the natural reading is
+ * backwards. It does not make the first client render agree with the eventual client
+ * value. It makes the first client render agree with the SERVER, which is the whole
+ * point: hydration has to match the markup it is hydrating or React discards it. So a
+ * full navigation renders null once, matching the server, and only then re-reads
+ * sessionStorage and re-renders with the title. Commit the server's answer, correct
+ * after hydration, in that order.
+ *
+ * Measured, not recalled: a throwaway probe rendering a component whose two snapshots
+ * differ, then hydrating it, records the render sequence ["SERVER-VALUE",
+ * "CLIENT-VALUE"], not ["CLIENT-VALUE"].
+ *
+ * None of that ordering rescues the announcement, which is why the text below goes
+ * through `useState` rather than being rendered straight from this value. The extra
+ * render `getServerSnapshot` forces changes THIS value, and the live region does not
+ * read this value; it reads `announcement`. On the client-transition path there is no
+ * extra render at all. So on both paths the only thing that mutates an
+ * already-mounted region from empty to filled is the handoff effect's
+ * `setAnnouncement`, and a live region has to change to be announced. See that effect
+ * below.
  */
 const DELETED_TITLE_KEY = "studyforge:deleted-course-title";
 
