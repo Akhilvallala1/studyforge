@@ -95,11 +95,26 @@ GUIDED_MARKER = "GIVE EVERYTHING BUT THE LAST MOVE"
 GUIDED_RUNG2_MARKER = "STATE THE METHOD FOR THE FINAL MOVE EXPLICITLY"
 
 
+# The labels label_segments() prepends to each chunk, in both of its shapes. The
+# plain "[segment 3]" is what single-source material carries; multi-source material
+# carries "[segment 3] [document: notes.txt]" as well, so that the outline can see
+# where one work ends and the next begins.
+#
+# Both are plumbing, not content, and the fake provider must strip both. It used to
+# strip only the segment number, which meant that as soon as a course was generated
+# from two sources the first words of the "source text" were the document label: every
+# multi-source fixture came out titled after its own filename ("Document Bio Notes
+# Txt") rather than its subject. That is the exact case multi-source tests and QA runs
+# exist to exercise, so the one scenario the fixture had to model was the one it got
+# wrong, and it got it wrong quietly, in output that still looked like a course.
+SEGMENT_LABEL = re.compile(r"\[segment \d+\](?: \[document: [^\]]*\])?")
+
+
 def _source_material(prompt: str) -> str:
     marker = "Source material:"
     index = prompt.find(marker)
     text = prompt[index + len(marker) :].strip() if index != -1 else prompt.strip()
-    return re.sub(r"\[segment \d+\]", " ", text).strip()
+    return SEGMENT_LABEL.sub(" ", text).strip()
 
 
 def _segment_count(prompt: str) -> int:

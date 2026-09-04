@@ -3,7 +3,7 @@
 import json
 
 from app import generation, models, remediation, tutor
-from app.llm import get_provider
+from app.llm import fake_provider, get_provider
 from app.llm.fake_provider import (
     GUIDED_MARKER,
     GUIDED_RUNG2_MARKER,
@@ -506,3 +506,33 @@ def test_the_hostile_concept_is_reachable_by_playing(client, monkeypatch):
     note = client.post(f"/review/cards/{entry['card_id']}/remediation")
     assert note.status_code == 200
     assert "<script>alert(1)</script>" in note.json()["content"]
+
+
+def test_document_labels_do_not_leak_into_generated_text():
+    """Multi-source material must produce the same topic as single-source material.
+
+    label_segments() tags a chunk "[segment 0] [document: notes.txt]" as soon as the
+    corpus has more than one distinct owner. The fake provider stripped the segment
+    number but not the document label, so the first words of what it treated as source
+    text were the filename: a two-source course came out titled after its own plumbing
+    rather than its subject, in every multi-source test and every multi-source QA run.
+
+    Asserting on the topic alone would pass against the broken version if the label
+    happened to sort after the prose. Generating from the SAME chunks twice, once with
+    one owner and once with two, is what pins the real property: adding a second source
+    must change where lessons are routed and nothing about what the material says.
+    """
+    chunks = [
+        "Photosynthesis converts light into chemical energy.",
+        "Mitochondria produce ATP for the cell.",
+    ]
+    single = generation.label_segments(chunks, owners=["bio-notes.txt", "bio-notes.txt"])
+    multi = generation.label_segments(chunks, owners=["bio-notes.txt", "cell-guide.pdf"])
+
+    assert "[document: cell-guide.pdf]" in multi, "fixture must actually be tagged"
+
+    material = fake_provider._source_material(multi)
+    assert "[document:" not in material
+    assert "[segment" not in material
+    assert fake_provider._topic(multi) == fake_provider._topic(single)
+    assert fake_provider._topic(multi).startswith("Photosynthesis")
