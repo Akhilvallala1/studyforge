@@ -132,7 +132,7 @@ function TutorReply({
       tabIndex={-1}
       role="region"
       aria-labelledby={headingId}
-      className="flex flex-col gap-3 outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+      className="flex flex-col gap-3"
     >
       {/* The region needs a name of its own, and neither register heading can be it:
           calling the whole reply "From your course" would label the ungrounded half as

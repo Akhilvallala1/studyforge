@@ -14,7 +14,7 @@ export interface CalloutProps extends HTMLAttributes<HTMLDivElement> {
  * rule rules out.
  */
 const TONE_CLASSES: Record<CalloutTone, string> = {
-  info: "border-border bg-surface-sunken text-text",
+  info: "border-line bg-surface-sunken text-ink",
   success: "border-success-border bg-success-surface text-success",
   warning: "border-warning-border bg-warning-surface text-warning",
   danger: "border-danger-border bg-danger-surface text-danger",

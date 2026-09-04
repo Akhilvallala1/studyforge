@@ -8,7 +8,7 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
 }
 
 const TONE_CLASSES: Record<BadgeTone, string> = {
-  neutral: "border border-border bg-surface-sunken text-text-muted",
+  neutral: "border border-line bg-surface-sunken text-ink-muted",
   success: "bg-success-surface text-success",
   warning: "bg-warning-surface text-warning",
   danger: "bg-danger-surface text-danger",

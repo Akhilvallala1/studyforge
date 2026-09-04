@@ -23,9 +23,9 @@ export function SiteHeader() {
   if (pathname === "/review" || pathname.startsWith("/review/")) return null;
 
   return (
-    <header className="border-b border-border">
+    <header className="border-b border-line">
       <nav className="mx-auto flex w-full max-w-4xl items-center justify-between px-6 py-3">
-        <Link href="/" className="text-subtitle tracking-tight text-text">
+        <Link href="/" className="text-subtitle tracking-tight text-ink">
           StudyForge
         </Link>
         <div className="flex items-center gap-5 text-ui">
@@ -42,7 +42,7 @@ export function SiteHeader() {
                 className={
                   active
                     ? "font-medium text-accent"
-                    : "text-text-muted transition-colors duration-fast ease-standard hover:text-text"
+                    : "text-ink-muted transition-colors duration-fast ease-standard hover:text-ink"
                 }
               >
                 {link.label}

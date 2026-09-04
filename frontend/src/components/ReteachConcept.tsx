@@ -449,7 +449,7 @@ export function ReteachConcept({
           tabIndex={-1}
           role="region"
           aria-labelledby={`${panelId}-heading`}
-          className="mt-3.5 rounded-lg border border-amber-200 bg-amber-50/60 px-[18px] py-4 outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-900 dark:bg-amber-950/30"
+          className="mt-3.5 rounded-lg border border-amber-200 bg-amber-50/60 px-[18px] py-4 dark:border-amber-900 dark:bg-amber-950/30"
         >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <h3 id={`${panelId}-heading`} className="text-[15px] font-semibold">

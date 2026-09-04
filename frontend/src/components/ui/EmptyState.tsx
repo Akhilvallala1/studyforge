@@ -21,7 +21,7 @@ export const EmptyState = forwardRef<HTMLDivElement, EmptyStateProps>(function E
   ref,
 ) {
   const classes = [
-    "rounded-surface border border-dashed border-border-strong px-6 py-16 text-center",
+    "rounded-surface border border-dashed border-line-strong px-6 py-16 text-center",
     className,
   ]
     .filter(Boolean)
@@ -29,7 +29,7 @@ export const EmptyState = forwardRef<HTMLDivElement, EmptyStateProps>(function E
   return (
     <div ref={ref} className={classes} {...props}>
       <p className="text-subtitle">{title}</p>
-      {description && <p className="mt-1 text-ui text-text-muted">{description}</p>}
+      {description && <p className="mt-1 text-ui text-ink-muted">{description}</p>}
       {action && <div className="mt-6 flex justify-center">{action}</div>}
     </div>
   );

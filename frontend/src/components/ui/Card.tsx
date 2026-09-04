@@ -24,7 +24,7 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(function Card(
   ref,
 ) {
   const classes = [
-    "rounded-surface border border-border bg-surface-raised",
+    "rounded-surface border border-line bg-surface",
     PADDING_CLASSES[padding],
     className,
   ]

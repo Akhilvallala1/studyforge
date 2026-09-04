@@ -252,7 +252,7 @@ export function ConceptMap({
         role="group"
         aria-label={title}
         tabIndex={0}
-        className="scroll-hint-x mx-auto mt-5 w-fit max-w-full overflow-x-auto rounded-lg border border-zinc-200 p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-zinc-500 dark:border-zinc-800"
+        className="scroll-hint-x mx-auto mt-5 w-fit max-w-full overflow-x-auto rounded-lg border border-zinc-200 p-2 dark:border-zinc-800"
       >
         <svg
           role="img"

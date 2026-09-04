@@ -11,9 +11,13 @@ export interface StatProps extends HTMLAttributes<HTMLDivElement> {
 }
 
 /**
- * A promotion of the private `Stat` in app/page.tsx, unchanged in every way that
- * page's tests or eyes depend on: page.tsx keeps its own copy for now, and the task
- * that owns that file is the one that switches it over to this import.
+ * A promotion of the private `Stat` in app/page.tsx, not a pixel-identical copy of
+ * it: the value moves from that copy's 22px/font-medium to this one's `text-title`
+ * (20px/semibold), and `emphasis` moves from a raw `text-emerald-600
+ * dark:text-emerald-500` to the token-driven `text-success`, which resolves to a
+ * nearby but not identical colour. page.tsx keeps its own copy for now and is
+ * unaffected either way; the task that migrates it onto this import should expect
+ * those two differences rather than a drop-in swap.
  */
 export const Stat = forwardRef<HTMLDivElement, StatProps>(function Stat(
   { value, label, emphasis, title, note, className, ...props },
@@ -29,7 +33,7 @@ export const Stat = forwardRef<HTMLDivElement, StatProps>(function Stat(
     .join(" ");
   return (
     <div ref={ref} className={classes} {...props}>
-      <dt className="mt-0.5 text-small text-text-subtle">{label}</dt>
+      <dt className="mt-0.5 text-small text-ink-subtle">{label}</dt>
       <dd title={title} className={valueClasses}>
         {value}
         {/* `title` alone is not reliably announced, so the same explanation is in the

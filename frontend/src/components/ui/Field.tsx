@@ -22,18 +22,18 @@ export const Field = forwardRef<HTMLInputElement, FieldProps>(function Field(
   ref,
 ) {
   const inputClasses = [
-    "mt-1 w-full rounded-control border border-border bg-transparent px-3 py-2 text-ui text-text",
-    "placeholder:text-text-subtle transition-colors duration-fast ease-standard",
-    "hover:border-border-hover focus:border-border-hover disabled:opacity-60",
+    "mt-1 w-full rounded-control border border-line bg-transparent px-3 py-2 text-ui text-ink",
+    "placeholder:text-ink-subtle transition-colors duration-fast ease-standard",
+    "hover:border-line-hover focus:border-line-hover disabled:opacity-60",
     className,
   ]
     .filter(Boolean)
     .join(" ");
   return (
     <div>
-      <label htmlFor={id} className="block text-small font-medium text-text-muted">
+      <label htmlFor={id} className="block text-small font-medium text-ink-muted">
         {label}
-        {hint && <span className="font-normal text-text-subtle"> {hint}</span>}
+        {hint && <span className="font-normal text-ink-subtle"> {hint}</span>}
       </label>
       <input ref={ref} id={id} className={inputClasses} {...props} />
     </div>

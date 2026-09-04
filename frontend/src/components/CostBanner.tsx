@@ -71,7 +71,7 @@ export function CostBanner() {
               type="button"
               onClick={() => void handleAcknowledge()}
               disabled={acking}
-              className="rounded-control border border-warning-border bg-surface px-3 py-1 font-medium text-warning transition-colors duration-fast ease-standard hover:bg-warning-surface disabled:opacity-60"
+              className="rounded-control border border-warning-border bg-surface px-3 py-1 font-medium text-warning transition-colors duration-fast ease-standard hover:bg-surface-sunken disabled:opacity-60"
             >
               {acking ? "Acknowledging..." : "Acknowledge"}
             </button>
@@ -80,7 +80,7 @@ export function CostBanner() {
       )}
       <Link
         href="/usage"
-        className="border-b border-border bg-surface-sunken px-6 py-1.5 text-right text-small text-text-muted transition-colors duration-fast ease-standard hover:text-text"
+        className="border-b border-line bg-surface-sunken px-6 py-1.5 text-right text-small text-ink-muted transition-colors duration-fast ease-standard hover:text-ink"
       >
         Total API spend (estimated): {formatUsd(totals.estimated_cost_usd)}
       </Link>
