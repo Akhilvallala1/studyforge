@@ -45,11 +45,43 @@ export function stripDuplicateTitle(content: string, title: string): string {
   return rest.join("\n");
 }
 
-/* react-markdown without rehype-raw: raw HTML in the source stays escaped text,
-   so model-generated content can't inject markup. */
+/*
+ * react-markdown without rehype-raw: raw HTML in the source stays escaped text, so
+ * model-generated content can't inject markup.
+ *
+ * text-prose, not text-ui: globals.css's type scale calls it out by name as "Lesson
+ * markdown body only", so this is the one place in the app it belongs. It replaces
+ * the raw `leading-7`; its font-size (1rem) is what the old class left implicit.
+ *
+ * Headings map onto the app's named scale rather than the raw text-2xl/xl/lg the prior
+ * version used: [&_h1]:text-title and [&_h2]:text-subtitle both bake their own
+ * font-weight (600) into the token, the same way PageHeader's own <h1 className=
+ * "text-display"> needs no separate font-semibold. There is no third named step below
+ * subtitle, so h3 stays at body size (text-ui) with an explicit font-semibold instead
+ * of inventing a new token for one selector. `prose-headings:font-semibold`, which sat
+ * on the <article> below covering h1 through h6 uniformly, is dropped along with it:
+ * this app has no @tailwindcss/typography plugin (see package.json), so `prose-*` was
+ * never a real Tailwind variant here and the built CSS confirms it emitted no rule.
+ *
+ * [&_a]:text-accent is new: globals.css names "inline text links" as one of the
+ * accent's three sanctioned uses, and Tailwind's preflight resets `a { color: inherit
+ * }`, so a prose link previously rendered in plain ink with only the underline to mark
+ * it as a link. This is the first page in the redesign with actual inline links inside
+ * a paragraph, so the case had not come up yet.
+ *
+ * [&_code]/[&_pre] move from raw zinc-100/zinc-800 to bg-surface-sunken (zinc-50/
+ * zinc-900): one step lighter/darker than the old raw values, converging onto the same
+ * "recessed panel" token Badge's neutral tone and ReteachConcept's callout already use,
+ * rather than keeping a third, off-scale shade around for code alone.
+ *
+ * [&_td]/[&_th] move to border-line rather than border-line-strong: a table gridline is
+ * a divider, not a control boundary (see Button.tsx's comment on why its own secondary
+ * variant needs the stronger step), and border-line is what every other divider in the
+ * app already uses for that role.
+ */
 export function LessonMarkdown({ content, title }: { content: string; title: string }) {
   return (
-    <article className="prose-headings:font-semibold flex flex-col gap-4 leading-7 [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-zinc-300 [&_blockquote]:pl-4 [&_blockquote]:text-zinc-600 dark:[&_blockquote]:border-zinc-700 dark:[&_blockquote]:text-zinc-400 [&_code]:rounded [&_code]:bg-zinc-100 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm dark:[&_code]:bg-zinc-800 [&_h1]:text-2xl [&_h2]:text-xl [&_h3]:text-lg [&_li]:ml-5 [&_ol]:list-decimal [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-zinc-100 [&_pre]:p-4 dark:[&_pre]:bg-zinc-800 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_table]:w-full [&_td]:border [&_td]:border-zinc-200 [&_td]:px-3 [&_td]:py-1.5 dark:[&_td]:border-zinc-700 [&_th]:border [&_th]:border-zinc-200 [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left dark:[&_th]:border-zinc-700 [&_ul]:list-disc">
+    <article className="flex flex-col gap-4 text-prose [&_a]:text-accent [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-line-strong [&_blockquote]:pl-4 [&_blockquote]:text-ink-muted [&_code]:rounded [&_code]:bg-surface-sunken [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-small [&_h1]:text-title [&_h2]:text-subtitle [&_h3]:text-ui [&_h3]:font-semibold [&_li]:ml-5 [&_ol]:list-decimal [&_pre]:overflow-x-auto [&_pre]:rounded-control [&_pre]:bg-surface-sunken [&_pre]:p-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_table]:w-full [&_td]:border [&_td]:border-line [&_td]:px-3 [&_td]:py-1.5 [&_th]:border [&_th]:border-line [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_ul]:list-disc">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>
         {stripDuplicateTitle(content, title)}
       </ReactMarkdown>

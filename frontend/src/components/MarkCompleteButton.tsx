@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { Button } from "@/components/ui/Button";
 import { ApiError, completeLesson, uncompleteLesson } from "@/lib/api";
 
 export function MarkCompleteButton({
@@ -54,31 +55,40 @@ export function MarkCompleteButton({
           onClick={() => void run(() => uncompleteLesson(lessonId))}
           disabled={pending}
           aria-label="Mark this lesson as not complete"
-          className="group rounded-lg bg-emerald-100 px-4 py-2 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-200 disabled:opacity-60 dark:bg-emerald-950 dark:text-emerald-300 dark:hover:bg-emerald-900"
+          /*
+            Hand-rolled rather than Button: none of its four variants are a success-
+            tinted fill (primary's `fill` token is deliberately neutral, not accent or
+            a status colour; see Button.tsx and globals.css's --sf-accent comment), and
+            this is the one control in the app that needs one. `success-border`, one
+            step past `success-surface` in the same family, stands in for the fill-hover
+            token neither this tone nor Badge's has: the same "next step in the same
+            family" relationship `surface`/`surface-sunken` and `line`/`line-hover` use
+            elsewhere for exactly this purpose.
+          */
+          className="group rounded-control bg-success-surface px-4 py-2 text-ui font-medium text-success transition-colors duration-fast ease-standard hover:bg-success-border disabled:opacity-60"
         >
           {pending ? (
             "Reopening…"
           ) : (
             <>
               ✓ Completed
-              <span className="ml-2 text-xs font-normal opacity-0 transition-opacity group-hover:opacity-80 group-focus-visible:opacity-80">
+              <span className="ml-2 text-small font-normal opacity-0 transition-opacity group-hover:opacity-80 group-focus-visible:opacity-80">
                 Undo
               </span>
             </>
           )}
         </button>
       ) : (
-        <button
-          type="button"
+        <Button
           ref={buttonRef}
+          variant="secondary"
           onClick={() => void run(() => completeLesson(lessonId))}
           disabled={pending}
-          className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium transition-colors hover:border-zinc-500 disabled:opacity-60 dark:border-zinc-700 dark:hover:border-zinc-500"
         >
           {pending ? "Saving…" : "Mark complete"}
-        </button>
+        </Button>
       )}
-      {error && <p className="text-xs text-red-700 dark:text-red-400">{error}</p>}
+      {error && <p className="text-small text-danger">{error}</p>}
     </div>
   );
 }
