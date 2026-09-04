@@ -120,3 +120,30 @@ describe("Button type default", () => {
     expect(screen.getByRole("button", { name: "Go" })).toHaveAttribute("type", "button");
   });
 });
+
+/**
+ * The `tinted` variant works by INHERITING its colour: it is meant for an outlined
+ * button inside a status-tinted `Callout`, and `border-current` picks up whichever
+ * `text-danger` / `text-success` / `text-warning` the Callout put on its wrapper. So
+ * the one thing that must stay true of it is a negative: it must not set a colour of
+ * its own. Adding `text-ink` to it, which is what every other bordered variant does
+ * and so is the natural edit, silently severs the inheritance and takes the border
+ * back to a neutral grey on a tinted background, which is the exact contrast
+ * regression this variant exists to avoid.
+ *
+ * Be honest about what this test is: it reads a class STRING. jsdom loads no
+ * stylesheet, so nothing here can prove a rendered colour, and the contrast figures
+ * behind the variant live in its comment in Button.tsx where they were measured off
+ * the built bundle. What this catches is only the edit described above, which is
+ * enough to be worth the four lines.
+ */
+describe("Button tinted variant", () => {
+  test("sets no colour of its own, so the enclosing tone shows through", () => {
+    render(<Button variant="tinted">Generate another</Button>);
+    const className = screen.getByRole("button", { name: "Generate another" }).className;
+
+    expect(className).toContain("border-current");
+    // `text-ui` is the SIZE token and is expected; a text COLOUR is not.
+    expect(className).not.toMatch(/text-(ink|on-fill|danger|success|warning|accent)\b/);
+  });
+});

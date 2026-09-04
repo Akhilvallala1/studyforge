@@ -615,7 +615,7 @@ export function GenerateForm() {
               </p>
               {intakeNote.skipped.length > 0 && (
                 <details className="mt-1">
-                  <summary className="cursor-pointer text-ink-muted hover:text-ink">
+                  <summary className="cursor-pointer text-ink-muted transition-colors duration-fast ease-standard hover:text-ink">
                     Why files were skipped
                   </summary>
                   <ul className="mt-1 list-disc pl-4">
@@ -650,7 +650,7 @@ export function GenerateForm() {
             <Button type="button" onClick={() => router.push(`/courses/${success.id}`)}>
               Open course
             </Button>
-            <Button type="button" variant="secondary" onClick={resetForm}>
+            <Button type="button" variant="tinted" onClick={resetForm}>
               Generate another
             </Button>
           </div>

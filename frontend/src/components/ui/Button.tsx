@@ -1,7 +1,7 @@
 import { forwardRef } from "react";
 import type { ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "tinted" | "danger";
 export type ButtonSize = "sm" | "md";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -49,6 +49,50 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   // separately; this line only stops the migration from making it worse.
   secondary: "border border-line-strong text-ink hover:border-line-hover",
   ghost: "text-ink-muted hover:bg-surface-sunken hover:text-ink",
+  /*
+   * For an outlined button sitting INSIDE a status-tinted container, which is the one
+   * place `secondary` must not be used. `secondary`'s border was tuned against the
+   * neutral page surface: `line-strong` is #d4d4d8 light and #3f3f46 dark, which
+   * measures 1.48:1 and 1.90:1 there, but drop it onto `success-surface` (#ecfdf5 /
+   * #002c22) and the same colour measures 1.40:1 and 1.45:1. The raw button this
+   * replaced in GenerateForm's success banner drew its border in emerald-700 light and
+   * emerald-600 dark, which measure 5.21:1 and 4.03:1 on those two surfaces, so using
+   * `secondary` there would have taken a control boundary from comfortably past WCAG
+   * 1.4.11's 3:1 to nowhere near it, in both modes.
+   *
+   * `border-current`, not a success-specific token, because the tone is already on the
+   * container: `Callout` puts `text-success` / `text-danger` / `text-warning` on its
+   * wrapper, so `currentColor` here IS whichever tone encloses this button, and one
+   * variant covers all four without a variant per tone. In the success case that
+   * resolves to #007956 light and #00d294 dark, 5.15:1 and 7.70:1 against the surface
+   * behind it, the closest match to what the raw version had. Hovering swaps the fill
+   * to `bg-surface`, and the border against THAT measures 5.43:1 and 10.04:1, so the
+   * boundary stays past 3:1 in both states and both modes.
+   *
+   * Hover goes to the plain page `surface` rather than a deeper tint. There is no
+   * success-surface-hover token and inventing four of them to serve one button would
+   * be the wrong trade, so the choice was between this and a 10%-opacity currentColor
+   * fill. That was tried first and rejected on the BUILT output, not on taste:
+   * Tailwind can pre-multiply an opacity into a NAMED colour (ConceptTutor's amber-100
+   * at 70% emits #fef3c699 directly) but cannot for `currentColor`, so it emits a
+   * full-opacity currentColor background as the pre-color-mix fallback and only reaches
+   * 10% inside `@supports (color: color-mix(...))`. On a browser missing that @supports,
+   * hovering would paint the button's background in exactly its own text colour and the
+   * label would vanish. Unlikely, but "text disappears" is a worse failure than "hover
+   * tint goes the other way", and `bg-surface` has no fallback branch to get wrong. It
+   * also animates, since `transition-colors` on BASE covers background-color where an
+   * opacity change would not have been covered at all.
+   *
+   * Why this comment describes those two rejected classes in prose instead of naming
+   * them: Tailwind v4's scanner is a plain text extractor with no idea what a comment
+   * is, so any complete utility string written here is a candidate and gets a real rule
+   * in the shipped bundle. An earlier draft of this block named both of them the obvious
+   * way and put four dead rules into the CSS, two for the currentColor fill and two for
+   * the emerald border this variant exists to replace. Verified by grepping the built
+   * chunk before and after. Utilities the code actually uses are safe to name, and are
+   * named above; ones it deliberately does not use are not.
+   */
+  tinted: "border border-current hover:bg-surface",
   danger: "bg-danger-fill text-danger-on-fill hover:bg-danger-fill-hover",
 };
 
