@@ -28,7 +28,7 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from app import ingest
+from app import generation, ingest
 from app.costs import estimate_cost
 from app.llm import get_provider
 from evals import report, sources
@@ -51,6 +51,35 @@ PROJECTED_LESSONS = 9
 PROJECTED_OUTPUT_TOKENS_PER_CALL = 2000
 
 
+# How much of PEP 8 the multi-source corpus takes. Enough to be a real second document
+# with its own vocabulary and structure, small enough that the whole corpus stays close
+# to prose-text in size, so a multi-source run costs about what the existing single
+# source run costs and can therefore be repeated. Repetition is not optional here: see
+# evals/trials.py on why one run of each arm proves nothing.
+MULTI_PEP8_CHARS = 3000
+
+
+def _multi_documents() -> list[tuple[str, str]]:
+    """The multi-source corpus: two genuinely unrelated documents.
+
+    UNRELATED IS THE REQUIREMENT, not a detail. The failure this feature exists to
+    prevent is a model reading two documents as one continuous work, and two excerpts of
+    the same book cannot exhibit it: a lesson bridging them would be correct. Darwin and
+    a Python style guide share no vocabulary, no structure and no subject, so a lesson
+    that reads across the seam is visibly wrong rather than arguably fine.
+
+    THE CHUNK ARITHMETIC IS THE POINT of these two sizes. Routing switches on at
+    SEGMENT_ROUTING_MIN_CHUNKS, which is 3, and chunks are up to 8,000 characters, so two
+    short documents make two chunks and stay UNROUTED. Darwin's full text is 2 chunks and
+    the PEP 8 excerpt is 1, giving exactly 3: the smallest corpus that is genuinely
+    multi-source AND routed, which is the configuration this feature turns on and the
+    only one worth measuring.
+    """
+    darwin = (DATA_DIR / "prose-darwin.txt").read_text(encoding="utf-8")
+    pep8 = ingest.extract_url(TECHNICAL_URL)[:MULTI_PEP8_CHARS]
+    return [("darwin-origin", ingest.clean_text(darwin)), ("pep8-style-guide", pep8)]
+
+
 def available_sources() -> dict:
     """Source key -> zero-argument loader. Lazy so --dry-run of one source does not
     fetch the other."""
@@ -70,7 +99,23 @@ def available_sources() -> dict:
             "darwin-origin-short",
             (DATA_DIR / "prose-darwin-short.txt").read_text(encoding="utf-8"),
         ),
+        # The multi-source arm. Loaded as one Source whose text is the whole corpus, so
+        # every existing metric scores it unchanged; the document boundaries travel
+        # separately, through MULTI_SOURCE_KEYS below, and only generation sees them.
+        # Deliberately NOT a new Source field: the type is shared with app code and is
+        # being lifted into app/ingest.py by another change, and a corpus is not a source.
+        "multi-darwin-pep8": lambda: sources.from_text(
+            "multi-darwin-pep8",
+            "darwin-origin + pep8-style-guide",
+            "\n\n".join(text for _, text in _multi_documents()),
+        ),
     }
+
+
+# Source keys whose corpus is several documents, mapped to their loader. The registry
+# above hands back one Source so the metrics and the cost projection need no special
+# case; this is the only place that knows the corpus has seams in it.
+MULTI_SOURCE_KEYS = {"multi-darwin-pep8": _multi_documents}
 
 
 def preflight(require_cap: bool = True) -> dict:
@@ -172,8 +217,26 @@ def load_sources(keys: list[str]) -> list:
     for key in keys:
         print(f"Ingesting {key} ...", flush=True)
         source = registry[key]()
-        chunks = ingest.chunk_text(source.text)
-        print(f"  {len(source.text):,} chars -> {len(chunks)} chunks")
+        # Chunked the way GENERATION will chunk it, which for a multi-source corpus is
+        # per document rather than over the concatenation. The two disagree, and the
+        # disagreement is not cosmetic: chunk_text packs paragraphs up to 8,000
+        # characters, so this corpus concatenated is 2 chunks and the same corpus
+        # chunked per document is 3. Routing switches on at 3. Printing the
+        # concatenated count told the operator the run was unrouted while generation
+        # routed it, and routing is the one thing this eval is about.
+        if key in MULTI_SOURCE_KEYS:
+            documents = MULTI_SOURCE_KEYS[key]()
+            chunks, _owners = ingest.chunk_sources(
+                [ingest.from_text("", label, text) for label, text in documents]
+            )
+            print(
+                f"  {len(source.text):,} chars over {len(documents)} documents "
+                f"-> {len(chunks)} chunks "
+                f"(routing {'ON' if len(chunks) >= generation.SEGMENT_ROUTING_MIN_CHUNKS else 'off'})"
+            )
+        else:
+            chunks = ingest.chunk_text(source.text)
+            print(f"  {len(source.text):,} chars -> {len(chunks)} chunks")
         loaded.append(source)
     return loaded
 
@@ -307,6 +370,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--yes", action="store_true", help="skip the spend confirmation prompt")
     parser.add_argument(
+        "--no-source-tags",
+        action="store_true",
+        help=(
+            "multi-source runs only: withhold the document tags, reproducing the "
+            "pre-feature prompt exactly. This is the BEFORE arm of the outline A/B."
+        ),
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="overwrite existing output written under the default label",
@@ -431,8 +502,25 @@ def main(argv: list[str] | None = None) -> int:
 
     results = []
     for source in loaded:
+        documents = MULTI_SOURCE_KEYS[source.key]() if source.key in MULTI_SOURCE_KEYS else None
+        if documents:
+            tagged = "untagged (pre-feature prompt)" if args.no_source_tags else "tagged"
+            print(
+                f"\n{source.key} is {len(documents)} documents: "
+                f"{', '.join(label for label, _ in documents)} [{tagged}]"
+            )
+        elif args.no_source_tags:
+            # Silently ignoring the flag would let a whole arm of the A/B be run with
+            # the wrong prompt and reported as the right one.
+            print(f"  NOTE: --no-source-tags does nothing for single-source {source.key}.")
         print(f"\nGenerating course from {source.key} ...", flush=True)
-        result = run_course_eval(source.key, source.text, source.meta())
+        result = run_course_eval(
+            source.key,
+            source.text,
+            source.meta(),
+            documents=documents,
+            tag_sources=not args.no_source_tags,
+        )
         results.append(result)
         cost = result.get("cost_latency", {})
         status = "ok" if result["ok"] else f"FAILED: {result['error']}"

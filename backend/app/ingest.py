@@ -1,16 +1,117 @@
-"""Turn source material (PDF bytes, plain text, or a URL) into cleaned text chunks."""
+"""Turn source material (PDF bytes, plain text, or a URL) into cleaned text chunks.
+
+ONE COURSE CAN BE BUILT FROM SEVERAL SOURCES, and `Source` is what one of them is once
+it has been read. The dataclass was written for the eval harness, which deliberately
+ingests through this module so that it measures the text the generator actually receives.
+It lives here now and evals/sources.py imports it: it was already describing this module's
+output, and two spellings of it would have drifted the moment either side gained a field.
+"""
 
 import io
 import ipaddress
 import os
 import re
 import socket
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 import httpx
 from pypdf import PdfReader
 
 MAX_CHUNK_CHARS = 8000
+
+# HOW MANY SOURCES ONE COURSE CAN BE BUILT FROM, and how much text they may amount to.
+#
+# THE QUANTITY THAT ACTUALLY COSTS MONEY IS THE CHUNK COUNT, not either of these directly.
+# Chunks are what generation routes on (generation.SEGMENT_ROUTING_MIN_CHUNKS, currently 3)
+# and what the outline prompt is built from, and lessons accrue on top of that. So the
+# caps are worth reading as a joint bound on chunks rather than as two independent limits.
+#
+# NEITHER CAP BOUNDS THE CHUNK COUNT ON ITS OWN, which is the part that is easy to get
+# wrong and was. Measured, with MAX_CHUNK_CHARS at 8,000:
+#
+#   sources  chars each   total    chunks  routed
+#         1       3,000    3,000        1  no
+#         2       3,000    6,000        2  no
+#         3       3,000    9,000        3  YES
+#         5       1,000    5,000        5  YES
+#         1      10,640   10,640        2  no
+#         1      24,000   24,000        3  YES
+#
+# Read the fourth row against the fifth. FIVE THOUSAND CHARACTERS IS ROUTED AND TEN
+# THOUSAND IS NOT, because chunk_sources chunks PER SOURCE, so every source contributes at
+# least one chunk however short it is. Routing is therefore not purely a size effect: three
+# documents of any length at all cross the threshold, while one document of 10,640 does
+# not. A character cap alone leaves the many-small-documents case unbounded, and a source
+# cap alone leaves the one-huge-document case unbounded. Together they bound it, and that
+# is the only reason both exist.
+#
+# WHAT ACTUALLY MOVES THE CHUNK COUNT IS PARAGRAPH LENGTH, not source count, and this was
+# measured only after two people had guessed otherwise. chunk_text packs whole paragraphs
+# greedily and never splits one below MAX_CHUNK_CHARS, so a paragraph just over half the
+# chunk size fits ONE per chunk and wastes the rest. Chunks for 150,000 characters:
+#
+#   paragraph   1 doc  2 docs  3 docs  5 docs
+#         200      20      20      21      20
+#       1,500      20      20      21      20
+#       2,700      28      28      27      30
+#       4,001      37      36      36      35   <- worst packing
+#       5,000      30      30      30      30
+#       7,999      19      20      21      20
+#
+# Source count moves it by about one. Paragraph length nearly DOUBLES it. So a ceiling of
+# the form chars/MAX_CHUNK_CHARS is a LOWER bound and not an upper one, which is the error
+# the constant below used to encode: it read 24 while the real worst case was 37.
+#
+# THE DERIVED CEILING is MAX_TOTAL_CHUNKS, computed from the other two so that raising
+# either cap moves it. The factor of two is the packing slack above: a chunk is guaranteed
+# only to be more than half full, never to be full.
+# test_the_two_caps_together_bound_the_chunk_count is what stops one cap being raised
+# without the other being thought about, and it feeds the WORST-PACKING paragraph length
+# rather than a convenient one, because the earlier version of it used a single unbroken
+# paragraph, which is the BEST case, and passed against a ceiling that was wrong by 13.
+#
+# WHAT THESE NUMBERS ARE NOT. They do not make a run fit a proxy timeout, and a comment
+# claiming they did would be false precision: the LESSON COUNT is the model's choice, not a
+# function of any of this, and nginx's default proxy_read_timeout of 60 seconds is already
+# short for a single-source run today. That is a deployment note, not something a cap can
+# fix. What a cap can do is keep the worst case a known multiple of the ordinary one.
+#
+# WHY MAX_TOTAL_CHARS IS AS HIGH AS IT IS, since the temptation is to tighten it: this cap
+# applies to EVERY request, including the single-source path that has been uncapped since
+# the project started. Anything below roughly this figure would start refusing pastes that
+# work today, which is a regression for existing users dressed up as a safety limit. It is
+# sized to be the first cap those users ever meet, not the tightest defensible number.
+MAX_SOURCES = 5
+MAX_TOTAL_CHARS = 150_000
+# How long a source's label may be. `ref` is FULLY CALLER-CONTROLLED on every kind: the URL
+# they typed, the `ref` they sent, or the filename they uploaded under. It is echoed back in
+# the source_failed refusal, so an unbounded one is an unbounded string this API repeats to
+# whoever sent it, and it is read by whatever builds the generation prompt, where a label is
+# a structural marker rather than prose.
+#
+# THIS IS A BOUND, NOT A DEFUSING, and the distinction matters because the first looks like
+# the second. Truncating and flattening stops a label being enormous or spanning lines; it
+# does NOT stop one imitating whatever marker the prompt writes around it. That has to
+# happen where the marker grammar is known, the way tutor.py scrubs its own fences and
+# register labels through untrusted.as_data rather than trusting its inputs to be tame.
+MAX_REF_CHARS = 200
+# Cap on the SUM of uploaded file sizes, checked against UploadFile.size before any file is
+# read. Only the multipart route applies it: /courses/generate/pdf stays uncapped so no
+# existing caller changes. upload.file.read() pulls a whole file into memory, and a request
+# that combines several uploads (a folder drop, say) makes an accidental huge request easy
+# in a way a single PDF upload does not, so this is checked before any of them are read
+# rather than left to MAX_TOTAL_CHARS, which only sees the text AFTER extraction.
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+# The delimiters of generation's document tag, mapped to their round equivalents. See
+# clean_ref on why translated rather than stripped.
+_DELIMITERS = str.maketrans({"[": "(", "]": ")"})
+# Ceiling on chunks, derived: each source contributes at least one partial chunk, and
+# beyond that chunks accrue at no worse than half of MAX_CHUNK_CHARS, because a paragraph
+# is packed whole and one just over half the limit leaves the rest of its chunk empty.
+# Not enforced separately, because a third cap on the same quantity is a third thing to
+# keep consistent; it exists so the joint bound has a name and a test.
+MAX_TOTAL_CHUNKS = MAX_SOURCES + 2 * -(-MAX_TOTAL_CHARS // MAX_CHUNK_CHARS)
 
 # Real chains stack up (http to https, apex to www, locale, consent), so 5 was tight
 # enough to refuse legitimate pages. httpx itself defaults to 20.
@@ -178,3 +279,265 @@ def chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> list[str]:
     if current:
         chunks.append("\n\n".join(current))
     return chunks
+
+
+# --------------------------------------------------------------------------
+# One course, several sources
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class Source:
+    """One piece of source material, after it has been read into text.
+
+    Lifted from evals/sources.py rather than copied. `key` is a short stable handle the
+    eval harness groups by; the app leaves it empty, because nothing in the request path
+    needs to name a source twice.
+    """
+
+    key: str
+    kind: str  # "url" | "text" | "pdf"
+    ref: str
+    text: str
+
+    def meta(self) -> dict:
+        return {"key": self.key, "kind": self.kind, "ref": self.ref}
+
+
+@dataclass
+class SourceSpec:
+    """One piece of source material BEFORE it has been read: what to fetch, not what was.
+
+    A separate type from Source and deliberately not the same one carrying an empty `text`.
+    The whole point of the pair is that a spec can fail to become a source, and a type that
+    could be either would have to be checked at every use to find out which it was.
+    """
+
+    kind: str
+    ref: str
+    value: str | bytes
+
+
+@dataclass
+class SourceFailure:
+    """One source that could not be read, and why, in the terms the caller reports.
+
+    `error` is a code a client branches on and `message` is a sentence a person reads,
+    matching the refusal shape the rest of this API uses. The message is the SAME copy the
+    single-source path has always returned, so multi-source reporting is that message
+    repeated per source rather than a second vocabulary.
+
+    `index` is the position of this source IN THE REQUEST AS SENT, not its position among
+    the failures. `ref` looks like a handle but is not one: clean_ref truncates and
+    rewrites it, and two files named notes.pdf or two requests to the same URL collide on
+    it. A client that sent four sources and got two failures back needs `index` to know
+    which two, and load_sources is the one place that can say so, since it is the only
+    code that still has the original list.
+    """
+
+    kind: str
+    ref: str
+    error: str
+    message: str
+    index: int
+
+    def payload(self) -> dict:
+        return {
+            "index": self.index,
+            "kind": self.kind,
+            "ref": self.ref,
+            "error": self.error,
+            "message": self.message,
+        }
+
+
+class TooManySources(ValueError):
+    """More sources than MAX_SOURCES. Raised before anything is fetched."""
+
+
+# The per-source failure codes and the copy that goes with them. The copy is duplicated
+# from main.py's constants ON PURPOSE not at all: main.py passes it in, so there is one
+# definition of each sentence and this module holds none of it.
+UNSAFE_URL = "unsafe_url"
+FETCH_FAILED = "fetch_failed"
+PDF_UNREADABLE = "pdf_unreadable"
+NO_USABLE_TEXT = "no_usable_text"
+
+
+def from_url(key: str, url: str) -> Source:
+    return Source(key=key, kind="url", ref=url, text=extract_url(url))
+
+
+def from_text(key: str, label: str, text: str) -> Source:
+    return Source(key=key, kind="text", ref=label, text=clean_text(text))
+
+
+def from_pdf_bytes(key: str, label: str, data: bytes) -> Source:
+    return Source(key=key, kind="pdf", ref=label, text=extract_pdf(data))
+
+
+# What a caller is told when the copy dict is missing an entry. Theoretical today, since
+# main.py is the only caller and its dict is complete, and closed anyway: a KeyError raised
+# inside ingestion is not a SourceError, so load_sources would not catch it and it would
+# escape as a 500 with no `detail` at all. That is the same shapeless failure the unvalidated
+# `kind` used to produce, and one line is cheaper than trusting a dict to stay complete.
+FALLBACK_COPY = "That source could not be read."
+
+
+def _copy_for(copy: dict[str, str], code: str) -> str:
+    return copy.get(code) or FALLBACK_COPY
+
+
+def clean_ref(raw: str) -> str:
+    """A source label, flattened to one line and cut to MAX_REF_CHARS.
+
+    Line breaks go first and that is the half worth explaining. A label is written into
+    single-line contexts, an error row and a prompt tag among them, so one carrying a
+    newline is a label that continues onto a line of its own where nothing expects it. That
+    is the same shape as the register-label forgery tutor.py defends against, one field
+    over, and flattening removes the cheapest version of it without pretending to be the
+    whole defence. See MAX_REF_CHARS.
+
+    The ellipsis is inside the budget rather than added to it, matching tutor._hard_cut, so
+    a truncated label is visibly truncated rather than looking like a shorter name.
+
+    SQUARE BRACKETS BECOME ROUND ONES, and that one IS a defusing rather than a bound.
+    generation.label_segments writes each label inside `[document: ...]`, so a label
+    containing `]` closes that tag early and renames the document to whatever came before
+    it. That was demonstrated, not theorised: a hostile ref ended a segment tag and left
+    instructions sitting at column zero looking like corpus prose.
+
+    Translated rather than stripped because a stripped bracket is a silently mangled name
+    and an IPv6 URL is a legitimate label full of them: http://[::1]/ reads as
+    http://(::1)/ rather than as http:///. Neither can close the tag.
+
+    THIS IS NOT THE WHOLE DEFENCE AND MUST NOT BE READ AS IT. It handles one grammar's
+    delimiters at the point the label is created. The authoritative scrub belongs where the
+    marker is written, for the reason tutor.py scrubs at the prompt boundary: the module
+    that owns a marker is the only one that can be sure it caught every spelling, including
+    the fullwidth and zero-width lookalikes this translate table does not know about.
+    """
+    flat = " ".join((raw or "").split()).translate(_DELIMITERS)
+    if len(flat) <= MAX_REF_CHARS:
+        return flat
+    return flat[: MAX_REF_CHARS - 3].rstrip() + "..."
+
+
+def load_source(spec: SourceSpec, copy: dict[str, str]) -> Source:
+    """Read one spec, or raise. `copy` maps a failure code to the sentence for it.
+
+    The copy is injected rather than held here because those sentences are user-facing
+    product text that already lives in main.py, and a second copy of a sentence is a second
+    thing to edit. This module knows which failure happened; main.py knows how to say it.
+    """
+    if spec.kind == "text":
+        source = from_text("", spec.ref, spec.value if isinstance(spec.value, str) else "")
+    elif spec.kind == "url":
+        try:
+            source = from_url("", str(spec.value))
+        except UnsafeURLError as exc:
+            # The guard's OWN message, not a generic one. It names the host and says how a
+            # self-hoster turns the check off, which is the whole value of it.
+            raise SourceError(UNSAFE_URL, str(exc)) from exc
+        except Exception as exc:
+            raise SourceError(FETCH_FAILED, _copy_for(copy, FETCH_FAILED)) from exc
+    elif spec.kind == "pdf":
+        try:
+            data = spec.value if isinstance(spec.value, bytes) else str(spec.value).encode()
+            source = from_pdf_bytes("", spec.ref, data)
+        except Exception as exc:
+            raise SourceError(PDF_UNREADABLE, _copy_for(copy, PDF_UNREADABLE)) from exc
+    else:
+        raise ValueError(f"Unknown source kind: {spec.kind!r}")
+
+    if not source.text.strip():
+        # A URL that fetched cleanly and a PDF that parsed cleanly can both yield nothing:
+        # a scanned page, a JavaScript-rendered site, an empty paste. That is a failure of
+        # THIS source rather than of the request, so it is reported like the others.
+        raise SourceError(NO_USABLE_TEXT, _copy_for(copy, NO_USABLE_TEXT))
+    return source
+
+
+class SourceError(Exception):
+    """One source failed. Carries the code and the sentence, nothing else."""
+
+    def __init__(self, error: str, message: str):
+        super().__init__(message)
+        self.error = error
+        self.message = message
+
+
+def load_sources(
+    specs: list[SourceSpec], copy: dict[str, str]
+) -> tuple[list[Source], list[SourceFailure]]:
+    """Read every spec and return BOTH what worked and what did not.
+
+    EVERY OUTCOME, NOT THE FIRST FAILURE, and that is the point of the function. A caller
+    that stopped at the first bad URL would make someone fix five sources one request at a
+    time, learning about the second only after correcting the first. The loop has no early
+    exit for exactly that reason, and the test that matters mixes good and bad and counts
+    both lists.
+
+    The count cap is checked BEFORE the loop, so an over-limit request costs no fetches at
+    all rather than MAX_SOURCES of them. The size cap is not checked here, because the size
+    is not known until the fetching is done; the caller applies MAX_TOTAL_CHARS to what
+    comes back.
+    """
+    if len(specs) > MAX_SOURCES:
+        raise TooManySources(len(specs))
+
+    sources: list[Source] = []
+    failures: list[SourceFailure] = []
+    for index, raw_spec in enumerate(specs):
+        # Cleaned once, here, so the Source and the SourceFailure carry the same label and
+        # neither path can be the one that forgot.
+        spec = SourceSpec(kind=raw_spec.kind, ref=clean_ref(raw_spec.ref), value=raw_spec.value)
+        try:
+            sources.append(load_source(spec, copy))
+        except SourceError as exc:
+            failures.append(
+                SourceFailure(
+                    kind=spec.kind,
+                    ref=spec.ref,
+                    error=exc.error,
+                    message=exc.message,
+                    index=index,
+                )
+            )
+    return sources, failures
+
+
+def total_chars(sources: list[Source]) -> int:
+    return sum(len(source.text) for source in sources)
+
+
+def chunk_sources(sources: list[Source]) -> tuple[list[str], list[str]]:
+    """Every source chunked, in order, with the label each chunk came from.
+
+    Returns (chunks, owners) where owners[i] is the `ref` of the source chunk i was cut
+    from. THE PAIR IS THE POINT: generation tags each segment with its document, and a
+    measured A/B put tagged multi-source material 11 points ahead on both answerability
+    and groundedness. Returning chunks alone made that mapping unrecoverable downstream,
+    since a flat list of segments has nothing left saying which document each came from.
+    ONE CHUNK BELONGS TO EXACTLY ONE SOURCE, which is what makes the mapping total. See
+    below on why chunking is per source.
+
+    Chunking per source rather than concatenating first. The texts are unrelated documents,
+    so a chunk straddling the join would be a segment the outline is asked to summarise as
+    one topic when it is two, and provenance (a later task) needs the boundary to survive
+    anyway.
+
+    THIS IS ALSO THE COUNT GENERATION SEES, and that identity is worth protecting. The list
+    returned here is passed to generation.generate_course unchanged and never re-chunked, so
+    len() of it is exactly the number routing keys off. Anything that measured chunks by
+    concatenating first would be measuring a different quantity: five 1,000-character
+    sources are FIVE chunks here and ONE concatenated, so a concatenating measurement
+    reports an unrouted run for a routed one. The eval harness had precisely that bug.
+    """
+    chunks: list[str] = []
+    owners: list[str] = []
+    for source in sources:
+        for chunk in chunk_text(source.text):
+            chunks.append(chunk)
+            owners.append(source.ref)
+    return chunks, owners

@@ -1,0 +1,135 @@
+{
+  "label": "akv-multi-untagged-3",
+  "prompts": {
+    "outline_system": "51268cb63391",
+    "lesson_system": "1e6fc5164c70",
+    "outline_system_chars": 850,
+    "lesson_system_chars": 1578
+  },
+  "runs": [
+    {
+      "name": "multi-darwin-pep8",
+      "ok": false,
+      "error": "APIStatusError: {'type': 'error', 'error': {'details': None, 'type': 'overloaded_error', 'message': 'Overloaded'}, 'request_id': 'req_011CegasQtDthcaheLbshpDs'}",
+      "run_id": "f347220e1dc34574b9833b37c13a5cb8",
+      "prompts": {
+        "outline_system": "51268cb63391",
+        "lesson_system": "1e6fc5164c70",
+        "outline_system_chars": 850,
+        "lesson_system_chars": 1578
+      },
+      "source": {
+        "key": "multi-darwin-pep8",
+        "kind": "text",
+        "ref": "darwin-origin + pep8-style-guide",
+        "chars": 13639,
+        "chunks": 3,
+        "chunk_chars": [
+          7888,
+          2747,
+          3000
+        ],
+        "documents": [
+          "darwin-origin",
+          "pep8-style-guide"
+        ],
+        "source_tags": false
+      },
+      "wall_clock_s": 26.14,
+      "parse_reliability": {
+        "total_calls": 2,
+        "strict_json_first_try": 1,
+        "tolerant_parse_ok": 1,
+        "hard_parse_failures": 1,
+        "retry_path_exists": true,
+        "per_stage": {
+          "lesson": {
+            "calls": 1,
+            "strict_json_first_try": 0,
+            "tolerant_parse_ok": 0,
+            "needed_code_fence_strip": 0,
+            "needed_prose_trim": 0,
+            "schema_ok": 0,
+            "hard_parse_failures": 1,
+            "call_errors": 1
+          },
+          "outline": {
+            "calls": 1,
+            "strict_json_first_try": 1,
+            "tolerant_parse_ok": 1,
+            "needed_code_fence_strip": 0,
+            "needed_prose_trim": 0,
+            "schema_ok": 1,
+            "hard_parse_failures": 0,
+            "call_errors": 0
+          }
+        }
+      },
+      "cost_latency": {
+        "calls": 2,
+        "model": "claude-opus-5",
+        "provider": "anthropic",
+        "total_llm_latency_s": 26.14,
+        "input_tokens": 4934,
+        "output_tokens": 1664,
+        "cost_usd": 0.06627,
+        "any_approximate": false,
+        "per_stage": {
+          "lesson": {
+            "calls": 1,
+            "total_latency_s": 3.42,
+            "mean_latency_s": 3.42,
+            "max_latency_s": 3.42,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost_usd": 0.0
+          },
+          "outline": {
+            "calls": 1,
+            "total_latency_s": 22.72,
+            "mean_latency_s": 22.72,
+            "max_latency_s": 22.72,
+            "input_tokens": 4934,
+            "output_tokens": 1664,
+            "cost_usd": 0.06627
+          }
+        }
+      },
+      "calls": [
+        {
+          "index": 0,
+          "stage": "outline",
+          "latency_s": 22.718835499836132,
+          "prompt_chars": 14580,
+          "response_chars": 4021,
+          "strict_json": true,
+          "tolerant_json": true,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": true,
+          "error": null,
+          "input_tokens": 4934,
+          "output_tokens": 1664,
+          "cost_usd": 0.06627
+        },
+        {
+          "index": 1,
+          "stage": "lesson",
+          "latency_s": 3.4172028999309987,
+          "prompt_chars": 9954,
+          "response_chars": 0,
+          "strict_json": false,
+          "tolerant_json": false,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": false,
+          "error": "APIStatusError: {'type': 'error', 'error': {'details': None, 'type': 'overloaded_error', 'message': 'Overloaded'}, 'request_id': 'req_011CegasQtDthcaheLbshpDs'}",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cost_usd": 0.0
+        }
+      ],
+      "failing_raw_response": "{\"title\": \"Two Foundational Texts: Darwin's Natural Selection and Python's PEP 8\", \"description\": \"A guided reading of two source documents: an excerpt from Chapter IV of Darwin's On the Origin of Species, which sets out the principle of natural selection, and the opening of PEP 8, the style guide for Python code. The course follows each text closely, drawing out its arguments, examples, and stated purposes.\", \"modules\": [{\"title\": \"Darwin: The Principle of Natural Selection\", \"lessons\": [{\"title\": \"Defining Natural Selection\", \"summary\": \"Darwin's opening question \u2014 whether the selection so potent in human hands can act in nature \u2014 and his answer: the preservation of favourable variations and rejection of injurious ones. Covers heredity, the plasticity of organisation under domestication, the complexity of mutual relations among organic beings, and the fate of variations that are neither useful nor injurious (polymorphic species).\", \"segments\": [0]}, {\"title\": \"Changed Conditions, Barriers, and Places in Nature's Economy\", \"summary\": \"Darwin's thought experiment of a country undergoing a change of climate: shifting numerical proportions, immigration of new forms, and the special case of islands or barrier-bounded regions where unfilled places must be filled by modifying existing inhabitants. Also examines his claim that neither great physical change nor isolation is strictly necessary, using the evidence of naturalised productions conquering natives.\", \"segments\": [0]}, {\"title\": \"Nature's Selection Compared with Man's\", \"summary\": \"The extended contrast between human and natural selection: man acts only on external and visible characters and for his own good, while nature acts on every internal organ and shade of constitutional difference, for the good of the being itself. Covers the pigeon, quadruped, and sheep examples, the fleeting timescale of human effort against whole geological periods, and why nature's productions bear 'the stamp of far higher workmanship'.\", \"segments\": [0]}]}, {\"title\": \"Darwin: Selection's Reach into Trifling Characters\", \"lessons\": [{\"title\": \"Daily and Hourly Scrutiny\", \"summary\": \"Darwin's famous image of natural selection silently and insensibly scrutinising every variation throughout the world, rejecting the bad and adding up the good \u2014 and why these slow changes are invisible to us until the long lapse of geological ages reveals that forms of life have altered.\", \"segments\": [1]}, {\"title\": \"Colour, Down, and the Weight of Slight Differences\", \"summary\": \"How characters we consider trivial can be acted upon: green leaf-eating insects, mottled bark-feeders, the white alpine ptarmigan, red-grouse and black-grouse, hawks hunting by eyesight, and the warning against white pigeons. Continues with Downing's horticultural observations on downy versus smooth-skinned fruit, purple versus yellow plums, and yellow-fleshed peaches, and what such differences would settle in a state of nature.\", \"segments\": [1]}]}, {\"title\": \"PEP 8: The Python Style Guide\", \"lessons\": [{\"title\": \"Introduction, Authorship, and Scope\", \"summary\": \"What PEP 8 is: an Active, Process-type PEP authored by Guido van Rossum, Barry Warsaw, and Alyssa Coghlan, giving coding conventions for the Python standard library. Covers its relationship to PEP 257 on docstrings and to the companion guide for C code, and its status as an evolving document that project-specific guides may override.\", \"segments\": [2]}, {\"title\": \"Readability, Consistency, and the Shape of the Guide\", \"summary\": \"Guido's insight that code is read far more often than it is written, PEP 20's 'Readability counts', and the layered rule that consistency with the style guide matters but consistency within a project matters more. Also surveys the guide's table of contents \u2014 code lay-out, string quotes, whitespace, trailing commas, comments, naming conventions, public and internal interfaces, and programming recommendations \u2014 as a map of what a style guide must address.\", \"segments\": [2]}]}]}"
+    }
+  ]
+}

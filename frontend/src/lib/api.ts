@@ -22,6 +22,9 @@ import type {
   ReviewQueue,
   ReviewRatingResult,
   ReviewToday,
+  SourceFailure,
+  SourceInput,
+  SourceLimits,
   TutorConflict,
   TutorConversation,
   TutorMode,
@@ -38,6 +41,22 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = "ApiError";
+  }
+}
+
+/**
+ * Thrown by generateFromSources on a 422 source_failed response: one or more sources
+ * could not be read, individually, rather than one form-level refusal. `sources` carries
+ * the per-source detail a caller maps back onto its own rows by `index`.
+ */
+export class SourceGenerationError extends ApiError {
+  constructor(
+    status: number,
+    message: string,
+    public readonly sources: SourceFailure[],
+  ) {
+    super(status, message);
+    this.name = "SourceGenerationError";
   }
 }
 
@@ -209,6 +228,86 @@ export function generateFromPdf(file: File): Promise<GenerateResult> {
     "/courses/generate/pdf",
     { method: "POST", body: form },
     COST_LIMIT_CONSEQUENCE.generate,
+  );
+}
+
+/** The generation caps to validate against before submitting. Costs nothing. */
+export function getGenerationLimits(): Promise<SourceLimits> {
+  return get("/meta/limits");
+}
+
+/**
+ * The multipart body's non-file parts (here, just `sources`) are capped by the server's
+ * multipart parser itself, before the route handler runs, so an oversized one comes back
+ * as a bare-string 400 rather than the structured source_too_large shape the route's own
+ * checks produce. Checked client-side first so that case is a clear local message instead
+ * of a confusing round trip.
+ */
+const SOURCES_PART_LIMIT_BYTES = 1024 * 1024;
+
+/**
+ * One course from any mix of pasted text, URLs and PDFs, combined into a single
+ * POST /courses/generate/multipart request.
+ *
+ * COMBINED SEND ORDER IS `sources` THEN `files`, both in the order given here. That is
+ * what `index` in a source_failed response counts from, so a caller building both arrays
+ * in a different relative order will map failures onto the wrong rows.
+ *
+ * Does not go through `request`, for the same reason requestRemediation does not: a 422
+ * source_failed response carries per-source detail a caller needs to redraw its own rows
+ * with, not just a message, so it is returned as a typed error rather than flattened into
+ * one.
+ */
+export async function generateFromSources(
+  sources: SourceInput[],
+  files: File[],
+): Promise<GenerateResult> {
+  const form = new FormData();
+  if (sources.length > 0) {
+    const serialized = JSON.stringify(sources);
+    if (new Blob([serialized]).size > SOURCES_PART_LIMIT_BYTES) {
+      throw new ApiError(
+        413,
+        "Your pasted text and URLs come to more than one request can carry. Split them " +
+          "across two generations, or trim the largest one.",
+      );
+    }
+    form.append("sources", serialized);
+  }
+  for (const file of files) {
+    form.append("file", file);
+  }
+
+  const res = await fetch(`${BASE_URL}/courses/generate/multipart`, {
+    method: "POST",
+    body: form,
+  });
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    // Non-JSON body, so the status has to carry the meaning on its own.
+  }
+  if (res.ok) return body as GenerateResult;
+
+  const detail = (body as { detail?: unknown } | null)?.detail;
+  if (
+    detail &&
+    typeof detail === "object" &&
+    (detail as { error?: unknown }).error === "source_failed" &&
+    Array.isArray((detail as { sources?: unknown }).sources)
+  ) {
+    const failed = detail as { message?: string; sources: SourceFailure[] };
+    throw new SourceGenerationError(
+      res.status,
+      failed.message || "Some of your sources could not be read.",
+      failed.sources,
+    );
+  }
+  const fallback = res.statusText || `Request failed with status ${res.status}`;
+  throw new ApiError(
+    res.status,
+    messageFromErrorBody(body, fallback, COST_LIMIT_CONSEQUENCE.generate),
   );
 }
 

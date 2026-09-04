@@ -1,0 +1,183 @@
+{
+  "label": "akv-multi-untagged-4",
+  "prompts": {
+    "outline_system": "51268cb63391",
+    "lesson_system": "1e6fc5164c70",
+    "outline_system_chars": 850,
+    "lesson_system_chars": 1578
+  },
+  "runs": [
+    {
+      "name": "multi-darwin-pep8",
+      "ok": false,
+      "error": "APIStatusError: {'type': 'error', 'error': {'details': None, 'type': 'overloaded_error', 'message': 'Overloaded'}, 'request_id': 'req_011CegbP7ubZCC3urmBKHj2T'}",
+      "run_id": "a68dd8a3418f4da985f0bf144b8b1b70",
+      "prompts": {
+        "outline_system": "51268cb63391",
+        "lesson_system": "1e6fc5164c70",
+        "outline_system_chars": 850,
+        "lesson_system_chars": 1578
+      },
+      "source": {
+        "key": "multi-darwin-pep8",
+        "kind": "text",
+        "ref": "darwin-origin + pep8-style-guide",
+        "chars": 13639,
+        "chunks": 3,
+        "chunk_chars": [
+          7888,
+          2747,
+          3000
+        ],
+        "documents": [
+          "darwin-origin",
+          "pep8-style-guide"
+        ],
+        "source_tags": false
+      },
+      "wall_clock_s": 178.02,
+      "parse_reliability": {
+        "total_calls": 5,
+        "strict_json_first_try": 4,
+        "tolerant_parse_ok": 4,
+        "hard_parse_failures": 1,
+        "retry_path_exists": true,
+        "per_stage": {
+          "lesson": {
+            "calls": 4,
+            "strict_json_first_try": 3,
+            "tolerant_parse_ok": 3,
+            "needed_code_fence_strip": 0,
+            "needed_prose_trim": 0,
+            "schema_ok": 3,
+            "hard_parse_failures": 1,
+            "call_errors": 1
+          },
+          "outline": {
+            "calls": 1,
+            "strict_json_first_try": 1,
+            "tolerant_parse_ok": 1,
+            "needed_code_fence_strip": 0,
+            "needed_prose_trim": 0,
+            "schema_ok": 1,
+            "hard_parse_failures": 0,
+            "call_errors": 0
+          }
+        }
+      },
+      "cost_latency": {
+        "calls": 5,
+        "model": "claude-opus-5",
+        "provider": "anthropic",
+        "total_llm_latency_s": 178.02,
+        "input_tokens": 14234,
+        "output_tokens": 12942,
+        "cost_usd": 0.39472,
+        "any_approximate": false,
+        "per_stage": {
+          "lesson": {
+            "calls": 4,
+            "total_latency_s": 154.69,
+            "mean_latency_s": 38.67,
+            "max_latency_s": 49.09,
+            "input_tokens": 9300,
+            "output_tokens": 11273,
+            "cost_usd": 0.328325
+          },
+          "outline": {
+            "calls": 1,
+            "total_latency_s": 23.33,
+            "mean_latency_s": 23.33,
+            "max_latency_s": 23.33,
+            "input_tokens": 4934,
+            "output_tokens": 1669,
+            "cost_usd": 0.066395
+          }
+        }
+      },
+      "calls": [
+        {
+          "index": 0,
+          "stage": "outline",
+          "latency_s": 23.330057099927217,
+          "prompt_chars": 14580,
+          "response_chars": 4553,
+          "strict_json": true,
+          "tolerant_json": true,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": true,
+          "error": null,
+          "input_tokens": 4934,
+          "output_tokens": 1669,
+          "cost_usd": 0.066395
+        },
+        {
+          "index": 1,
+          "stage": "lesson",
+          "latency_s": 49.09122880012728,
+          "prompt_chars": 10017,
+          "response_chars": 11758,
+          "strict_json": true,
+          "tolerant_json": true,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": true,
+          "error": null,
+          "input_tokens": 3097,
+          "output_tokens": 3890,
+          "cost_usd": 0.11273499999999999
+        },
+        {
+          "index": 2,
+          "stage": "lesson",
+          "latency_s": 46.34227619995363,
+          "prompt_chars": 10060,
+          "response_chars": 11266,
+          "strict_json": true,
+          "tolerant_json": true,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": true,
+          "error": null,
+          "input_tokens": 3115,
+          "output_tokens": 3593,
+          "cost_usd": 0.10540000000000001
+        },
+        {
+          "index": 3,
+          "stage": "lesson",
+          "latency_s": 47.53467179997824,
+          "prompt_chars": 9966,
+          "response_chars": 11254,
+          "strict_json": true,
+          "tolerant_json": true,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": true,
+          "error": null,
+          "input_tokens": 3088,
+          "output_tokens": 3790,
+          "cost_usd": 0.11019
+        },
+        {
+          "index": 4,
+          "stage": "lesson",
+          "latency_s": 11.717119300039485,
+          "prompt_chars": 4790,
+          "response_chars": 0,
+          "strict_json": false,
+          "tolerant_json": false,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": false,
+          "error": "APIStatusError: {'type': 'error', 'error': {'details': None, 'type': 'overloaded_error', 'message': 'Overloaded'}, 'request_id': 'req_011CegbP7ubZCC3urmBKHj2T'}",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cost_usd": 0.0
+        }
+      ],
+      "failing_raw_response": "{\"content\": \"# Nature's Selection Compared with Man's\\n\\n## Where the passage sits\\n\\nChapter IV of *On the Origin of Species* opens by asking whether the principle of selection, \\\"so potent in the hands of man,\\\" can also apply in nature. Darwin has already defined his term:\\n\\n> This preservation of favourable variations and the rejection of injurious variations, I call Natural Selection.\\n\\nHe adds an important qualification that is easy to skip: \\\"Variations neither useful nor injurious would not be affected by natural selection, and would be left a fluctuating element, as perhaps we see in the species called polymorphic.\\\" Natural selection is not a force acting on *all* variation \u2014 only on variation that makes a difference to survival.\\n\\nHaving established the mechanism, Darwin then writes one of the most famous paragraphs in the book: a point-by-point comparison of the breeder with nature. He opens it with a rhetorical question \u2014 \\\"As man can produce and certainly has produced a great result by his methodical and unconscious means of selection, what may not nature effect?\\\" The whole passage is an argument *a fortiori*: if the weaker agent achieves so much, how much more must the stronger achieve.\\n\\n## The four contrasts\\n\\n### 1. Scope: surface versus whole machinery\\n\\n> Man can act only on external and visible characters: nature cares nothing for appearances, except in so far as they may be useful to any being. She can act on every internal organ, on every shade of constitutional difference, on the whole machinery of life.\\n\\nA breeder can only select what he can see. Nature is indifferent to appearance as such \u2014 appearance matters only insofar as it is *useful* to some being. That indifference is precisely what frees nature to work on internal organs, on constitution, on everything.\\n\\n### 2. Beneficiary: whose good?\\n\\n> Man selects only for his own good; Nature only for that of the being which she tends.\\n\\nThis is the pivot of the passage. A short-beaked pigeon exists because a fancier wanted one; the pigeon gains nothing. In nature, no character is preserved unless it profits the being that carries it.\\n\\n### 3. Conditions and exercise\\n\\n> Every selected character is fully exercised by her; and the being is placed under well-suited conditions of life.\\n\\nAgainst this Darwin sets a list of the breeder's failures, each with a concrete example:\\n\\n- **Climate.** \\\"Man keeps the natives of many climates in the same country.\\\"\\n- **Pigeons.** \\\"He feeds a long and a short beaked pigeon on the same food.\\\" The beaks differ; the diet does not, so neither beak is put to its proper work.\\n- **Quadrupeds.** \\\"He does not exercise a long-backed or long-legged quadruped in any peculiar manner.\\\" The structure is bred for but never trained or used in a way that suits it.\\n- **Sheep.** \\\"He exposes sheep with long and short wool to the same climate.\\\" A long fleece and a short fleece are answers to different climates, yet both flocks stand in the same field.\\n- **Males.** \\\"He does not allow the most vigorous males to struggle for the females.\\\"\\n- **The inferior.** \\\"He does not rigidly destroy all inferior animals, but protects during each varying season, as far as lies in his power, all his productions.\\\"\\n\\nNotice how the examples work: in each, a *character* and the *conditions that would test it* have been divorced from one another. Under nature they never are.\\n\\n### 4. Starting point: the conspicuous versus the slight\\n\\n> He often begins his selection by some half-monstrous form; or at least by some modification prominent enough to catch his eye, or to be plainly useful to him. Under nature, the slightest difference of structure or constitution may well turn the nicely-balanced scale in the struggle for life, and so be preserved.\\n\\nThe breeder needs a variation large enough to notice. Nature has no threshold of visibility: because the forces in any country are \\\"nicely balanced,\\\" the tiniest difference can decide the contest. This connects back to Darwin's earlier remark that \\\"individuals having any advantage, however slight, over others, would have the best chance of surviving.\\\"\\n\\n## The decisive advantage: time\\n\\nThe comparison ends with an exclamation:\\n\\n> How fleeting are the wishes and efforts of man! how short his time! and consequently how poor will his products be, compared with those accumulated by nature during whole geological periods.\\n\\nTime is not just one more item on the list; earlier in the chapter Darwin has already leaned on it. He denies that any \\\"extreme amount of variability\\\" is needed, because \\\"as man can certainly produce great results by adding up in any given direction mere individual differences, so could Nature, but far more easily, from having incomparably longer time at her disposal.\\\" Man's disadvantage is doubled: his life is short, and his *wishes* are fickle \u2014 a fashion in pigeons may not outlast a generation, whereas the pressure of the struggle for life is unremitting.\\n\\n## The conclusion Darwin draws\\n\\n> Can we wonder, then, that nature's productions should be far \\\"truer\\\" in character than man's productions; that they should be infinitely better adapted to the most complex conditions of life, and should plainly bear the stamp of far higher workmanship?\\n\\nThe word \\\"truer\\\" is in quotation marks because Darwin is borrowing the breeder's own vocabulary \u2014 a strain that \\\"breeds true\\\" is one whose characters are stable and reliable. He turns the fancier's term of praise against the fancier: nature's productions are truer in exactly the sense the breeders themselves value.\\n\\n## A caution for the reader\\n\\nDarwin's language here is thoroughly personified \u2014 nature \\\"tends\\\" beings, \\\"cares nothing,\\\" has time \\\"at her disposal.\\\" This is metaphor doing rhetorical work, not a claim about an agent with intentions. Every one of the contrasts can be restated without the metaphor: characters that are not useful to their possessor are not preserved; characters are tested under the actual conditions of life; no variation is too small to be sifted; and the sifting has been going on for geological periods.\\n\\n**Summary table**\\n\\n| | Man | Nature |\\n|---|---|---|\\n| Acts on | external and visible characters | every internal organ, every shade of constitutional difference |\\n| For the good of | himself | the being she tends |\\n| Conditions | many climates in one country; same food, same climate for different forms | each character exercised, well-suited conditions |\\n| Inferior individuals | protected as far as he can | rigidly destroyed |\\n| Starting variation | half-monstrous or prominent enough to catch the eye | the slightest difference of structure or constitution |\\n| Time | fleeting wishes, short life | whole geological periods |\",\n \"concepts\": [\"Darwin's definition of natural selection as preservation of favourable and rejection of injurious variations\", \"The contrast between man's selection on external, visible characters and nature's action on internal organs and constitution\", \"Selection for the good of the breeder versus the good of the being itself\", \"The breeder's failure to exercise selected characters under fitting conditions (pigeons, quadrupeds, sheep)\", \"Time as nature's decisive advantage, and the 'truer' character of nature's productions\"],\n \"quiz\": [\n  {\"question\": \"According to Darwin, why does nature 'care nothing for appearances'?\", \"kind\": \"mcq\", \"options\": [\"Because appearances matter to her only in so far as they may be useful to some being\", \"Because visible characters vary too little to be acted upon in nature\", \"Because internal organs vary more freely than external ones in the wild\", \"Because appearances are the last characters to become hereditary\"], \"answer\": \"Because appearances matter to her only in so far as they may be useful to some being\", \"concept\": \"The contrast between man's selection on external, visible characters and nature's action on internal organs and constitution\"},\n  {\"question\": \"Which of Darwin's examples illustrates his complaint that man 'seldom exercises each selected character in some peculiar and fitting manner'?\", \"kind\": \"mcq\", \"options\": [\"He feeds a long and a short beaked pigeon on the same food\", \"He crosses pigeons of unlike breeds to fix a new variety\", \"He selects pigeons whose beaks are already prominent enough to catch his eye\", \"He keeps pigeons in aviaries where the most vigorous males can struggle\"], \"answer\": \"He feeds a long and a short beaked pigeon on the same food\", \"concept\": \"The breeder's failure to exercise selected characters under fitting conditions (pigeons, quadrupeds, sheep)\"},\n  {\"question\": \"In Darwin's own words, what is Natural Selection?\", \"kind\": \"short\", \"options\": [], \"answer\": \"The preservation of favourable variations and the rejection of injurious variations. (Variations that are neither useful nor injurious are not affected by it and are left a fluctuating element.)\", \"concept\": \"Darwin's definition of natural selection as preservation of favourable and rejection of injurious variations\"},\n  {\"question\": \"How does Darwin describe the kind of variation man typically starts from, compared with the kind nature can act on?\", \"kind\": \"mcq\", \"options\": [\"Man often begins with a half-monstrous or eye-catching form, while under nature the slightest difference may turn the nicely-balanced scale\", \"Man begins with slight constitutional differences, while nature requires large structural changes to seize a new place\", \"Man begins with characters already known to be inherited, while nature acts chiefly on characters that are not yet hereditary\", \"Man begins with whatever the season presents, while nature waits for great physical changes such as climate to supply variation\"], \"answer\": \"Man often begins with a half-monstrous or eye-catching form, while under nature the slightest difference may turn the nicely-balanced scale\", \"concept\": \"Darwin's definition of natural selection as preservation of favourable and rejection of injurious variations\"},\n  {\"question\": \"Darwin says man's efforts are 'fleeting' and his time 'short'. What conclusion does he draw from this about man's products?\", \"kind\": \"mcq\", \"options\": [\"They will be poor compared with what nature accumulates during whole geological periods\", \"They will be more variable, since short-term breeding never fixes a character\", \"They will be confined to domestic animals and can never spread into nature\", \"They will be adapted to man's needs but not inherited by the next generation\"], \"answer\": \"They will be poor compared with what nature accumulates during whole geological periods\", \"concept\": \"Time as nature's decisive advantage, and the 'truer' character of nature's productions\"},\n  {\"question\": \"Darwin denies that any 'extreme amount of variability' is necessary for nature to work. What reason does he give?\", \"kind\": \"short\", \"options\": [], \"answer\": \"Because man can produce great results merely by adding up individual differences in a given direction, and Nature can do the same far more easily, having incomparably longer time at her disposal.\", \"concept\": \"Time as nature's decisive advantage, and the 'truer' character of nature's productions\"}\n ]}"
+    }
+  ]
+}

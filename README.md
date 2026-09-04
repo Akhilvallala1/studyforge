@@ -128,10 +128,10 @@ Prefer the raw API? The interactive docs live at http://localhost:8000/docs:
 ```bash
 curl -X POST http://localhost:8000/courses/generate \
   -H "Content-Type: application/json" \
-  -d '{"text": "<paste your study material here>"}'
+  -d '{"sources": [{"kind": "text", "value": "<paste your study material here>"}]}'
 ```
 
-Or upload a PDF to `POST /courses/generate/pdf`. Run tests with `pytest backend/tests`.
+Pass several sources in one request, up to 5 of them and 150,000 characters in total. PDFs go to `POST /courses/generate/pdf` instead, which takes one or more files under the `file` field; a single request is either JSON sources or PDF uploads, not both. The legacy `text` and `url` fields still work but are deprecated and will be removed in 0.4.0. Run tests with `pytest backend/tests`.
 
 ## Cost control
 

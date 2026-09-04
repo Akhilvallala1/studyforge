@@ -14,6 +14,7 @@ the generated JSON: no model-as-judge, no scores that cannot be re-derived by ha
 | Parse reliability | Did each response parse as strict JSON first try, or need fence-stripping or prose-trimming? |
 | Structure | Lesson/quiz/option counts, empty fields, duplicate questions and options, MCQ answers missing from their own options. |
 | Cost and latency | Per stage and per course, from the app's own metering. |
+| Segment fallback | How often the outline routed a lesson to nothing usable, so the lesson took the whole corpus instead of its own segments. |
 
 Grounding and answerability score an answer by **best window recall**: the largest
 fraction of the answer's content words that appear inside a single local window of
@@ -79,8 +80,50 @@ python -m evals.run_eval --compare output/results-baseline.json output/results-a
   sees the same crude tag-stripped text the app feeds the model.
 - `prose-text`: a public-domain excerpt of Darwin's *Origin of Species* ch. IV,
   in `evals/data/`, as a shorter-material contrast.
+- `multi-darwin-pep8`: the multi-source corpus. Darwin's full excerpt plus the first
+  3,000 characters of PEP 8, as two separate documents.
 
-Add one by extending `available_sources()` in `run_eval.py`.
+Add one by extending `available_sources()` in `run_eval.py`. A source whose corpus is
+several documents also needs an entry in `MULTI_SOURCE_KEYS` beside it, which is what
+carries the document boundaries into generation.
+
+## The multi-source arm
+
+`multi-darwin-pep8` exists to measure one configuration: several documents, with
+segment routing switched on. Two things about it are chosen rather than incidental.
+
+**The documents are unrelated on purpose.** The failure the source-aware outline prompt
+exists to prevent is a model reading two documents as one continuous work, and two
+excerpts of the same book cannot exhibit it, because a lesson bridging them would be
+correct. Darwin and a Python style guide share no vocabulary, structure or subject, so a
+lesson that reads across the seam is visibly wrong.
+
+**The sizes are chosen for the chunk arithmetic.** Routing switches on at
+`SEGMENT_ROUTING_MIN_CHUNKS` (3) and chunks hold up to 8,000 characters, so two short
+documents make two chunks and stay *unrouted*. Darwin's full text is 2 chunks and the
+PEP 8 excerpt is 1, giving exactly 3: the smallest corpus that is both genuinely
+multi-source and routed.
+
+Note that a multi-source corpus is chunked **per document**, not over the concatenation,
+so a chunk always has one owner to tag it with. This gives a different count from
+`chunk_text` over the joined text, and the printed count is the one generation uses.
+
+### Running the A/B
+
+`--no-source-tags` withholds the document tags, which reproduces the pre-feature prompt
+exactly rather than approximately: `label_segments` and `outline_system` both branch on
+whether the corpus names more than one document, so the untagged arm is byte for byte
+what shipped before multi-source existed. It is the BEFORE arm.
+
+```bash
+python -m evals.run_eval --label multi-tagged-1   --source multi-darwin-pep8
+python -m evals.run_eval --label multi-untagged-1 --source multi-darwin-pep8 --no-source-tags
+python -m evals.trials evals/output --group multi-tagged --group multi-untagged
+```
+
+Run each arm several times. `evals/trials.py` refuses to name a winner whose lead is
+inside the spread between two runs of the same prompt, and one run of each arm cannot
+tell you what that spread is.
 
 ## Tests
 
