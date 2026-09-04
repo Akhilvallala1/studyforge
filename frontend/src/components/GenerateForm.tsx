@@ -56,6 +56,35 @@ function skipReasonLabel(reason: SkipReason): string {
   }
 }
 
+/** A count-prefixed reason clause for the aggregate announcement, e.g. "2 not a PDF". */
+function skipReasonSummaryLabel(reason: SkipReason, count: number): string {
+  switch (reason) {
+    case "not-pdf":
+      return `${count} not a PDF`;
+    case "empty":
+      return `${count} ${count === 1 ? "empty file" : "empty files"}`;
+    case "over-source-cap":
+      return `${count} over the source limit`;
+    case "over-byte-cap":
+      return `${count} over the upload size limit`;
+  }
+}
+
+/**
+ * The reasons a batch of skipped files was skipped, folded into one clause so a
+ * screen-reader learner gets them from the announced text itself rather than only from
+ * the closed-by-default breakdown below it.
+ */
+function summarizeSkips(skipped: SkippedFile[]): string {
+  const counts = new Map<SkipReason, number>();
+  for (const entry of skipped) {
+    counts.set(entry.reason, (counts.get(entry.reason) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([reason, count]) => skipReasonSummaryLabel(reason, count))
+    .join(", ");
+}
+
 function isPdfFile(file: File): boolean {
   if (file.type === "application/pdf") return true;
   return file.name.toLowerCase().endsWith(".pdf");
@@ -88,6 +117,11 @@ export function GenerateForm() {
   const [limits, setLimits] = useState<SourceLimits | null>(null);
   const [intakeNote, setIntakeNote] = useState<IntakeNote | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  // Bumped alongside every summaryError announcement, including a repeat of the exact
+  // same message: a state update to an unchanged string is a no-op React bails out of,
+  // which would otherwise leave a second identical failure silently un-announced and
+  // focus stuck on the submit button. The focus effect keys off this, not summaryError.
+  const [summaryErrorSeq, setSummaryErrorSeq] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [success, setSuccess] = useState<GenerateResult | null>(null);
@@ -96,6 +130,26 @@ export function GenerateForm() {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const focusSummaryNext = useRef(false);
+  const addTextButtonRef = useRef<HTMLButtonElement>(null);
+  // Live DOM handles for controls that need to be re-focused after a state change
+  // unmounts or repositions whatever previously held focus: a row's main input (added)
+  // and a row's Remove button (the successor after a removal). Keyed by row id, which
+  // outlives any one render, unlike an index into rows/fileRows.
+  const inputRefs = useRef(new Map<string, HTMLTextAreaElement | HTMLInputElement>());
+  const removeButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const focusInputIdNext = useRef<string | null>(null);
+  const focusRemoveIdNext = useRef<string | null>(null);
+  const focusAddTextNext = useRef(false);
+
+  function registerInputRef(id: string, el: HTMLTextAreaElement | HTMLInputElement | null) {
+    if (el) inputRefs.current.set(id, el);
+    else inputRefs.current.delete(id);
+  }
+
+  function registerRemoveButtonRef(id: string, el: HTMLButtonElement | null) {
+    if (el) removeButtonRefs.current.set(id, el);
+    else removeButtonRefs.current.delete(id);
+  }
 
   // `webkitdirectory` has no React prop and is not part of HTMLInputElement's type, so it
   // is set imperatively as a plain attribute here rather than smuggled onto the JSX
@@ -136,12 +190,38 @@ export function GenerateForm() {
 
   // Move to the summary alert whenever a submit attempt produced a fresh one, so a
   // keyboard or screen-reader learner is not left on the just-re-enabled submit button
-  // with no indication anything happened.
+  // with no indication anything happened. Keyed on the seq, not the message itself, so
+  // two submits in a row that fail the same way both move focus.
   useEffect(() => {
     if (!focusSummaryNext.current) return;
     focusSummaryNext.current = false;
     summaryRef.current?.focus();
-  }, [summaryError]);
+  }, [summaryErrorSeq]);
+
+  // A freshly added row's input takes focus, the same way opening any new field would.
+  // Guarded by the intent ref so this does not fire on every keystroke that produces a
+  // new `rows` array, only on the commit that actually added a row.
+  useEffect(() => {
+    const id = focusInputIdNext.current;
+    if (!id) return;
+    focusInputIdNext.current = null;
+    inputRefs.current.get(id)?.focus();
+  }, [rows]);
+
+  // After a row is removed, focus follows it: to the row that slid into its place, or
+  // the previous row if it was last, or the text-adding button if the list emptied out.
+  // Keyed on both arrays, since the successor of a removed text row can be a PDF row.
+  useEffect(() => {
+    if (focusAddTextNext.current) {
+      focusAddTextNext.current = false;
+      addTextButtonRef.current?.focus();
+      return;
+    }
+    const id = focusRemoveIdNext.current;
+    if (!id) return;
+    focusRemoveIdNext.current = null;
+    removeButtonRefs.current.get(id)?.focus();
+  }, [rows, fileRows]);
 
   const totalSources = rows.length + fileRows.length;
   // Text rows only, never URL rows: a URL row's `value` is the address, not the page's
@@ -155,7 +235,9 @@ export function GenerateForm() {
   const locked = submitting || success !== null;
 
   function addRow(kind: RowKind) {
-    setRows((prev) => [...prev, { id: newRowId(kind), kind, value: "", ref: "", error: null }]);
+    const id = newRowId(kind);
+    focusInputIdNext.current = id;
+    setRows((prev) => [...prev, { id, kind, value: "", ref: "", error: null }]);
   }
 
   function updateRow(id: string, patch: Partial<Pick<SourceRow, "value" | "ref">>) {
@@ -164,11 +246,32 @@ export function GenerateForm() {
     setRows((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch, error: null } : row)));
   }
 
+  /**
+   * Arm the post-removal focus target before the row is actually gone, since finding a
+   * "next" or "previous" row only makes sense against the list as it stands right now.
+   * `rows` and `fileRows` render as one sequence, text/url rows first, so the successor
+   * has to be computed against them combined: doing it against just the array the id
+   * came out of loses the PDF rows entirely when the last text row is the one removed.
+   */
+  function armFocusAfterRemoval(id: string) {
+    const combined = [...rows, ...fileRows];
+    const index = combined.findIndex((row) => row.id === id);
+    if (index === -1) return;
+    const successor = combined[index + 1] ?? combined[index - 1];
+    if (successor) {
+      focusRemoveIdNext.current = successor.id;
+    } else {
+      focusAddTextNext.current = true;
+    }
+  }
+
   function removeRow(id: string) {
+    armFocusAfterRemoval(id);
     setRows((prev) => prev.filter((row) => row.id !== id));
   }
 
   function removeFileRow(id: string) {
+    armFocusAfterRemoval(id);
     setFileRows((prev) => prev.filter((row) => row.id !== id));
   }
 
@@ -182,41 +285,50 @@ export function GenerateForm() {
    */
   function ingestFiles(picked: FileList) {
     const candidates = Array.from(picked).sort((a, b) => a.name.localeCompare(b.name));
-    const skipped: SkippedFile[] = [];
-    const accepted: File[] = [];
 
-    let remainingSlots = limits ? limits.max_sources - totalSources : Infinity;
-    let remainingBytes = limits ? limits.max_upload_bytes - uploadedBytes : Infinity;
+    // The accept/skip decision runs inside the setFileRows updater, against `prev`,
+    // rather than against `uploadedBytes`/`totalSources` closed over from render: two
+    // picks fired back to back (the file input and the folder input, say, before either
+    // has re-rendered) would otherwise both budget against the same stale total and let
+    // both waves through the cap together. `outcome` is filled in as a side channel so
+    // the intake note can still be set once, right after, from what actually landed.
+    const outcome: IntakeNote = { added: 0, skipped: [] };
+    setFileRows((prev) => {
+      const skipped: SkippedFile[] = [];
+      const accepted: File[] = [];
+      let remainingSlots = limits ? limits.max_sources - rows.length - prev.length : Infinity;
+      let remainingBytes = limits
+        ? limits.max_upload_bytes - prev.reduce((sum, row) => sum + row.file.size, 0)
+        : Infinity;
 
-    for (const file of candidates) {
-      if (!isPdfFile(file)) {
-        skipped.push({ name: file.name, reason: "not-pdf" });
-        continue;
+      for (const file of candidates) {
+        if (!isPdfFile(file)) {
+          skipped.push({ name: file.name, reason: "not-pdf" });
+          continue;
+        }
+        if (file.size === 0) {
+          skipped.push({ name: file.name, reason: "empty" });
+          continue;
+        }
+        if (remainingSlots <= 0) {
+          skipped.push({ name: file.name, reason: "over-source-cap" });
+          continue;
+        }
+        if (file.size > remainingBytes) {
+          skipped.push({ name: file.name, reason: "over-byte-cap" });
+          continue;
+        }
+        accepted.push(file);
+        remainingSlots -= 1;
+        remainingBytes -= file.size;
       }
-      if (file.size === 0) {
-        skipped.push({ name: file.name, reason: "empty" });
-        continue;
-      }
-      if (remainingSlots <= 0) {
-        skipped.push({ name: file.name, reason: "over-source-cap" });
-        continue;
-      }
-      if (file.size > remainingBytes) {
-        skipped.push({ name: file.name, reason: "over-byte-cap" });
-        continue;
-      }
-      accepted.push(file);
-      remainingSlots -= 1;
-      remainingBytes -= file.size;
-    }
 
-    if (accepted.length > 0) {
-      setFileRows((prev) => [
-        ...prev,
-        ...accepted.map((file) => ({ id: newRowId("pdf"), file, error: null })),
-      ]);
-    }
-    setIntakeNote({ added: accepted.length, skipped });
+      outcome.added = accepted.length;
+      outcome.skipped = skipped;
+      if (accepted.length === 0) return prev;
+      return [...prev, ...accepted.map((file) => ({ id: newRowId("pdf"), file, error: null }))];
+    });
+    setIntakeNote(outcome);
   }
 
   function handleFilePick(event: ChangeEvent<HTMLInputElement>) {
@@ -258,10 +370,18 @@ export function GenerateForm() {
       }
     }
     for (const failure of unmatched) {
+      // A url row's `ref` is blank whenever the learner left the label empty, which is
+      // the common case, and the server then defaults `ref` to the row's own URL - so
+      // matching only `row.ref` would silently miss exactly the rows most likely to need
+      // this fallback. `row.value` is checked too for that kind.
       const fallbackRow =
         failure.kind === "pdf"
           ? fileRows.find((row) => row.file.name === failure.ref)
-          : rows.find((row) => row.kind === failure.kind && row.ref === failure.ref);
+          : rows.find(
+              (row) =>
+                row.kind === failure.kind &&
+                (row.ref === failure.ref || (row.kind === "url" && row.value === failure.ref)),
+            );
       if (fallbackRow) messageByRowId.set(fallbackRow.id, failure.message);
     }
 
@@ -277,6 +397,18 @@ export function GenerateForm() {
     );
   }
 
+  /**
+   * Announce a summary failure and move focus to it. A plain `setSummaryError` would
+   * silently no-op on a second submit that fails with the exact same message, since
+   * React bails out of a state update to an unchanged value: the seq bump makes every
+   * announcement, repeat or not, a real commit the focus effect reacts to.
+   */
+  function announceSummaryError(message: string) {
+    setSummaryError(message);
+    setSummaryErrorSeq((seq) => seq + 1);
+    focusSummaryNext.current = true;
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setSummaryError(null);
@@ -284,16 +416,14 @@ export function GenerateForm() {
     setFileRows((prev) => prev.map((row) => ({ ...row, error: null })));
 
     if (totalSources === 0) {
-      setSummaryError("Add some pasted text, a URL, or a PDF first.");
-      focusSummaryNext.current = true;
+      announceSummaryError("Add some pasted text, a URL, or a PDF first.");
       return;
     }
     const blankRow = rows.find((row) => !row.value.trim());
     if (blankRow) {
       const message = blankRow.kind === "text" ? "This is empty." : "Enter a URL.";
       setRows((prev) => prev.map((row) => (row.id === blankRow.id ? { ...row, error: message } : row)));
-      setSummaryError("Fix the highlighted source before generating.");
-      focusSummaryNext.current = true;
+      announceSummaryError("Fix the highlighted source before generating.");
       return;
     }
 
@@ -314,13 +444,14 @@ export function GenerateForm() {
       setSubmitting(false);
       if (err instanceof SourceGenerationError) {
         applyFailures(err.sources);
-        setSummaryError(`${err.message} ${plural(err.sources.length, "source is", "sources are")} marked below.`);
+        announceSummaryError(
+          `${err.message} ${plural(err.sources.length, "source is", "sources are")} marked below.`,
+        );
       } else if (err instanceof ApiError) {
-        setSummaryError(err.message);
+        announceSummaryError(err.message);
       } else {
-        setSummaryError("Could not reach the server. Is the backend running?");
+        announceSummaryError("Could not reach the server. Is the backend running?");
       }
-      focusSummaryNext.current = true;
     }
   }
 
@@ -341,6 +472,8 @@ export function GenerateForm() {
                 disabled={locked}
                 onChange={(patch) => updateRow(row.id, patch)}
                 onRemove={() => removeRow(row.id)}
+                inputRef={(el) => registerInputRef(row.id, el)}
+                removeButtonRef={(el) => registerRemoveButtonRef(row.id, el)}
               />
             ))}
             {fileRows.map((row) => (
@@ -349,12 +482,14 @@ export function GenerateForm() {
                 row={row}
                 disabled={locked}
                 onRemove={() => removeFileRow(row.id)}
+                removeButtonRef={(el) => registerRemoveButtonRef(row.id, el)}
               />
             ))}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <button
+              ref={addTextButtonRef}
               type="button"
               onClick={() => addRow("text")}
               disabled={locked || atSourceCap}
@@ -418,11 +553,11 @@ export function GenerateForm() {
               <p>
                 {intakeNote.added === 0 && intakeNote.skipped.length === 0
                   ? "No PDFs were found."
-                  : `${plural(intakeNote.added, "file", "files")} added${
-                      intakeNote.skipped.length > 0
-                        ? `, ${plural(intakeNote.skipped.length, "file", "files")} skipped`
-                        : ""
-                    }.`}
+                  : intakeNote.skipped.length > 0
+                    ? `${plural(intakeNote.added, "file", "files")} added, ${
+                        intakeNote.skipped.length
+                      } skipped: ${summarizeSkips(intakeNote.skipped)}.`
+                    : `${plural(intakeNote.added, "file", "files")} added.`}
               </p>
               {intakeNote.skipped.length > 0 && (
                 <details className="mt-1">
@@ -512,9 +647,21 @@ interface SourceRowFieldProps {
   disabled: boolean;
   onChange: (patch: Partial<Pick<SourceRow, "value" | "ref">>) => void;
   onRemove: () => void;
+  /** Reaches the row's main control (textarea or url input), so a newly added row can
+   * be focused, and a row restored by state can still be found by id after re-render. */
+  inputRef: (el: HTMLTextAreaElement | HTMLInputElement | null) => void;
+  /** Reaches this row's Remove button, so removing a neighbouring row can land focus here. */
+  removeButtonRef: (el: HTMLButtonElement | null) => void;
 }
 
-function SourceRowField({ row, disabled, onChange, onRemove }: SourceRowFieldProps) {
+function SourceRowField({
+  row,
+  disabled,
+  onChange,
+  onRemove,
+  inputRef,
+  removeButtonRef,
+}: SourceRowFieldProps) {
   const errorId = `source-${row.id}-error`;
   const label = row.kind === "text" ? "Pasted text" : "URL";
 
@@ -525,6 +672,7 @@ function SourceRowField({ row, disabled, onChange, onRemove }: SourceRowFieldPro
           {label}
         </span>
         <button
+          ref={removeButtonRef}
           type="button"
           onClick={onRemove}
           disabled={disabled}
@@ -536,6 +684,7 @@ function SourceRowField({ row, disabled, onChange, onRemove }: SourceRowFieldPro
 
       {row.kind === "text" ? (
         <textarea
+          ref={inputRef}
           value={row.value}
           onChange={(event) => onChange({ value: event.target.value })}
           disabled={disabled}
@@ -547,6 +696,7 @@ function SourceRowField({ row, disabled, onChange, onRemove }: SourceRowFieldPro
         />
       ) : (
         <input
+          ref={inputRef}
           type="url"
           value={row.value}
           onChange={(event) => onChange({ value: event.target.value })}
@@ -583,9 +733,11 @@ interface FileRowFieldProps {
   row: FileRow;
   disabled: boolean;
   onRemove: () => void;
+  /** Reaches this row's Remove button, so removing a neighbouring row can land focus here. */
+  removeButtonRef: (el: HTMLButtonElement | null) => void;
 }
 
-function FileRowField({ row, disabled, onRemove }: FileRowFieldProps) {
+function FileRowField({ row, disabled, onRemove, removeButtonRef }: FileRowFieldProps) {
   const errorId = `source-${row.id}-error`;
 
   return (
@@ -612,6 +764,7 @@ function FileRowField({ row, disabled, onRemove }: FileRowFieldProps) {
           <p className="text-xs text-zinc-500 dark:text-zinc-400">{formatBytes(row.file.size)}</p>
         </div>
         <button
+          ref={removeButtonRef}
           type="button"
           onClick={onRemove}
           disabled={disabled}

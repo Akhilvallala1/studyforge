@@ -72,17 +72,19 @@ import { ConceptTutor } from "@/components/ConceptTutor";
 import { DaysOffControl } from "@/components/DaysOffControl";
 import { DeadlineForm } from "@/components/DeadlineForm";
 import { CourseDeletionProvider, DeleteCourseButton } from "@/components/DeleteCourseButton";
+import { GenerateForm } from "@/components/GenerateForm";
 import type { TutorOutcome } from "@/lib/api";
 import {
   ApiError,
   deleteCourse,
   getDeletionPreview,
+  getGenerationLimits,
   getTutorConversation,
   removeDayOff,
   sendTutorMessage,
   setCourseDeadline,
 } from "@/lib/api";
-import type { CourseDeletion, CoursePlan, DayOffRemoval } from "@/lib/types";
+import type { CourseDeletion, CoursePlan, DayOffRemoval, SourceLimits } from "@/lib/types";
 
 import { conversation, deferred, plan, tutorRow, turnOutcome } from "./fixtures";
 
@@ -96,6 +98,8 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   removeDayOff: vi.fn(),
   getDeletionPreview: vi.fn(),
   deleteCourse: vi.fn(),
+  getGenerationLimits: vi.fn(),
+  generateFromSources: vi.fn(),
 }));
 
 // Both forms refresh the route after a save; the refresh is a no-op here because the
@@ -451,5 +455,102 @@ describe("DeleteCourseButton focus restoration", () => {
       screen.queryByText(/0 more/),
       "a learner with no concepts taught elsewhere should not be told about a category that is empty for them",
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * GenerateForm has no single sender to restore focus to: rows are added and removed
+ * freely, so the target is a different control on almost every commit. Unlike the four
+ * suites above, the guard here is not "did the request land while I moved on", it is
+ * "which control is the right one now that the list has changed shape", so these tests
+ * pin the TARGET the effects pick, not a decline path.
+ */
+describe("GenerateForm focus restoration", () => {
+  const SOURCE_LIMITS: SourceLimits = {
+    max_sources: 20,
+    max_total_chars: 200_000,
+    max_upload_bytes: 20 * 1024 * 1024,
+  };
+
+  async function renderGenerateForm() {
+    vi.mocked(getGenerationLimits).mockResolvedValue(SOURCE_LIMITS);
+    const view = render(<GenerateForm />);
+    // Flushes the mount-time getGenerationLimits().then(...) inside act, rather than
+    // leaving it to resolve as a stray microtask after a test's own assertions run.
+    await act(async () => {});
+    return view;
+  }
+
+  test("adding a text row focuses its new textarea", async () => {
+    await renderGenerateForm();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add text" }));
+
+    expect(
+      screen.getByPlaceholderText(
+        "Paste lecture notes, an article, documentation - anything you want to learn.",
+      ),
+      "the row just added is where the learner is about to type, so it should already have focus",
+    ).toHaveFocus();
+  });
+
+  test("adding a url row focuses its new url input", async () => {
+    await renderGenerateForm();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add URL" }));
+
+    expect(
+      screen.getByPlaceholderText("https://example.com/article"),
+      "the row just added is where the learner is about to type, so it should already have focus",
+    ).toHaveFocus();
+  });
+
+  test("removing a row focuses the Remove button of the row that slides into its place, crossing from a text row into a PDF row", async () => {
+    const { container } = await renderGenerateForm();
+    const addText = screen.getByRole("button", { name: "+ Add text" });
+    fireEvent.click(addText);
+    fireEvent.click(addText);
+
+    const fileInput = container.querySelectorAll('input[type="file"]')[0];
+    const pdfFile = new File(["%PDF-1.4"], "notes.pdf", { type: "application/pdf" });
+    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [pdfFile] } });
+    await screen.findByText("notes.pdf");
+
+    const removeButtons = screen.getAllByRole("button", { name: "Remove" });
+    expect(removeButtons).toHaveLength(3);
+    const pdfRemoveButton = removeButtons[2];
+
+    // Removes the second (and last) text row. Its successor in the combined
+    // [...rows, ...fileRows] order the form renders is the PDF row, not another text
+    // row: a fix that hunted for a successor inside `rows` alone would find nothing here.
+    fireEvent.click(removeButtons[1]);
+
+    expect(
+      pdfRemoveButton,
+      "the PDF row's Remove button is the removed row's successor in combined order and must take focus",
+    ).toHaveFocus();
+  });
+
+  test("removing the only row focuses the text-adding button", async () => {
+    await renderGenerateForm();
+    const addText = screen.getByRole("button", { name: "+ Add text" });
+    fireEvent.click(addText);
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+
+    expect(
+      addText,
+      "with no row left to hand focus to, the text-adding button is the nearest control to send it to",
+    ).toHaveFocus();
+  });
+
+  test("a failed submit moves focus to the summary alert", async () => {
+    await renderGenerateForm();
+    fireEvent.click(screen.getByRole("button", { name: "Generate course" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("alert"),
+        "a submit that fails must land the learner on the announced reason, not leave focus stranded on the button",
+      ).toHaveFocus(),
+    );
   });
 });
