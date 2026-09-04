@@ -167,6 +167,18 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
    * learner actually came from.
    */
   const wantsTriggerFocus = useRef(false);
+  /*
+   * Bumped on every openConfirm call and on Cancel, so a preview response can tell
+   * whether it is still the one anyone is waiting for.
+   *
+   * Cancel cannot simply clear `busy`/`loadingPreview` itself: the abandoned fetch is
+   * still in flight, and when it eventually settles its own `finally` would clear
+   * those flags again, re-disabling the confirm button (or worse, re-enabling it out
+   * from under a newer request) at a time nothing on screen explains. A response
+   * whose generation no longer matches is ignored in full, including its `finally`,
+   * which is what lets Cancel clear the busy state immediately without racing it.
+   */
+  const generationRef = useRef(0);
 
   if (!ctx) throw new Error("DeleteCourseButton must be rendered inside CourseDeletionProvider");
   const { onDeleted, refreshing } = ctx;
@@ -174,34 +186,61 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
 
   async function openConfirm() {
     if (pending) return;
+    const generation = ++generationRef.current;
     setOpen(true);
     setError(null);
     setBusy(true);
     setLoadingPreview(true);
     try {
-      setPreview(await getDeletionPreview(courseId));
+      const result = await getDeletionPreview(courseId);
+      if (generationRef.current !== generation) return;
+      setPreview(result);
     } catch (err) {
+      if (generationRef.current !== generation) return;
       // A 404 arrives here as its bare-string detail, already turned into a message by
       // `request`, so this branch does not care which shape the server used.
       setError(err instanceof ApiError ? err.message : "Could not reach the server.");
     } finally {
-      setBusy(false);
-      setLoadingPreview(false);
+      if (generationRef.current === generation) {
+        setBusy(false);
+        setLoadingPreview(false);
+      }
     }
   }
 
-  // Move to the confirming button once the panel is open, so a keyboard learner is not
-  // left on a control that has just changed meaning underneath them.
+  /*
+   * Move to the confirming button once the panel is open AND the preview has landed,
+   * so a keyboard learner is not left on a control that has just changed meaning
+   * underneath them.
+   *
+   * Gated on `!loadingPreview` rather than trusting that `preview` alone means the
+   * button is enabled: it does on the FIRST open, when `preview` starts null, but not
+   * on a re-open after Cancel. Cancel's `setPreview(null)` runs before the abandoned
+   * fetch resolves, so that fetch's `setPreview(result)` can still land after the
+   * panel is reopened, leaving `preview` non-null while `loadingPreview` is (briefly)
+   * true again for the new request. Verified: open, Cancel before the preview lands,
+   * let the stale fetch resolve, reopen; without this guard `.focus()` is called on
+   * the button `loadingPreview` has just disabled, and both jsdom and real browsers
+   * refuse that focus, leaving it on the body for the whole refetch.
+   */
   useEffect(() => {
-    if (open && preview) confirmRef.current?.focus();
-  }, [open, preview]);
+    if (open && preview && !loadingPreview) confirmRef.current?.focus();
+  }, [open, preview, loadingPreview]);
 
   // Cancel unmounts the panel that holds the focused Cancel button, so without this
   // focus falls to the body and a keyboard learner loses their place in the list.
   // The trigger is where they pressed Enter, so it is where they get put back.
   useEffect(() => {
-    if (open || !wantsTriggerFocus.current) return;
+    if (open) return;
+    if (!wantsTriggerFocus.current) return;
     wantsTriggerFocus.current = false;
+    // Same guard as the provider's restore (and in the same order relative to
+    // consuming the flag above: consume first, decline after, so a decline cannot
+    // leave the intent armed for a later, unrelated commit). Mouse clicks do not
+    // move focus onto the button they hit in Safari and Firefox, so a learner who was
+    // typing in another field when they clicked Cancel never left it; without this,
+    // they would be pulled out of it into the trigger.
+    if (document.activeElement !== document.body) return;
     triggerRef.current?.focus();
   }, [open]);
 
@@ -260,7 +299,10 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
           ))}
         </div>
       ) : (
-        <p className="mt-1.5 text-[13px] text-zinc-500 dark:text-zinc-400">
+        // aria-live so a screen reader user learns something is happening: with the
+        // confirming button disabled and focus still on body at this point (the focus
+        // effect above declines until the preview lands), nothing else here speaks.
+        <p aria-live="polite" className="mt-1.5 text-[13px] text-zinc-500 dark:text-zinc-400">
           Checking what this would delete…
         </p>
       )}
@@ -268,12 +310,32 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
         <button
           type="button"
           onClick={() => {
+            // Invalidates the in-flight preview fetch (see generationRef above) so its
+            // response cannot resurface after this closes the loading window: without
+            // this, clearing busy/loadingPreview here would let a press that reopens
+            // the panel start a second preview that the first one's `finally` could
+            // still clobber.
+            generationRef.current++;
             wantsTriggerFocus.current = true;
             setOpen(false);
             setPreview(null);
             setError(null);
+            // Cleared here, not left for the abandoned fetch's `finally`: that finally
+            // is now a no-op for a stale generation, and without clearing these the
+            // trigger's `if (pending) return` would swallow the very next press for as
+            // long as the abandoned fetch happens to take, with no feedback on screen.
+            setBusy(false);
+            setLoadingPreview(false);
           }}
-          className="rounded-lg border border-zinc-300 px-3.5 py-1.5 text-xs font-medium transition-colors hover:border-zinc-500 dark:border-zinc-700 dark:hover:border-zinc-500"
+          // Enabled during the preview load (a slow preview must stay cancellable) and
+          // once it lands, disabled only while the delete itself is running: cancelling
+          // then would park focus on this row's own trigger (see wantsTriggerFocus)
+          // while the delete is still in flight, and that trigger's `if (pending)
+          // return` would swallow the press with no feedback. `!loadingPreview` is the
+          // same "am I mid-delete" test the confirming button's disabled prop is not
+          // allowed to use (see confirmDelete's comment), stated the other way round.
+          disabled={busy && !loadingPreview}
+          className="rounded-lg border border-zinc-300 px-3.5 py-1.5 text-xs font-medium transition-colors hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:border-zinc-500"
         >
           Cancel
         </button>
@@ -288,15 +350,11 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
            * silence: no delete, no error, nothing on screen. It is never disabled
            * during the delete itself, because by then it holds focus and disabling a
            * focused control blurs it to the body.
-           *
-           * Enabling and the focus effect land in one commit: setPreview and
-           * setBusy/setLoadingPreview(false) run in the same continuation and batch,
-           * so the effect never tries to focus a still-disabled button.
            */
           disabled={loadingPreview}
           className="rounded-lg bg-red-700 px-3.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-800 dark:bg-red-800 dark:hover:bg-red-700"
         >
-          {busy && preview ? "Deleting…" : "Delete permanently"}
+          {busy && !loadingPreview ? "Deleting…" : "Delete permanently"}
         </button>
       </div>
     </div>
