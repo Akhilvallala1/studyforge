@@ -199,13 +199,15 @@ export function GenerateForm() {
   // two submits in a row that fail the same way both move focus.
   //
   // Only when the learner has not moved since they sent. Two things satisfy that and
-  // they are not the same thing: the body, which is where a disabled submit button drops
-  // focus while the request is in flight, and focusAtSend, wherever focus actually was
-  // the moment they submitted. Testing only the body would be a proxy that happens to
-  // hold here because the button disables itself, but generation takes 1 to 3 minutes by
-  // this form's own copy, long enough for a learner to tab off to read something else;
-  // that learner matches neither test and must be left where they went, not yanked to
-  // the alert the instant it appears.
+  // they are not the same thing: the body, which is where focus lands once the submit
+  // button unmounts for the spinner while the request is in flight, and focusAtSend,
+  // wherever focus actually was the moment they submitted. Testing only the body is not
+  // merely weaker, it is wrong: the empty-list and blank-row checks return before
+  // anything unmounts, so on those paths the button still holds focus and a body-only
+  // test would never open, which is the everyday failure rather than a corner. Testing
+  // both also covers a learner who tabbed off during the 1 to 3 minutes this form's own
+  // copy quotes; they match neither and are left where they went, told by the alert's
+  // assertive live region rather than yanked to it.
   useEffect(() => {
     if (!focusSummaryNext.current) return;
     focusSummaryNext.current = false;
