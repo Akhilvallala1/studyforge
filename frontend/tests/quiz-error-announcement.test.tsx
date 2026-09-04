@@ -118,6 +118,29 @@ describe("editing the answer clears a stale validation error", () => {
       "a server error describes the last request, not the current answer, so editing must not silently drop it",
     ).toHaveTextContent("Could not reach the server.");
   });
+
+  /*
+   * The mcq half of the same rule. The two onChange handlers carry the identical
+   * `errorKind === "validation"` guard, but only the text input above was pinned:
+   * making the mcq handler clear every error kind unconditionally left the whole
+   * suite green. It reds this test on the assertion below.
+   */
+  test("leaves a server error in place when another mcq option is picked", async () => {
+    const { item } = renderQuiz("mcq");
+    const failure = deferred<never>();
+    vi.mocked(answerQuiz).mockReturnValue(failure.promise);
+    fireEvent.click(screen.getByRole("radio", { name: item.options[0] }));
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    await act(async () => failure.reject(new ApiError(500, "Could not reach the server.")));
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not reach the server.");
+
+    fireEvent.click(screen.getByRole("radio", { name: item.options[1] }));
+
+    expect(
+      screen.getByRole("alert"),
+      "a server error describes the last request, not the current answer, so picking another option must not silently drop it",
+    ).toHaveTextContent("Could not reach the server.");
+  });
 });
 
 /**
@@ -157,8 +180,10 @@ describe("a repeated identical validation error re-announces", () => {
     renderQuiz("short");
     const button = screen.getByRole("button", { name: "Check answer" });
     // fireEvent.click does not focus its target in jsdom, so focus has to be placed
-    // explicitly to mean anything: without this line the assertions below would pass
-    // whether or not the button ever actually held focus.
+    // explicitly for the assertions below to be about focus at all. Removing this line
+    // does NOT leave the test vacuously green, as an earlier version of this comment
+    // claimed: focus starts on <body>, so the first toHaveFocus() fails outright and
+    // the test reds. Measured, not reasoned.
     act(() => button.focus());
     expect(button).toHaveFocus();
 
