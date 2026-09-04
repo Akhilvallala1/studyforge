@@ -35,7 +35,7 @@ function RecallBar({ retrievability }: { retrievability: number | null }) {
           ? "Recall probability not known yet"
           : `Recall probability ${percent} percent`
       }
-      className="h-[5px] w-[84px] overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
+      className="h-[5px] w-[84px] overflow-hidden rounded-full bg-line"
     >
       <div className="h-full bg-amber-600" style={{ width: `${percent}%` }} />
     </div>
@@ -337,7 +337,7 @@ export function ReteachConcept({
         : `Re-teach ${entry.concept_label}`;
 
   return (
-    <li className="flex flex-col rounded-lg border border-zinc-200 px-[18px] py-3.5 dark:border-zinc-800">
+    <li className="flex flex-col rounded-surface border border-line px-[18px] py-3.5">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="text-[15px] font-medium">{entry.concept_label}</div>
@@ -349,7 +349,7 @@ export function ReteachConcept({
               a panel saying the learner is past it. Nothing replaces them, because
               nothing here knows the new ones. */}
           {!recovered && (
-            <div className="mt-0.5 text-[13px] text-zinc-500 dark:text-zinc-400">
+            <div className="mt-0.5 text-small text-ink-subtle">
               Missed {entry.missed} of {entry.of} times
               {entry.is_due && " · due now"}
             </div>
@@ -387,10 +387,10 @@ export function ReteachConcept({
             aria-label={accessibleName}
             aria-expanded={hasNote ? open : undefined}
             aria-controls={hasNote && open ? panelId : undefined}
-            className={`rounded-lg border border-zinc-300 px-3.5 py-1.5 text-[13px] font-medium transition-colors dark:border-zinc-700 ${
+            className={`rounded-control border border-line-strong px-3.5 py-1.5 text-small font-medium transition-colors ${
               busy || spent
                 ? `opacity-60 ${busy ? "cursor-progress" : "cursor-not-allowed"}`
-                : "hover:border-zinc-500 dark:hover:border-zinc-500"
+                : "hover:border-line-hover"
             }`}
           >
             {label}
@@ -410,10 +410,10 @@ export function ReteachConcept({
       </div>
 
       {busy && (
-        <div className="mt-3 flex items-center gap-3 rounded-lg border border-zinc-200 px-4 py-3 dark:border-zinc-800">
+        <div className="mt-3 flex items-center gap-3 rounded-control border border-line px-4 py-3">
           <span
             aria-hidden
-            className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-700 dark:border-t-zinc-100"
+            className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-line-strong border-t-ink"
           />
           <div className="text-[13px]">
             <p className="font-medium">
@@ -421,7 +421,7 @@ export function ReteachConcept({
                 ? "An explanation of this concept is already being written. Waiting for it."
                 : "Writing an explanation of this concept."}
             </p>
-            <p className="mt-0.5 tabular-nums text-zinc-600 dark:text-zinc-400">
+            <p className="mt-0.5 tabular-nums text-ink-muted">
               Elapsed: {formatElapsed(elapsed)}
             </p>
           </div>
@@ -429,7 +429,7 @@ export function ReteachConcept({
       )}
 
       {notice && (
-        <p className="mt-3 rounded-lg bg-zinc-50 px-4 py-3 text-[13px] text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+        <p className="mt-3 rounded-control bg-surface-sunken px-4 py-3 text-small text-ink-muted">
           {notice}
         </p>
       )}

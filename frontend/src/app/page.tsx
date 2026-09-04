@@ -1,6 +1,10 @@
 import Link from "next/link";
 
 import { ReteachConcept } from "@/components/ReteachConcept";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Stat } from "@/components/ui/Stat";
 import { ApiError, getCourse, getRemediation, getReviewToday, listCourses } from "@/lib/api";
 import type {
   CourseDetail,
@@ -96,37 +100,6 @@ async function findNextUp(courses: CourseSummary[]): Promise<NextUp | null> {
   return null;
 }
 
-function Stat({
-  value,
-  label,
-  emphasis,
-  title,
-  note,
-}: {
-  value: string;
-  label: string;
-  emphasis?: boolean;
-  title?: string;
-  note?: string;
-}) {
-  return (
-    <div className="flex flex-col-reverse">
-      <dt className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{label}</dt>
-      <dd
-        title={title}
-        className={`font-mono text-[22px] font-medium tabular-nums ${
-          emphasis ? "text-emerald-600 dark:text-emerald-500" : ""
-        } ${title ? "cursor-help" : ""}`}
-      >
-        {value}
-        {/* `title` alone is not reliably announced, so the same explanation is in the
-            accessibility tree as text. */}
-        {note && <span className="sr-only"> {note}</span>}
-      </dd>
-    </div>
-  );
-}
-
 function RetentionStat({ today }: { today: ReviewToday }) {
   if (today.retention === null) {
     const note = `Not enough review history yet: ${today.sample_size} ${
@@ -172,13 +145,8 @@ export default async function TodayPage() {
   if (loadError) {
     return (
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
-        <h1 className="text-3xl font-bold tracking-tight">Today</h1>
-        <p
-          role="alert"
-          className="mt-8 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-        >
-          {loadError}
-        </p>
+        <PageHeader title="Today" />
+        <ErrorState className="mt-8" title="" message={loadError} />
       </main>
     );
   }
@@ -186,24 +154,23 @@ export default async function TodayPage() {
   if (courses.length === 0) {
     return (
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-        <div className="mb-10">
-          <h1 className="text-3xl font-semibold tracking-tight">StudyForge</h1>
-          <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-            Turn any material into a structured course with quizzes.
-          </p>
-        </div>
-        <div className="rounded-xl border border-dashed border-zinc-300 px-6 py-16 text-center dark:border-zinc-700">
-          <p className="text-lg font-medium">No courses yet</p>
-          <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-            Paste text, drop in a URL, or upload a PDF to get started.
-          </p>
-          <Link
-            href="/courses/new"
-            className="mt-6 inline-block rounded-lg bg-zinc-900 px-5 py-2.5 font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-          >
-            Create your first course
-          </Link>
-        </div>
+        <PageHeader
+          className="mb-10"
+          title="StudyForge"
+          description="Turn any material into a structured course with quizzes."
+        />
+        <EmptyState
+          title="No courses yet"
+          description="Paste text, drop in a URL, or upload a PDF to get started."
+          action={
+            <Link
+              href="/courses/new"
+              className="inline-block rounded-control bg-fill px-5 py-2.5 font-medium text-on-fill transition-colors duration-fast ease-standard hover:bg-fill-hover"
+            >
+              Create your first course
+            </Link>
+          }
+        />
       </main>
     );
   }
@@ -213,28 +180,30 @@ export default async function TodayPage() {
 
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-10">
-      <h1 className="text-3xl font-bold tracking-tight">Today</h1>
-      <p className="mt-1.5 text-sm text-zinc-600 dark:text-zinc-400">
-        {formatStudyDay(today.date)} &middot; {dueSentence(today.due_today)}
-      </p>
+      <PageHeader
+        title="Today"
+        description={
+          <>
+            {formatStudyDay(today.date)} &middot; {dueSentence(today.due_today)}
+          </>
+        }
+      />
 
       <section
         aria-labelledby="review-session-heading"
-        className="mt-6 overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800"
+        className="mt-6 overflow-hidden rounded-surface border border-line"
       >
-        <div className="flex flex-wrap items-center justify-between gap-5 border-b border-zinc-200 bg-zinc-50 px-[22px] py-5 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex flex-wrap items-center justify-between gap-5 border-b border-line bg-surface-sunken px-[22px] py-5">
           <div>
-            <h2 id="review-session-heading" className="text-[17px] font-semibold">
+            <h2 id="review-session-heading" className="text-subtitle">
               Review session
             </h2>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              {sessionSentence(today)}
-            </p>
+            <p className="mt-1 text-ui text-ink-muted">{sessionSentence(today)}</p>
           </div>
           {today.due_now > 0 && (
             <Link
               href="/review"
-              className="shrink-0 whitespace-nowrap rounded-lg bg-zinc-900 px-[18px] py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+              className="shrink-0 whitespace-nowrap rounded-control bg-fill px-[18px] py-2.5 text-small font-medium text-on-fill transition-colors duration-fast ease-standard hover:bg-fill-hover"
             >
               Start review
             </Link>
@@ -250,13 +219,13 @@ export default async function TodayPage() {
 
       {today.needs_attention.length > 0 && (
         <section aria-labelledby="needs-attention-heading">
-          <h2 id="needs-attention-heading" className="mt-8 text-[15px] font-semibold">
+          <h2 id="needs-attention-heading" className="mt-8 text-ui font-semibold">
             Needs attention
           </h2>
           {/* Offered, not automatic, and it does not gate the next review: saying it
               would re-teach these "before testing them again" promised a reset that
               nothing in the scheduler performs. */}
-          <p className="mt-1 text-[13px] text-zinc-500 dark:text-zinc-400">
+          <p className="mt-1 text-small text-ink-subtle">
             Concepts you have missed more than once. Ask StudyForge to explain one a
             different way; it stays in your review queue either way.
           </p>
@@ -274,19 +243,32 @@ export default async function TodayPage() {
 
       {nextUp && (
         <section aria-labelledby="next-up-heading">
-          <h2 id="next-up-heading" className="mt-7 text-[15px] font-semibold">
+          <h2 id="next-up-heading" className="mt-7 text-ui font-semibold">
             Next up
           </h2>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-zinc-200 px-[18px] py-4 dark:border-zinc-800">
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-4 rounded-surface border border-line px-[18px] py-4">
             <div>
-              <div className="text-[15px] font-medium">{nextUp.lesson.title}</div>
-              <div className="mt-0.5 text-[13px] text-zinc-500 dark:text-zinc-400">
+              <div className="text-ui font-medium">{nextUp.lesson.title}</div>
+              <div className="mt-0.5 text-small text-ink-subtle">
                 Next unfinished lesson &middot; {nextUp.course.title}
               </div>
             </div>
+            {/* Deliberately not Button's `secondary` variant: `secondary` rests on
+                `border-line`, 1.33:1 against the #0a0a0a page, while the sibling
+                outline control here (ReteachConcept's re-teach button) uses
+                `border-line-strong`. This link keeps `border-line-strong` too
+                (1.90:1 dark), which is what it already had as `border-zinc-300
+                dark:border-zinc-700`: those emit the same hexes, so versus main
+                this is contrast-neutral, and it is only an improvement against the
+                `border-line` an earlier round of this branch briefly gave it.
+                Only the BORDER is shared with the re-teach button; that one is
+                px-3.5 with an untokenised transition against this one's px-4 and
+                duration-fast ease-standard. Reconciling `secondary` itself is an
+                open follow-up: it affects every secondary control in the app and
+                needs its own QA pass. */}
             <Link
               href={`/courses/${nextUp.course.id}/lessons/${nextUp.lesson.id}`}
-              className="shrink-0 rounded-lg border border-zinc-300 px-4 py-1.5 text-[13px] font-medium transition-colors hover:border-zinc-500 dark:border-zinc-700 dark:hover:border-zinc-500"
+              className="shrink-0 rounded-control border border-line-strong px-4 py-1.5 text-small font-medium text-ink transition-colors duration-fast ease-standard hover:border-line-hover"
             >
               Continue
             </Link>

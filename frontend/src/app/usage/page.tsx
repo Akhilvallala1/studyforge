@@ -1,5 +1,9 @@
 import Link from "next/link";
 
+import { Badge } from "@/components/ui/Badge";
+import { Card } from "@/components/ui/Card";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { ApiError, getUsage } from "@/lib/api";
 import { formatCount, formatUsd } from "@/lib/format";
 import type { UsageSummary } from "@/lib/types";
@@ -26,66 +30,57 @@ export default async function UsagePage() {
     <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-12">
       <Link
         href="/courses"
-        className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+        className="text-small text-ink-muted transition-colors duration-fast ease-standard hover:text-ink"
       >
         &larr; All courses
       </Link>
-      <h1 className="mt-4 text-3xl font-semibold tracking-tight">API cost usage</h1>
-      <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-        Estimated LLM spend on this server, across course generation and re-teaching alike.
-        Figures on this page are ESTIMATES derived from token counts and provider pricing
-        tables, not billed amounts.
-      </p>
+      <PageHeader
+        className="mt-4"
+        title="API cost usage"
+        description="Estimated LLM spend on this server, across course generation and re-teaching alike. Figures on this page are ESTIMATES derived from token counts and provider pricing tables, not billed amounts."
+      />
 
-      {loadError && (
-        <p
-          role="alert"
-          className="mt-8 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-        >
-          {loadError}
-        </p>
-      )}
+      {loadError && <ErrorState className="mt-8" title="" message={loadError} />}
 
       {usage && (
         <>
           <section aria-labelledby="totals-heading" className="mt-8">
-            <h2 id="totals-heading" className="text-lg font-semibold">
+            <h2 id="totals-heading" className="text-subtitle">
               Totals
             </h2>
             <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-                <dt className="text-xs text-zinc-500 dark:text-zinc-400">LLM calls</dt>
-                <dd className="mt-1 text-xl font-semibold tabular-nums">
-                  {formatCount(usage.totals.calls)}
-                </dd>
-              </div>
-              <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-                <dt className="text-xs text-zinc-500 dark:text-zinc-400">Input tokens</dt>
-                <dd className="mt-1 text-xl font-semibold tabular-nums">
+              <Card padding={4}>
+                <dt className="text-small text-ink-subtle">LLM calls</dt>
+                <dd className="mt-1 text-title tabular-nums">{formatCount(usage.totals.calls)}</dd>
+              </Card>
+              <Card padding={4}>
+                <dt className="text-small text-ink-subtle">Input tokens</dt>
+                <dd className="mt-1 text-title tabular-nums">
                   {formatCount(usage.totals.input_tokens)}
                 </dd>
-              </div>
-              <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-                <dt className="text-xs text-zinc-500 dark:text-zinc-400">Output tokens</dt>
-                <dd className="mt-1 text-xl font-semibold tabular-nums">
+              </Card>
+              <Card padding={4}>
+                <dt className="text-small text-ink-subtle">Output tokens</dt>
+                <dd className="mt-1 text-title tabular-nums">
                   {formatCount(usage.totals.output_tokens)}
                 </dd>
-              </div>
-              <div className="rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-                <dt className="text-xs text-zinc-500 dark:text-zinc-400">Estimated cost (USD)</dt>
-                <dd className="mt-1 text-xl font-semibold tabular-nums">
+              </Card>
+              <Card padding={4}>
+                <dt className="text-small text-ink-subtle">Estimated cost (USD)</dt>
+                <dd className="mt-1 text-title tabular-nums">
                   {formatUsd(usage.totals.estimated_cost_usd)}
                 </dd>
-              </div>
+              </Card>
             </dl>
             {usage.totals.approximate_note && (
-              <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                {usage.totals.approximate_note}
-              </p>
+              <p className="mt-2 text-small text-ink-subtle">{usage.totals.approximate_note}</p>
             )}
           </section>
 
-          <section aria-labelledby="alert-heading" className="mt-6 rounded-xl border border-zinc-200 p-4 text-sm dark:border-zinc-800">
+          <section
+            aria-labelledby="alert-heading"
+            className="mt-6 rounded-surface border border-line p-4 text-ui"
+          >
             <h2 id="alert-heading" className="sr-only">
               Alert and spend limit configuration
             </h2>
@@ -93,45 +88,46 @@ export default async function UsagePage() {
               Recurring spend alert threshold:{" "}
               <span className="font-medium tabular-nums">{formatUsd(usage.alert.threshold_usd)}</span>
               {usage.alert.active && (
-                <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                <Badge tone="warning" className="ml-2">
                   Active
-                </span>
+                </Badge>
               )}
             </p>
             {usage.limit.configured ? (
-              <p className="mt-1">
-                Hard spend cap:{" "}
-                <span className="font-medium tabular-nums">{formatUsd(usage.limit.limit_usd)}</span>
-                {usage.limit.reached ? (
-                  <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-950 dark:text-red-300">
-                    Reached, further paid generations are blocked
+              <>
+                <p className="mt-1">
+                  Hard spend cap:{" "}
+                  <span className="font-medium tabular-nums">
+                    {formatUsd(usage.limit.limit_usd)}
                   </span>
-                ) : (
-                  <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                    Not reached
-                  </span>
+                  <Badge tone={usage.limit.reached ? "danger" : "success"} className="ml-2">
+                    {usage.limit.reached ? "Reached" : "Not reached"}
+                  </Badge>
+                </p>
+                {usage.limit.reached && (
+                  <p className="mt-1 text-ink-muted">Further paid generations are blocked.</p>
                 )}
-              </p>
+              </>
             ) : (
-              <p className="mt-1 text-zinc-600 dark:text-zinc-400">
+              <p className="mt-1 text-ink-muted">
                 No hard spend cap is configured, generations are never blocked on cost.
               </p>
             )}
           </section>
 
           <section aria-labelledby="per-course-heading" className="mt-10">
-            <h2 id="per-course-heading" className="text-lg font-semibold">
+            <h2 id="per-course-heading" className="text-subtitle">
               Where the spend went
             </h2>
             {usage.per_course.length === 0 ? (
-              <p className="mt-3 rounded-lg border border-dashed border-zinc-300 px-4 py-6 text-center text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+              <p className="mt-3 rounded-surface border border-dashed border-line-strong px-4 py-6 text-center text-small text-ink-muted">
                 No LLM spend recorded yet.
               </p>
             ) : (
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full min-w-[560px] border-collapse text-left text-sm">
+                <table className="w-full min-w-[560px] border-collapse text-left text-ui">
                   <thead>
-                    <tr className="border-b border-zinc-200 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                    <tr className="border-b border-line-strong text-micro uppercase text-ink-subtle">
                       <th scope="col" className="py-2 pr-4 font-medium">
                         Attributed to
                       </th>
@@ -151,10 +147,7 @@ export default async function UsagePage() {
                   </thead>
                   <tbody>
                     {usage.per_course.map((row) => (
-                      <tr
-                        key={`${row.group}:${row.course_id ?? ""}`}
-                        className="border-b border-zinc-100 last:border-0 dark:border-zinc-900"
-                      >
+                      <tr key={`${row.group}:${row.course_id ?? ""}`} className="border-b border-line last:border-0">
                         <td className="py-2 pr-4">
                           {row.group === "course" && row.course_id !== null ? (
                             <Link
@@ -166,7 +159,7 @@ export default async function UsagePage() {
                           ) : (
                             <Link
                               href={`#note-${row.group}`}
-                              className="text-zinc-600 underline decoration-dotted underline-offset-2 dark:text-zinc-400"
+                              className="text-ink-muted underline decoration-dotted underline-offset-2"
                             >
                               {row.label}
                             </Link>
@@ -186,11 +179,7 @@ export default async function UsagePage() {
                 {usage.per_course
                   .filter((row) => row.note !== null)
                   .map((row) => (
-                    <p
-                      key={row.group}
-                      id={`note-${row.group}`}
-                      className="mt-2 text-xs text-zinc-500 dark:text-zinc-400"
-                    >
+                    <p key={row.group} id={`note-${row.group}`} className="mt-2 text-small text-ink-subtle">
                       {row.note}
                     </p>
                   ))}
@@ -199,18 +188,18 @@ export default async function UsagePage() {
           </section>
 
           <section aria-labelledby="recent-calls-heading" className="mt-10">
-            <h2 id="recent-calls-heading" className="text-lg font-semibold">
+            <h2 id="recent-calls-heading" className="text-subtitle">
               Recent calls
             </h2>
             {usage.recent_calls.length === 0 ? (
-              <p className="mt-3 rounded-lg border border-dashed border-zinc-300 px-4 py-6 text-center text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+              <p className="mt-3 rounded-surface border border-dashed border-line-strong px-4 py-6 text-center text-small text-ink-muted">
                 No LLM calls recorded yet.
               </p>
             ) : (
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+                <table className="w-full min-w-[720px] border-collapse text-left text-ui">
                   <thead>
-                    <tr className="border-b border-zinc-200 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+                    <tr className="border-b border-line-strong text-micro uppercase text-ink-subtle">
                       <th scope="col" className="py-2 pr-4 font-medium">
                         Time
                       </th>
@@ -233,10 +222,7 @@ export default async function UsagePage() {
                   </thead>
                   <tbody>
                     {usage.recent_calls.map((call) => (
-                      <tr
-                        key={call.id}
-                        className="border-b border-zinc-100 last:border-0 dark:border-zinc-900"
-                      >
+                      <tr key={call.id} className="border-b border-line last:border-0">
                         <td className="py-2 pr-4 whitespace-nowrap tabular-nums">
                           {formatTimestamp(call.created_at)}
                         </td>
@@ -249,9 +235,7 @@ export default async function UsagePage() {
                         <td className="py-2 tabular-nums">
                           {formatUsd(call.estimated_cost_usd)}
                           {call.approximate && (
-                            <span className="ml-1 text-xs text-zinc-500 dark:text-zinc-400">
-                              (approx.)
-                            </span>
+                            <span className="ml-1 text-small text-ink-subtle">(approx.)</span>
                           )}
                         </td>
                       </tr>

@@ -75,15 +75,18 @@ export default async function CoursePage(props: PageProps<"/courses/[courseId]">
                       {lesson.completed ? "✓" : ""}
                     </span>
                     {/*
-                      ink-muted, NOT ink-subtle, and the difference is not cosmetic.
-                      --sf-ink-subtle is zinc-500 in BOTH modes by deliberate design
-                      (globals.css:48 and :280), so on the dark surface #0a0a0a it
-                      measures 4.10:1 and misses the 4.5 AA floor for 16px text. This
+                      ink-muted, NOT ink-subtle, and the difference is not cosmetic. This
                       span is the accessible name of the primary navigation link on the
                       page, and completed lessons are the majority of the list for any
                       learner making progress, so that is the worst place in the app to
-                      lose contrast. ink-muted is zinc-600 light / zinc-400 dark: 7.72
-                      and 7.55, never worse than the zinc-500/zinc-400 pair it replaces.
+                      lose contrast. --sf-ink-subtle's dark value has moved since this was
+                      last written (see globals.css, the dark-mode override block) and
+                      now clears AA on its own (5.21:1 on the #0a0a0a page); ink-muted is
+                      still the deliberate choice here regardless, at 7.72:1 light /
+                      7.55:1 dark, because "clears the floor" and "is the best available
+                      contrast for this element" are different bars and this element gets
+                      the second one. Re-derive both figures from the built CSS before
+                      trusting them again: this comment already went stale once.
                     */}
                     <span className={lesson.completed ? "text-ui text-ink-muted" : "text-ui"}>
                       {lesson.title}
