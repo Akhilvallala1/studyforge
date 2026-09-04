@@ -144,6 +144,18 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
   const [preview, setPreview] = useState<CourseDeletion | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /*
+   * Tracks the PREVIEW fetch specifically, not "something is in flight".
+   *
+   * `busy` covers both the preview and the delete, and the confirming button has to
+   * treat those two opposite ways: refuse presses during the first, keep accepting
+   * them during the second. Deriving the loading window from `busy && !preview &&
+   * !error` looks equivalent and is not, because confirmDelete clears the error on
+   * entry: retrying after a failed preview would land on busy true, preview null,
+   * error null, and re-disable the button in the middle of the delete, which is the
+   * focus-dropping behaviour the button is deliberately built to avoid.
+   */
+  const [loadingPreview, setLoadingPreview] = useState(false);
   const confirmRef = useRef<HTMLButtonElement>(null);
 
   if (!ctx) throw new Error("DeleteCourseButton must be rendered inside CourseDeletionProvider");
@@ -155,6 +167,7 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
     setOpen(true);
     setError(null);
     setBusy(true);
+    setLoadingPreview(true);
     try {
       setPreview(await getDeletionPreview(courseId));
     } catch (err) {
@@ -163,6 +176,7 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
       setError(err instanceof ApiError ? err.message : "Could not reach the server.");
     } finally {
       setBusy(false);
+      setLoadingPreview(false);
     }
   }
 
@@ -246,6 +260,19 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
           type="button"
           ref={confirmRef}
           onClick={() => void confirmDelete()}
+          /*
+           * Disabled ONLY while the preview loads. Until it lands this button cannot
+           * honour a press (confirmDelete returns early on `pending`), and it used to
+           * say "Delete permanently" throughout that window and drop the click in
+           * silence: no delete, no error, nothing on screen. It is never disabled
+           * during the delete itself, because by then it holds focus and disabling a
+           * focused control blurs it to the body.
+           *
+           * Enabling and the focus effect land in one commit: setPreview and
+           * setBusy/setLoadingPreview(false) run in the same continuation and batch,
+           * so the effect never tries to focus a still-disabled button.
+           */
+          disabled={loadingPreview}
           className="rounded-lg bg-red-700 px-3.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-800 dark:bg-red-800 dark:hover:bg-red-700"
         >
           {busy && preview ? "Deleting…" : "Delete permanently"}
