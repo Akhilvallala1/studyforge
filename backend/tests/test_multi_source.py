@@ -318,7 +318,7 @@ def test_every_failure_is_reported_not_only_the_first(client, monkeypatch):
         "them up against the rows it drew"
     )
     for entry in detail["sources"]:
-        assert set(entry) == {"kind", "ref", "error", "message"}
+        assert set(entry) == {"index", "kind", "ref", "error", "message"}
         assert entry["kind"] == "url"
         assert entry["error"] == ingest.UNSAFE_URL
         assert "private or local network" in entry["message"], (

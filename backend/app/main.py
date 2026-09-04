@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import uuid
@@ -6,11 +7,11 @@ from datetime import UTC, date, datetime
 from typing import Any, Literal
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError, model_validator
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -237,6 +238,15 @@ class SourceInput(BaseModel):
     ref: str | None = None
 
 
+# Validates one element of the multipart route's `sources` field, which is a JSON string
+# inside a form field rather than a JSON request body. FastAPI's own body parsing, and the
+# RequestValidationError handler above, only ever see a form field that parsed as a string;
+# nothing downstream of that validates what the string contains. TypeAdapter over the list
+# rather than SourceInput.model_validate per element so a validation error's `loc` names
+# which element failed, the way it would if this had arrived as a real JSON body.
+_MULTIPART_SOURCES_ADAPTER = TypeAdapter(list[SourceInput])
+
+
 class GenerateRequest(BaseModel):
     """Material for one course, as one or more sources.
 
@@ -348,6 +358,24 @@ def source_too_large_message(total: int) -> str:
         f"{ingest.MAX_TOTAL_CHARS:,}. Nothing was generated and nothing was charged. "
         f"Try fewer or shorter documents."
     )
+
+
+def upload_too_large_message(total_bytes: int) -> str:
+    """The byte-specific sibling of source_too_large_message, same code and shape.
+
+    A DIFFERENT SENTENCE, SAME error CODE, on purpose: this is the upload cap
+    (ingest.MAX_UPLOAD_BYTES), checked on raw file size before anything is read, while
+    source_too_large_message is the character cap on extracted text. Sharing the code
+    means a client handling `source_too_large` already handles this without a new branch;
+    the message is what tells a person which cap they hit.
+    """
+    return (
+        f"Those files come to {total_bytes:,} bytes and the limit is "
+        f"{ingest.MAX_UPLOAD_BYTES:,} bytes. Nothing was generated and nothing was charged. "
+        f"Try fewer or smaller files."
+    )
+
+
 INVALID_RATING_MESSAGE = f"rating must be one of {list(fsrs.RATINGS)}"
 
 MESSAGE_EMPTY_MESSAGE = "Type a question before sending it."
@@ -605,6 +633,46 @@ def _run_generation_from(session: Session, ingested: tuple[list[str], list[str]]
     return _run_generation(session, chunks, owners)
 
 
+def _parse_multipart_sources(raw: str) -> list[SourceInput]:
+    """Parse the multipart route's `sources` form field into validated inputs.
+
+    HAND-ROLLED, AND THAT IS THE POINT. `sources` here is a JSON string riding inside a
+    multipart form field, not a JSON request body, so it never passes through FastAPI's own
+    body parsing and the RequestValidationError handler above never sees inside it. A
+    malformed string, a JSON value that is not an array, and an element that fails
+    validation all have to be caught here by hand and turned into the same invalid_request
+    shape everything else on this API uses, rather than surfacing as an unhandled 500 or a
+    plain string a client cannot switch on.
+
+    Checked in the order a caller would want to fix them: whether it parses as JSON at all,
+    then whether it is the right JSON shape, then whether its elements are. Each stops
+    before the next runs, so one malformed request gets one problem named rather than
+    a pydantic error about elements of something that was never an array.
+    """
+    if not raw.strip():
+        # Named explicitly rather than left to fall into the JSON decoder below, which
+        # would call this "not valid JSON" - true, but not the actual problem, and not
+        # the same sentence a caller who sent whitespace instead of "" would get for what
+        # is the same mistake. Naming it here is what makes the two spellings agree.
+        raise _unprocessable(
+            INVALID_REQUEST_ERROR, f"{INVALID_REQUEST_MESSAGE} 'sources' must not be empty."
+        )
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise _unprocessable(
+            INVALID_REQUEST_ERROR, f"{INVALID_REQUEST_MESSAGE} 'sources' is not valid JSON."
+        ) from exc
+    if not isinstance(parsed, list):
+        raise _unprocessable(
+            INVALID_REQUEST_ERROR, f"{INVALID_REQUEST_MESSAGE} 'sources' must be a JSON array."
+        )
+    try:
+        return _MULTIPART_SOURCES_ADAPTER.validate_python(parsed)
+    except ValidationError as exc:
+        raise _unprocessable(INVALID_REQUEST_ERROR, _validation_message(exc.errors())) from exc
+
+
 @app.post("/courses/generate")
 def generate_from_text(body: GenerateRequest, session: Session = Depends(get_session)):
     """Generate a course from one or more sources. Synchronous for the MVP -
@@ -649,6 +717,127 @@ def generate_from_pdf(file: list[UploadFile], session: Session = Depends(get_ses
     ]
     ingested = _ingest_or_refuse(specs, legacy=len(specs) <= 1, stage="pdf")
     return _run_generation_from(session, ingested)
+
+
+async def _raw_sources_field(request: Request) -> Any:
+    """The authoritative `sources` value, read from FastAPI's own cached form parse.
+
+    Async so the route itself need not be. FastAPI resolves dependencies on the event loop
+    but runs a `def` endpoint in the threadpool, and this route's body blocks throughout:
+    upload reads, synchronous httpx fetches and pypdf parsing inside `load_sources`, and
+    provider calls that take minutes for a real course. An `async def` endpoint would run
+    all of that ON the loop, serialising generation server-wide and stalling every other
+    request until it finished.
+    """
+    return (await request.form()).get("sources")
+
+
+@app.post("/courses/generate/multipart")
+def generate_multipart(
+    raw_sources: Any = Depends(_raw_sources_field),
+    sources: str | None = Form(default=None),
+    file: list[UploadFile] = File(default=[]),
+    session: Session = Depends(get_session),
+):
+    """One course from URLs, pasted text and PDFs combined in a single request.
+
+    `sources` is an OPTIONAL form field holding a JSON array of the same
+    {"kind", "value", "ref"} shape /courses/generate takes in its body. `file` is the same
+    field the PDF-only route uses, so an upload behaves identically on both. Either part may
+    be omitted, but not both.
+
+    COMBINED ORDER IS `sources` THEN `file`, both in the order their parts arrived. That
+    order is what `index` in a refusal counts from, and what the outline prompt sees the
+    material in, so it is fixed rather than an implementation detail: a client rendering a
+    row per source needs the same order the request was built in.
+
+    ALWAYS THE DICT REFUSAL SHAPE, never the legacy bare string, however many sources are
+    sent. `sources` and `file` are both spellings a client using this route already knows
+    about, unlike the deprecated top-level `text` and `url` on /courses/generate, so there
+    is no caller here for the bare-string seam to protect.
+
+    The `sources: str | None = Form(...)` parameter above exists so `sources` still appears
+    in the OpenAPI schema and the Swagger UI form widget - it is documentation, not what the
+    route actually reads. FastAPI's own Form() dependency resolution collapses a
+    present-but-empty ("") value to this parameter's default (None) before the route body
+    ever runs, which would make "" indistinguishable from an omitted field if this were the
+    only source of truth (see fastapi/dependencies/utils.py::_get_multidict_value, pinned
+    against FastAPI 0.141.1 by test_form_field_collapses_empty_string_to_none below). The
+    route needs that distinction, so the authoritative value arrives instead through the
+    `_raw_sources_field` dependency above, which reads it from the SAME cached FormData
+    FastAPI already parsed (nothing is read from the body twice).
+    """
+    # `is not None`, not truthiness. Defensively correct on its own terms, and required for
+    # a future FastAPI that stops collapsing "" to None (the case the framework test below
+    # exists to catch), but it is not what makes "" and "   " agree today: request.form()
+    # already hands back both verbatim, and the agreement between them is made by
+    # _parse_multipart_sources's own raw.strip() check, not by this conditional.
+    parsed_sources = _parse_multipart_sources(raw_sources) if raw_sources is not None else []
+
+    combined_count = len(parsed_sources) + len(file)
+    if combined_count == 0:
+        raise _bad_request("no_source", NO_SOURCE_MESSAGE)
+    if combined_count > ingest.MAX_SOURCES:
+        raise _unprocessable("too_many_sources", too_many_sources_message(combined_count))
+
+    # Checked on UploadFile.size, before any file is read. upload.file.read() below pulls a
+    # whole file into memory, and doing that for every part before finding out the batch is
+    # over budget is the accidental-huge-request this cap exists to avoid.
+    #
+    # A None size is refused rather than summed as zero. UNKNOWN IS TREATED AS OVER THE
+    # CAP, NOT UNDER IT, because the cap is a memory guard: an upload whose size cannot be
+    # trusted is exactly the case it exists to catch, and letting it through because the
+    # one signal available is missing would make the guard a no-op for the one input it
+    # cannot vouch for. Not reachable through this app's own multipart parser today, which
+    # always sets size before an UploadFile reaches a route, but that is a fact about the
+    # library version pinned today, not a promise, and this must not become a guard that
+    # quietly fails open the day it stops being true.
+    if any(upload.size is None for upload in file):
+        raise _unprocessable(
+            "source_too_large",
+            "One of those files did not report its size, so it cannot be checked against "
+            f"the {ingest.MAX_UPLOAD_BYTES:,}-byte limit. Nothing was generated and nothing "
+            "was charged. Try uploading it again.",
+        )
+    upload_total_bytes = sum(upload.size for upload in file)
+    if upload_total_bytes > ingest.MAX_UPLOAD_BYTES:
+        raise _unprocessable("source_too_large", upload_too_large_message(upload_total_bytes))
+
+    specs = [
+        ingest.SourceSpec(
+            kind=source.kind,
+            ref=ingest.clean_ref(source.ref or "")
+            or (source.value if source.kind == "url" else f"source {index + 1}"),
+            value=source.value,
+        )
+        for index, source in enumerate(parsed_sources)
+    ]
+    specs.extend(
+        ingest.SourceSpec(
+            kind="pdf",
+            ref=ingest.clean_ref(upload.filename or "")
+            or f"upload {len(parsed_sources) + index + 1}",
+            value=upload.file.read(),
+        )
+        for index, upload in enumerate(file)
+    )
+
+    ingested = _ingest_or_refuse(specs, legacy=False, stage="multipart")
+    return _run_generation_from(session, ingested)
+
+
+@app.get("/meta/limits")
+def get_limits():
+    """The generation caps a client needs to validate against before it submits.
+
+    Read from app.ingest's own constants, never repeated as literals, so this cannot go
+    stale the way a hand-copied number would the next time a cap changes.
+    """
+    return {
+        "max_sources": ingest.MAX_SOURCES,
+        "max_total_chars": ingest.MAX_TOTAL_CHARS,
+        "max_upload_bytes": ingest.MAX_UPLOAD_BYTES,
+    }
 
 
 @app.get("/courses")
