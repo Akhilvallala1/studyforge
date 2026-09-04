@@ -55,13 +55,13 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   deleteCourse: vi.fn(),
 }));
 
-// Hoisted so the "navigate-to-list" test below can assert on the same `push` the
-// component calls: a fresh `{ refresh: vi.fn(), push: vi.fn() }` per `useRouter()`
+// Hoisted so the "navigate-to-list" test below can assert on the same `replace` the
+// component calls: a fresh `{ refresh: vi.fn(), replace: vi.fn() }` per `useRouter()`
 // call (the shape every other test in this file relies on for its own, unrelated
 // reasons) would hand this test a mock it never sees the component touch.
-const { push, refresh } = vi.hoisted(() => ({ push: vi.fn(), refresh: vi.fn() }));
+const { replace, refresh } = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh, push }),
+  useRouter: () => ({ refresh, replace }),
 }));
 
 const preview: CourseDeletion = {
@@ -455,9 +455,10 @@ describe("delete confirmation before the preview lands", () => {
    * The detail page's entry point, `afterDelete="navigate-to-list"`. Preview and
    * Cancel are shared code with the list's own trigger and already covered above;
    * this pins the one thing that differs once a delete actually confirms: no
-   * `router.refresh`, and a `router.push` to the list instead, carrying the title
-   * for that page's own provider to pick up (see the focus-restoration suite for
-   * the arrival side of that handoff).
+   * `router.refresh`, and a `router.replace` to the list instead (not `push`: the
+   * page being replaced is the course that was just deleted, so Back must not
+   * return to it), carrying the title for that page's own provider to pick up (see
+   * the focus-restoration suite for the arrival side of that handoff).
    */
   test("navigates to the course list instead of refreshing in place", async () => {
     vi.mocked(getDeletionPreview).mockResolvedValue(preview);
@@ -474,7 +475,7 @@ describe("delete confirmation before the preview lands", () => {
 
     fireEvent.click(confirm);
 
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/courses"));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/courses"));
     expect(
       refresh,
       "the row this deletes is the whole page; refreshing it in place is the list's behaviour, not this one's",

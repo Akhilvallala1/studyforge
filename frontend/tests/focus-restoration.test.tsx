@@ -44,6 +44,11 @@
  *     stale-intent test both fail
  *   - drop the focus call (QuizSection)          -> its four restore tests fail (both
  *     answer kinds, wrong and right)
+ *   - render the live region from `handoffTitle`
+ *     directly instead of mutating it via
+ *     `setAnnouncement` (DeleteCourseButton)     -> the mutation-shape test fails; the
+ *     text-content arrival test above it does not, since both shapes settle on the
+ *     same final string
  *
  * One of those exposed a COUPLING worth recording, since the fix is the reusable part:
  * the delete decline test first synchronised on the live region, so dropping the
@@ -121,14 +126,14 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 // Both forms refresh the route after a save; the refresh is a no-op here because the
 // server data a refresh would carry is exactly what the props already hold.
 //
-// `push` and `refresh` are hoisted rather than built fresh per `useRouter()` call so
-// the "navigates to the course list" test below can assert on the very mock the
+// `replace` and `refresh` are hoisted rather than built fresh per `useRouter()` call
+// so the "navigates to the course list" test below can assert on the very mock the
 // component calls: DeleteCourseButton's provider only calls `useRouter()` once per
 // mount, but a factory that returns a new pair of `vi.fn()`s on every call would still
 // leave this file with no stable handle on it.
-const { push, refresh } = vi.hoisted(() => ({ push: vi.fn(), refresh: vi.fn() }));
+const { replace, refresh } = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh, push }),
+  useRouter: () => ({ refresh, replace }),
 }));
 
 describe("ConceptTutor focus restoration", () => {
@@ -371,7 +376,7 @@ describe("DeleteCourseButton focus restoration", () => {
   // those keeps the ordering of tests in this file from mattering to any of them.
   beforeEach(() => {
     window.sessionStorage.clear();
-    push.mockClear();
+    replace.mockClear();
     refresh.mockClear();
   });
 
@@ -502,11 +507,18 @@ describe("DeleteCourseButton focus restoration", () => {
    * render `DeleteCourseButton` with no `afterDelete` prop at all, and still pass
    * unmodified (confirmed by re-running the file against this change), which is what
    * pins the default staying "restore-focus". Mutation-verified the other direction
-   * too: temporarily flipping the default parameter to "navigate-to-list" turns
-   * every one of those five tests red (each waits on a `New course` or `Create your
-   * first course` link gaining focus, and none ever does once the delete navigates
-   * away instead), while this test is what would catch the default going the other
-   * way, since `push` would then never be called.
+   * too: temporarily flipping the default parameter to "navigate-to-list" does NOT
+   * turn every one of those five tests red, only "sends focus to New course after a
+   * delete that left focus nowhere", "sends focus to Create your first course when
+   * the list empties" and "names the deleted course in the live region" (the last
+   * for its live-region text, not its focus assertion: with the default flipped,
+   * `onDeleted` takes the replace branch, so neither `refresh` nor the in-place
+   * announcement ever fires). "declines to move focus when the learner moved on
+   * mid-request" and "omits the shared-concept clause rather than saying nought
+   * more" stay green either way: the first because nothing moves focus under either
+   * default, the second because it never confirms a delete at all. This test is what
+   * would catch the default going the other way, since `replace` would then never be
+   * called.
    */
   test("navigates to the course list instead of restoring focus in place", async () => {
     vi.mocked(getDeletionPreview).mockResolvedValue(preview);
@@ -529,7 +541,7 @@ describe("DeleteCourseButton focus restoration", () => {
 
     await act(async () => removal.resolve(preview));
 
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/courses"));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/courses"));
     expect(
       refresh,
       "the page being deleted has nowhere sensible to refresh back to",
@@ -543,8 +555,10 @@ describe("DeleteCourseButton focus restoration", () => {
 
   /*
    * The arrival side of the same handoff, exercised on a fresh provider instance the
-   * way the real list page mounts one after `router.push`: the announcement comes
-   * back from `useSyncExternalStore`'s very first read of the stashed title, and the
+   * way the real list page mounts one after `router.replace`: the announcement comes
+   * from the same mount effect that reads `useSyncExternalStore`'s stashed title and
+   * calls `setAnnouncement`, not from rendering that title directly (see the
+   * mutation-shape test below for why that distinction is load-bearing), and the
    * focus restore is the SAME effect the in-place delete above uses, armed by the
    * mount effect that reads the handoff instead of by `onDeleted`.
    *
@@ -582,6 +596,87 @@ describe("DeleteCourseButton focus restoration", () => {
       window.sessionStorage.getItem("studyforge:deleted-course-title"),
       "consumed once, so a later reload of this same page cannot replay it",
     ).toBeNull();
+  });
+
+  /*
+   * The arrival test above pins the FINAL text of the live region, which a region
+   * rendered straight from `handoffTitle` would also satisfy: `toHaveTextContent`
+   * only ever samples the settled DOM, so it cannot tell "born with this text" from
+   * "mutated into having it", and a screen reader only speaks the second. This test
+   * pins the shape instead, via the actual sequence of DOM operations React performs
+   * (MutationObserver queues each mutation synchronously as it happens, independent
+   * of when the callback drains, so this is not a timing gamble): the status node
+   * must first be inserted by ITS PARENT with no text of its own, and only a LATER,
+   * separate mutation whose target is the status node itself may be the one that
+   * gives it content. A node that arrives already holding its final text produces
+   * no second record targeting itself at all, which is what rendering from
+   * `handoffTitle` directly used to do.
+   *
+   * Mutation-verified: reverting the live region to `announcement || (handoffTitle ?
+   * ... : "")` (the shape this replaced) collapses the insertion and the content into
+   * one record on the parent, and the assertion below finds no record targeting the
+   * status node and fails.
+   */
+  test("announces arrival by mutating the live region, not by rendering it born full", async () => {
+    window.sessionStorage.setItem("studyforge:deleted-course-title", "Organic Chemistry");
+    const records: MutationRecord[] = [];
+    const observer = new MutationObserver((list) => records.push(...list));
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    render(
+      <CourseDeletionProvider>
+        <a id="new-course" href="#top">
+          New course
+        </a>
+      </CourseDeletionProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Organic Chemistry deleted."),
+    );
+    observer.disconnect();
+
+    const status = screen.getByRole("status");
+    expect(
+      records.some((record) => record.target === status),
+      "the live region must be mutated after it exists in the DOM, or a screen reader has nothing to observe",
+    ).toBe(true);
+  });
+
+  /*
+   * An ordinary visit to `/courses`, nothing stashed: the `if (!handoffTitle)
+   * return` guard in the handoff effect is what this pins. Without it, the effect
+   * body still runs on this mount (`handoffTitle` is only ever checked, never
+   * awaited), arming `wantsFocus.current` and announcing "null deleted." from a
+   * title that was never there, for a learner who never deleted anything.
+   *
+   * Mutation-verified: deleting the guard line makes both assertions below fail
+   * (focus moves to "New course" it never should have, and the status region picks
+   * up "null deleted."). It also turns the two "announces ... arrival" tests above
+   * red, for a related but distinct reason: their handoff effect re-runs a second
+   * time once `setAnnouncement` triggers a re-render (`handoffTitle`'s snapshot has
+   * gone null by then, since the removeItem earlier in the same effect body already
+   * cleared it), and without the guard that second run overwrites the announcement
+   * with "null deleted." too. That coupling is real but is not what this test is
+   * for: this one isolates the plain-mount case, which the arrival tests cannot,
+   * since both of them stash a title before rendering.
+   */
+  test("does not arm the deletion handoff on an ordinary mount with nothing stashed", () => {
+    render(
+      <CourseDeletionProvider>
+        <a id="new-course" href="#top">
+          New course
+        </a>
+      </CourseDeletionProvider>,
+    );
+
+    expect(
+      screen.getByRole("link", { name: "New course" }),
+      "nothing was deleted on this mount; only a delete handed off from elsewhere may move focus here",
+    ).not.toHaveFocus();
+    expect(
+      screen.getByRole("status"),
+      "an ordinary visit stashed nothing, so the live region has nothing to announce",
+    ).toHaveTextContent("");
   });
 });
 

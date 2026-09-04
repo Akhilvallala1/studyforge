@@ -71,19 +71,6 @@ export default async function CoursePage(props: PageProps<"/courses/[courseId]">
           {completedCount} of {lessons.length} lessons complete
         </p>
 
-        {/*
-          The list's own trigger sits at the bottom of each card; this is the only
-          other entry point to the same feature, so it keeps that placement rather
-          than crowding the title. "navigate-to-list" because the row this deletes
-          IS the page: there is no in-place refresh that leaves the learner anywhere
-          sensible once their own course is gone (see DeleteCourseButton).
-        */}
-        <DeleteCourseButton
-          courseId={course.id}
-          title={course.title}
-          afterDelete="navigate-to-list"
-        />
-
         <div className="mt-8 flex flex-col gap-8">
           {course.modules.map((module) => (
             <section key={module.id}>
@@ -140,6 +127,25 @@ export default async function CoursePage(props: PageProps<"/courses/[courseId]">
               </ul>
             </section>
           ))}
+        </div>
+
+        {/*
+          Below the lesson list, not beside the title where the list's own trigger
+          sits. That placement suits a card: the row it belongs to IS the card, so
+          the control has nowhere else to be. Here the row is the whole page, and
+          the same placement would put a destructive, irreversible control ahead of
+          the primary content a learner came here for, as the first interactive
+          thing after the header. A trailing "danger zone", set apart by its own
+          rule rather than butted straight against the list, is deliberate: reaching
+          it takes scrolling past everything the learner might actually want, which
+          is the point for an action this page cannot recover from.
+        */}
+        <div className="mt-10 border-t border-line pt-6">
+          <DeleteCourseButton
+            courseId={course.id}
+            title={course.title}
+            afterDelete="navigate-to-list"
+          />
         </div>
       </main>
     </CourseDeletionProvider>

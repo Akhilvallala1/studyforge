@@ -51,19 +51,22 @@ export type AfterDelete = "restore-focus" | "navigate-to-list";
 /**
  * A one-shot handoff for a delete that navigates away from its own provider instance.
  *
- * sessionStorage, not a module-level variable, because `router.push` is not guaranteed
- * to stay a client-side transition (Next can fall back to a full navigation), and a
- * plain variable would silently lose the announcement across that boundary while
- * sessionStorage survives it. Read once, on mount, and removed immediately after: a
- * stray reload of the list page must not replay a deletion that already happened.
+ * sessionStorage, not a module-level variable, because `router.replace` is not
+ * guaranteed to stay a client-side transition (Next can fall back to a full
+ * navigation), and a plain variable would silently lose the announcement across
+ * that boundary while sessionStorage survives it. Read once, on mount, and removed
+ * immediately after: a stray reload of the list page must not replay a deletion
+ * that already happened.
  *
- * Read through `useSyncExternalStore` below rather than copied into `announcement`
- * state from a mount effect. A mount effect that read this and called `setAnnouncement`
- * is exactly the shape `react-hooks/set-state-in-effect` rejects, and its own fix
- * suggestion is this hook: it hands back the value on the very first render, including
- * the server-rendered one (via `getServerSnapshot`), instead of paying for an extra
- * commit to mirror an external source into state that was never going to change again
- * during this component's lifetime.
+ * Read through `useSyncExternalStore` below, not `useState` seeded from a mount
+ * effect: this is a value that can already differ between the server-rendered
+ * markup and the client's first render (a fresh server render never has anything
+ * stashed; a client hydrating after a same-tab handoff might), and `getServerSnapshot`
+ * is what lets that first render be correct on both sides instead of committing the
+ * server's answer and only correcting it after hydration. What DOES still go through
+ * `useState`, deliberately, is the announcement text derived from this value: see the
+ * handoff effect below for why that extra commit is paid for on purpose rather than
+ * avoided.
  */
 const DELETED_TITLE_KEY = "studyforge:deleted-course-title";
 
@@ -71,7 +74,7 @@ const DELETED_TITLE_KEY = "studyforge:deleted-course-title";
  * No real subscription: nothing else in this tab writes this key while a provider is
  * mounted to read it. The one write that matters (see `onDeleted`'s "navigate-to-list"
  * branch) always happens before this component's first render, since it is followed
- * immediately by the `router.push` that mounts it, so there is no later change here
+ * immediately by the `router.replace` that mounts it, so there is no later change here
  * for a subscriber to react to.
  */
 function subscribeToDeletionHandoff(): () => void {
@@ -129,7 +132,11 @@ export function CourseDeletionProvider({ children }: { children: ReactNode }) {
       // announcement nor the focus intent set here would survive to be read. Stash the
       // title for the list page's own provider to pick up on mount instead.
       window.sessionStorage.setItem(DELETED_TITLE_KEY, title);
-      router.push("/courses");
+      // `replace`, not `push`: the page this instance belongs to is the course that
+      // was just deleted, and the server has already confirmed it gone. Pushing would
+      // leave it in history, so Back from the list would land the learner back on a
+      // course that no longer exists instead of wherever they were before it.
+      router.replace("/courses");
       return;
     }
     wantsFocus.current = true;
@@ -140,10 +147,17 @@ export function CourseDeletionProvider({ children }: { children: ReactNode }) {
   /**
    * Consume a deletion handed off by a "navigate-to-list" entry point elsewhere.
    *
-   * No `setState` here on purpose: the announcement itself is `handoffTitle`, read
-   * above and rendered directly below, so this effect's only job is arming the shared
-   * focus restore and clearing the one-shot key so a stray future reload of this page
-   * cannot replay it.
+   * `setState` here IS the point, not a shortcut around it: the live region below
+   * renders from `announcement` alone, so the first commit of this provider paints
+   * it empty and this effect's `setAnnouncement` is what mutates an already-present
+   * node into having text on a second, later commit. A screen reader announces a
+   * live region by observing it change; a node that is born with its final text
+   * already inside it never fires that observation, which is exactly what rendering
+   * straight from `handoffTitle` used to do. `react-hooks/set-state-in-effect`
+   * exists to stop effects from doing in a second render what the first render could
+   * have done itself, and normally that is the right call, but this component's job
+   * requires two renders on arrival: one where the region exists and says nothing,
+   * and one where it changes. There is no first-render way to get both.
    *
    * Declared before the focus-restore effect below, and that order is load-bearing:
    * effects run in declaration order within one commit, so setting `wantsFocus.current`
@@ -154,6 +168,8 @@ export function CourseDeletionProvider({ children }: { children: ReactNode }) {
     if (!handoffTitle) return;
     window.sessionStorage.removeItem(DELETED_TITLE_KEY);
     wantsFocus.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- see the comment above: the second commit is the announcement, not incidental to it.
+    setAnnouncement(`${handoffTitle} deleted.`);
   }, [handoffTitle]);
 
   /**
@@ -185,12 +201,14 @@ export function CourseDeletionProvider({ children }: { children: ReactNode }) {
         element that has to announce it. Assertive rather than polite: the thing being
         announced is that the row the learner was standing on has gone.
 
-        `announcement` first, not `handoffTitle`: once a later in-page delete sets
-        `announcement`, it must win even though `handoffTitle` is still sitting in
-        sessionStorage's read-through snapshot from the page's own arrival.
+        Renders from `announcement` state alone, never straight from `handoffTitle`:
+        this node has to exist and say nothing on its first commit, so that the
+        handoff effect's `setAnnouncement` (above) is a mutation of a node already in
+        the DOM rather than a node born with its text already inside it. Only the
+        former is what a screen reader observes as a live-region announcement.
       */}
       <div role="status" aria-live="assertive" className="sr-only">
-        {announcement || (handoffTitle ? `${handoffTitle} deleted.` : "")}
+        {announcement}
       </div>
     </Ctx.Provider>
   );
