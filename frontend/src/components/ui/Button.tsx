@@ -38,7 +38,16 @@ const BASE =
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: "bg-fill text-on-fill hover:bg-fill-hover",
-  secondary: "border border-line text-ink hover:border-line-hover",
+  // `line-strong`, not `line`. This variant's border IS the control's only boundary, so
+  // it is doing more work here than a divider rule does. Measured on the built bundle:
+  // line #e4e4e7/#27272a is 1.27:1 light and 1.33:1 dark, line-strong #d4d4d8/#3f3f46 is
+  // 1.48:1 and 1.90:1, and the raw classes these buttons carried before the token
+  // migration were zinc-300/zinc-700, which IS line-strong. Using `line` here quietly
+  // made the only outlined control in the app fainter than it used to be.
+  // Both values are still short of the 3:1 WCAG 1.4.11 wants for a control boundary.
+  // Closing that needs a new token rather than a swap between these two, so it is filed
+  // separately; this line only stops the migration from making it worse.
+  secondary: "border border-line-strong text-ink hover:border-line-hover",
   ghost: "text-ink-muted hover:bg-surface-sunken hover:text-ink",
   danger: "bg-danger-fill text-danger-on-fill hover:bg-danger-fill-hover",
 };
