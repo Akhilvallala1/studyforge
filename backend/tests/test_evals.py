@@ -1300,3 +1300,46 @@ def test_existing_outputs_over_matches_a_hyphenated_label_on_purpose(tmp_path):
     _occupy(tmp_path, "baseline-rescored")
     matched = [p.name for p in run_eval.existing_outputs(tmp_path, "baseline")]
     assert matched == ["course-baseline-rescored-demo.md"]
+
+
+def test_the_multi_source_corpus_is_exactly_three_chunks_and_routed():
+    """MUTATION TARGET for the eval itself, not for the app.
+
+    The multi-source corpus exists to measure ONE configuration: several documents with
+    segment routing switched on. Routing switches on at SEGMENT_ROUTING_MIN_CHUNKS, which
+    is 3, and the two document sizes were chosen to land exactly there. Nothing holds that
+    target except the two files happening to be the length they are.
+
+    Chunk count is more fragile than character count makes it look: chunk_text packs whole
+    paragraphs, so a paragraph just over half the chunk size wastes the rest of its chunk,
+    and two corpora of identical length can differ nearly two to one in chunks. If Darwin's
+    text or the PEP 8 slice drifts, this fails loudly instead of quietly retargeting the
+    experiment at the unrouted path while the label still says routed.
+
+    Fetches nothing: the PEP 8 half is replaced with a stand-in of the same size, so the
+    arithmetic is tested without the network.
+    """
+    from app import generation, ingest
+    from evals import run_eval
+
+    darwin = (run_eval.DATA_DIR / "prose-darwin.txt").read_text(encoding="utf-8")
+    stand_in = "A paragraph of style guidance.\n\n" * 200
+    # The stand-in has to be able to FILL the slice, or the corpus under test is
+    # smaller than the real one and its chunk arithmetic is not the arithmetic that
+    # matters. The first version of this was 1,280 characters against a 3,000
+    # character slice, and this assertion is what caught it.
+    assert len(stand_in) >= run_eval.MULTI_PEP8_CHARS
+
+    documents = [
+        ("darwin-origin", darwin),
+        ("pep8-style-guide", stand_in[: run_eval.MULTI_PEP8_CHARS]),
+    ]
+    # Through from_text, which is how run_eval._multi_documents builds this corpus, so
+    # the arithmetic under test is the arithmetic that runs rather than one clean_text
+    # pass away from it.
+    chunks, owners = ingest.chunk_sources(
+        [ingest.from_text("", label, text) for label, text in documents]
+    )
+    assert len(chunks) == 3, f"corpus drifted to {len(chunks)} chunks"
+    assert len(chunks) >= generation.SEGMENT_ROUTING_MIN_CHUNKS
+    assert len(set(owners)) == 2

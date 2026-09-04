@@ -14,7 +14,10 @@ StudyForge has four layers:
    - `/usage` - estimated API spend: totals, per-course breakdown, recent call log
 
    A site-wide banner renders the running spend total on every page, and the active cost alert on top of it. Tutor chat and a richer progress dashboard are planned, not built.
-2. **Backend API (FastAPI)** - document ingestion, course generation orchestration, quiz grading, progress persistence, usage reporting. CORS origins are configurable via `STUDYFORGE_CORS_ORIGINS` (default `http://localhost:3000`); generation failures return a 502 with a JSON `detail` message. Spaced-repetition scheduling is planned. Usage endpoints:
+2. **Backend API (FastAPI)** - document ingestion, course generation orchestration, quiz grading, progress persistence, usage reporting. CORS origins are configurable via `STUDYFORGE_CORS_ORIGINS` (default `http://localhost:3000`); generation failures return a 502 with a JSON `detail` message. Spaced-repetition scheduling is planned. Generation endpoints:
+   - `POST /courses/generate` - one or more sources (text, URL, or a mix). Request body has a `sources` list with `{kind, value, ref}` objects; `text` and `url` fields still work for backward compatibility but are deprecated and removed in 0.4.0. Limits: up to 5 sources and 150,000 characters total across all sources. Error response is structured differently for `sources` (a `detail` dict naming each failed source) versus legacy `text`/`url` (a bare string).
+   - `POST /courses/generate/pdf` - one or more PDF files (submitted as multiple parts under the `file` field). Single-file uploads work exactly as before.
+   Usage endpoints:
    - `GET /usage?limit=50` (clamped to 1-500) - all-time totals, a per-course breakdown, the `limit` most recent calls, alert state, and cap state. A `course_id` of `null` in the breakdown is the "Unattributed" bucket: calls from a run that failed before its course was saved.
    - `POST /usage/alert/ack` - records the current total as acknowledged, clearing the active alert.
    - The generate endpoints return a `usage` object with that run's estimated cost, the new total, and whether the alert is active. Hitting the spend cap surfaces as HTTP 402 with a structured `detail`.
@@ -42,7 +45,7 @@ Both are created by `create_all` at startup, so existing databases pick them up 
 
 ## Course generation pipeline
 
-1. **Ingest** - PDF/URL/text → cleaned text chunks with structure hints (headings, page numbers).
+1. **Ingest** - PDF/URL/text (one or more sources) → cleaned text chunks with structure hints (headings, page numbers). Sources are requested fail-closed: if any fails (fetch error, unreadable PDF, unsafe URL), the whole request is refused before any LLM call runs.
 2. **Outline** - LLM proposes modules and lessons from the chunks.
 3. **Author** - per lesson: LLM writes the lesson content grounded in source chunks, extracts key concepts, generates quiz items.
 4. **Review loop (planned, not built)** - a second LLM pass to validate quiz answerability and grounding, reducing hallucinated questions. The metering layer already reserves a `review` stage for it.

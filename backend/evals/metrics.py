@@ -693,6 +693,45 @@ def structure(course: dict) -> dict:
     }
 
 
+def routing(course: dict) -> dict:
+    """How often the outline failed to route a lesson, so the lesson took the whole corpus.
+
+    THE NUMBER THAT DECIDES WHETHER MULTI-SOURCE IS AFFORDABLE, which is why it is a
+    headline metric rather than a line in the cost block. Every other metric here asks
+    whether the course is good. This one asks what it cost to be that good, and the two
+    can move in opposite directions: a model that ignores the "segments" field entirely
+    produces a perfectly reasonable course by re-reading everything for every lesson.
+
+    Read straight off generate_course's own accounting rather than inferred from the
+    saved "segments" lists, because those cannot be read backwards: a lesson that fell
+    back and a lesson routed to every segment are identical in the output.
+
+    Returns nulls rather than zeros for a course with no accounting, which is every
+    bundle written before that key existed. A zero would read as "nothing fell back".
+    """
+    record = course.get("segment_routing") or {}
+    planned = record.get("lessons_planned")
+    fell_back = record.get("lessons_fell_back")
+    if not isinstance(planned, int) or not isinstance(fell_back, int) or planned <= 0:
+        return {
+            "recorded": False,
+            "routed": record.get("routed"),
+            "sources": record.get("sources"),
+            "lessons_planned": planned,
+            "lessons_fell_back": fell_back,
+            "fallback_rate": None,
+        }
+    return {
+        "recorded": True,
+        "routed": record.get("routed"),
+        "sources": record.get("sources"),
+        "chunks": record.get("chunks"),
+        "lessons_planned": planned,
+        "lessons_fell_back": fell_back,
+        "fallback_rate": round(fell_back / planned, 4),
+    }
+
+
 def evaluate(course: dict, chunks: list[str]) -> dict:
     """Every content metric for one generated course.
 
@@ -705,4 +744,5 @@ def evaluate(course: dict, chunks: list[str]) -> dict:
         "answerability": answerability(course),
         "coverage": concept_coverage(course, chunks),
         "source_coverage": source_coverage(course, chunks),
+        "routing": routing(course),
     }

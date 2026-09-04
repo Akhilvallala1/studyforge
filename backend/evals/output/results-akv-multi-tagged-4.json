@@ -1,0 +1,199 @@
+{
+  "label": "akv-multi-tagged-4",
+  "prompts": {
+    "outline_system": "51268cb63391",
+    "lesson_system": "1e6fc5164c70",
+    "outline_system_chars": 850,
+    "lesson_system_chars": 1578
+  },
+  "runs": [
+    {
+      "name": "multi-darwin-pep8",
+      "ok": false,
+      "error": "APIStatusError: {'type': 'error', 'error': {'details': None, 'type': 'overloaded_error', 'message': 'Overloaded'}, 'request_id': 'req_011Cegb9gZjwDnruwqVz1TeF'}",
+      "run_id": "8d024a894672487f958c6c937e181189",
+      "prompts": {
+        "outline_system": "51268cb63391",
+        "lesson_system": "1e6fc5164c70",
+        "outline_system_chars": 850,
+        "lesson_system_chars": 1578
+      },
+      "source": {
+        "key": "multi-darwin-pep8",
+        "kind": "text",
+        "ref": "darwin-origin + pep8-style-guide",
+        "chars": 13639,
+        "chunks": 3,
+        "chunk_chars": [
+          7888,
+          2747,
+          3000
+        ],
+        "documents": [
+          "darwin-origin",
+          "pep8-style-guide"
+        ],
+        "source_tags": true
+      },
+      "wall_clock_s": 223.3,
+      "parse_reliability": {
+        "total_calls": 6,
+        "strict_json_first_try": 5,
+        "tolerant_parse_ok": 5,
+        "hard_parse_failures": 1,
+        "retry_path_exists": true,
+        "per_stage": {
+          "lesson": {
+            "calls": 5,
+            "strict_json_first_try": 4,
+            "tolerant_parse_ok": 4,
+            "needed_code_fence_strip": 0,
+            "needed_prose_trim": 0,
+            "schema_ok": 4,
+            "hard_parse_failures": 1,
+            "call_errors": 1
+          },
+          "outline": {
+            "calls": 1,
+            "strict_json_first_try": 1,
+            "tolerant_parse_ok": 1,
+            "needed_code_fence_strip": 0,
+            "needed_prose_trim": 0,
+            "schema_ok": 1,
+            "hard_parse_failures": 0,
+            "call_errors": 0
+          }
+        }
+      },
+      "cost_latency": {
+        "calls": 6,
+        "model": "claude-opus-5",
+        "provider": "anthropic",
+        "total_llm_latency_s": 223.29,
+        "input_tokens": 15780,
+        "output_tokens": 16316,
+        "cost_usd": 0.4868,
+        "any_approximate": false,
+        "per_stage": {
+          "lesson": {
+            "calls": 5,
+            "total_latency_s": 207.2,
+            "mean_latency_s": 41.44,
+            "max_latency_s": 52.2,
+            "input_tokens": 10679,
+            "output_tokens": 15215,
+            "cost_usd": 0.43377
+          },
+          "outline": {
+            "calls": 1,
+            "total_latency_s": 16.09,
+            "mean_latency_s": 16.09,
+            "max_latency_s": 16.09,
+            "input_tokens": 5101,
+            "output_tokens": 1101,
+            "cost_usd": 0.05303
+          }
+        }
+      },
+      "calls": [
+        {
+          "index": 0,
+          "stage": "outline",
+          "latency_s": 16.089159300085157,
+          "prompt_chars": 15172,
+          "response_chars": 3305,
+          "strict_json": true,
+          "tolerant_json": true,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": true,
+          "error": null,
+          "input_tokens": 5101,
+          "output_tokens": 1101,
+          "cost_usd": 0.05303
+        },
+        {
+          "index": 1,
+          "stage": "lesson",
+          "latency_s": 52.196420500054955,
+          "prompt_chars": 9918,
+          "response_chars": 12289,
+          "strict_json": true,
+          "tolerant_json": true,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": true,
+          "error": null,
+          "input_tokens": 3063,
+          "output_tokens": 4148,
+          "cost_usd": 0.119015
+        },
+        {
+          "index": 2,
+          "stage": "lesson",
+          "latency_s": 51.755174699937925,
+          "prompt_chars": 9933,
+          "response_chars": 12851,
+          "strict_json": true,
+          "tolerant_json": true,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": true,
+          "error": null,
+          "input_tokens": 3075,
+          "output_tokens": 4095,
+          "cost_usd": 0.11775
+        },
+        {
+          "index": 3,
+          "stage": "lesson",
+          "latency_s": 50.183935599867254,
+          "prompt_chars": 9874,
+          "response_chars": 11709,
+          "strict_json": true,
+          "tolerant_json": true,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": true,
+          "error": null,
+          "input_tokens": 3051,
+          "output_tokens": 3733,
+          "cost_usd": 0.10858000000000001
+        },
+        {
+          "index": 4,
+          "stage": "lesson",
+          "latency_s": 42.27434210013598,
+          "prompt_chars": 4649,
+          "response_chars": 9995,
+          "strict_json": true,
+          "tolerant_json": true,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": true,
+          "error": null,
+          "input_tokens": 1490,
+          "output_tokens": 3239,
+          "cost_usd": 0.088425
+        },
+        {
+          "index": 5,
+          "stage": "lesson",
+          "latency_s": 10.791525600012392,
+          "prompt_chars": 4744,
+          "response_chars": 0,
+          "strict_json": false,
+          "tolerant_json": false,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": false,
+          "error": "APIStatusError: {'type': 'error', 'error': {'details': None, 'type': 'overloaded_error', 'message': 'Overloaded'}, 'request_id': 'req_011Cegb9gZjwDnruwqVz1TeF'}",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cost_usd": 0.0
+        }
+      ],
+      "failing_raw_response": "{\"content\": \"# Daily and Hourly Scrutiny\\n\\n## The image\\n\\nOf all the sentences Darwin wrote about natural selection, this is the one most often quoted:\\n\\n> \\\"It may be said that natural selection is daily and hourly scrutinising, throughout the world, every variation, even the slightest; rejecting that which is bad, preserving and adding up all that is good; silently and insensibly working, whenever and wherever opportunity offers, at the improvement of each organic being in relation to its organic and inorganic conditions of life.\\\"\\n\\nUnpack it slowly, because every clause is doing work.\\n\\n- **Daily and hourly, throughout the world.** The process is not an occasional event, a catastrophe, or a special intervention. It is continuous and universal.\\n- **Every variation, even the slightest.** Nothing is too small to be examined. This is the claim the rest of the chapter has to defend, and Darwin defends it with examples of characters we would dismiss as trivial.\\n- **Rejecting the bad, preserving and adding up the good.** Two operations, not one. Rejection removes; *adding up* accumulates. A single preserved variation is nothing; the summation over generations is everything.\\n- **Silently and insensibly.** Nothing visible happens. There is no moment you could photograph.\\n- **In relation to its organic and inorganic conditions of life.** \\\"Improvement\\\" is never improvement in the abstract. It is always improvement *relative to* the climate, the soil, the competitors, the predators, the prey. Change the conditions and yesterday's improvement is today's handicap.\\n\\n## Why we see nothing\\n\\nDarwin immediately draws the consequence: \\\"We see nothing of these slow changes in progress, until the hand of time has marked the long lapse of ages.\\\" And even then our sight is poor. The geological record is so imperfect that when we finally do look back, \\\"we only see that the forms of life are now different from what they formerly were.\\\"\\n\\nNotice how modest this is. The fossil record does not hand us the process; it hands us a before-and-after comparison with the middle missing. Darwin is admitting, at the very moment of stating his theory most grandly, that the direct evidence for it is a difference between two snapshots.\\n\\n## Trifling characters are not trifling\\n\\nNatural selection can act only through and for the good of each being. But Darwin's point is that \\\"good\\\" reaches into characters we would have called negligible.\\n\\n**Colour in insects and birds.** Leaf-eating insects are green; bark-feeders are mottled-grey. The alpine ptarmigan is white in winter, the red-grouse is the colour of heather, the black-grouse the colour of peaty earth. Darwin's inference is that these tints preserve their owners from danger. His supporting argument is a chain:\\n\\n1. Grouse, if not destroyed at some period of their lives, would increase in countless numbers \u2014 so something is killing most of them.\\n2. They are known to suffer largely from birds of prey.\\n3. Hawks are guided *by eyesight* to their prey.\\n\\nStep 3 is the crucial link, and Darwin backs it with a homely fact: on parts of the Continent people are warned not to keep white pigeons, because they are the most liable to destruction. Given all three steps, he can see no reason to doubt that natural selection gives each kind of grouse its proper colour \u2014 and, once acquired, keeps that colour true and constant. Selection is a preserver as well as a maker.\\n\\n**The white sheep.** Someone might object that killing off the occasional oddly-coloured animal could hardly matter much. Darwin answers with a breeder's practice: in a flock of white sheep it is *essential* to destroy every lamb with the faintest trace of black. Breeders know that steady removal of the faintly deviant is what holds a character constant. Nature does the same thing without intending it.\\n\\n**Fruit.** Botanists consider the down on a fruit and the colour of its flesh characters of the most trifling importance. Yet the horticulturist Downing reports from the United States that:\\n\\n| Character | Consequence |\\n| --- | --- |\\n| Smooth skin vs. down | Smooth-skinned fruits suffer far more from a beetle, a curculio |\\n| Purple vs. yellow plums | Purple plums suffer far more from a certain disease |\\n| Yellow flesh in peaches | A different disease attacks yellow-fleshed peaches far more than other-coloured flesh |\\n\\nThe argument Darwin extracts is an *a fortiori* one: if these slight differences make a great difference even in an orchard, *with all the aids of art* \u2014 with a gardener spraying, pruning, and protecting \u2014 then in a state of nature, where trees must struggle with other trees and with a host of enemies, such differences would effectually settle which variety succeeds. The cultivated case is the weak case, and it already shows the effect.\\n\\n## What to carry away\\n\\nThe rhetorical structure of this passage is worth noticing. Darwin makes an enormous claim (constant worldwide scrutiny of the slightest variation), then concedes that we cannot watch it happen, then rescues the claim by showing that even characters chosen for their apparent insignificance \u2014 down on a plum, a trace of black in a lamb \u2014 turn out to have life-and-death consequences once you look. The invisibility of the process is not evidence against it; it is exactly what a slow accumulation of tiny advantages ought to look like from inside a single human lifetime.\", \"concepts\": [\"Natural selection as continuous, worldwide scrutiny of the slightest variations\", \"The invisibility of slow change and the imperfection of the geological record\", \"Adaptive value of apparently trifling characters (protective colouration)\", \"Selection as a preserver of constancy, not only a producer of change\", \"The a fortiori argument from cultivation to the state of nature\"], \"quiz\": [{\"question\": \"According to Darwin, what do we actually see when the lapse of geological ages finally lets us look back?\", \"kind\": \"mcq\", \"options\": [\"Only that the forms of life are now different from what they formerly were\", \"A continuous series of intermediate forms linking past species to present ones\", \"The precise moment at which each favourable variation was first preserved\", \"Evidence that change occurred in sudden bursts separated by long stillness\"], \"answer\": \"Only that the forms of life are now different from what they formerly were\", \"concept\": \"The invisibility of slow change and the imperfection of the geological record\"}, {\"question\": \"Darwin's sentence says natural selection is 'rejecting that which is bad, preserving and adding up all that is good.' Why does the phrase 'adding up' matter to his argument?\", \"kind\": \"short\", \"options\": [], \"answer\": \"Because a single preserved variation amounts to nothing; the power of selection lies in the accumulation of preserved slight advantages over many generations. Rejection merely removes, while summation is what produces change.\", \"concept\": \"Natural selection as continuous, worldwide scrutiny of the slightest variations\"}, {\"question\": \"What role does the warning about keeping white pigeons play in Darwin's discussion of grouse colour?\", \"kind\": \"mcq\", \"options\": [\"It supplies evidence that hawks hunt by eyesight, so conspicuous colouring really is dangerous\", \"It shows that domestic birds vary in colour more freely than wild birds do\", \"It demonstrates that breeders can produce any colour they choose given enough time\", \"It proves that white is a disadvantageous colour in every environment on the Continent\"], \"answer\": \"It supplies evidence that hawks hunt by eyesight, so conspicuous colouring really is dangerous\", \"concept\": \"Adaptive value of apparently trifling characters (protective colouration)\"}, {\"question\": \"Darwin says that in a flock of white sheep it is essential to destroy every lamb with the faintest trace of black. What point about natural selection is this meant to illustrate?\", \"kind\": \"mcq\", \"options\": [\"That the occasional destruction of individuals of a particular colour is enough to keep a character true and constant\", \"That breeders' methods are too harsh to have any parallel in wild populations\", \"That black colouring is inherently disadvantageous to sheep in the wild\", \"That new characters appear only when breeders deliberately select for them\"], \"answer\": \"That the occasional destruction of individuals of a particular colour is enough to keep a character true and constant\", \"concept\": \"Selection as a preserver of constancy, not only a producer of change\"}, {\"question\": \"State the reasoning Darwin draws from Downing's observations about down on fruit and the colour of plum and peach flesh.\", \"kind\": \"short\", \"options\": [], \"answer\": \"These characters are considered of the most trifling importance by botanists, yet they determine how badly a variety suffers from a curculio beetle or from particular diseases. If such slight differences matter greatly even in cultivation, with all the aids of art, then in nature \u2014 where trees struggle with other trees and a host of enemies \u2014 they would effectually settle which variety succeeds.\", \"concept\": \"The a fortiori argument from cultivation to the state of nature\"}, {\"question\": \"In Darwin's phrasing, natural selection works at the improvement of each organic being 'in relation to its organic and inorganic conditions of life.' What does this qualification establish?\", \"kind\": \"mcq\", \"options\": [\"That improvement is always relative to particular surroundings rather than an absolute advance\", \"That organic conditions such as predators matter more than inorganic ones such as climate\", \"That selection improves whole species collectively rather than individual beings\", \"That living conditions must remain stable for selection to accomplish anything\"], \"answer\": \"That improvement is always relative to particular surroundings rather than an absolute advance\", \"concept\": \"Natural selection as continuous, worldwide scrutiny of the slightest variations\"}]}"
+    }
+  ]
+}
