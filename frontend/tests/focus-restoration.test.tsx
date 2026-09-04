@@ -40,6 +40,10 @@
  *     is what makes that test worth its own case rather than a variant of the first
  *   - never announce (DeleteCourseButton)        -> its live-region test fails
  *   - always render the shared-concept clause    -> the omit-when-zero test fails
+ *   - drop the guard (QuizSection)               -> its decline test and its
+ *     stale-intent test both fail
+ *   - drop the focus call (QuizSection)          -> its four restore tests fail (both
+ *     answer kinds, wrong and right)
  *
  * One of those exposed a COUPLING worth recording, since the fix is the reusable part:
  * the delete decline test first synchronised on the live region, so dropping the
@@ -72,8 +76,10 @@ import { ConceptTutor } from "@/components/ConceptTutor";
 import { DaysOffControl } from "@/components/DaysOffControl";
 import { DeadlineForm } from "@/components/DeadlineForm";
 import { CourseDeletionProvider, DeleteCourseButton } from "@/components/DeleteCourseButton";
+import { QuizSection } from "@/components/QuizSection";
 import type { TutorOutcome } from "@/lib/api";
 import {
+  answerQuiz,
   ApiError,
   deleteCourse,
   getDeletionPreview,
@@ -82,9 +88,9 @@ import {
   sendTutorMessage,
   setCourseDeadline,
 } from "@/lib/api";
-import type { CourseDeletion, CoursePlan, DayOffRemoval } from "@/lib/types";
+import type { AnswerResult, CourseDeletion, CoursePlan, DayOffRemoval } from "@/lib/types";
 
-import { conversation, deferred, plan, tutorRow, turnOutcome } from "./fixtures";
+import { answerResult, conversation, deferred, plan, quizItem, quizProgress, tutorRow, turnOutcome } from "./fixtures";
 
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
@@ -96,6 +102,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   removeDayOff: vi.fn(),
   getDeletionPreview: vi.fn(),
   deleteCourse: vi.fn(),
+  answerQuiz: vi.fn(),
 }));
 
 // Both forms refresh the route after a save; the refresh is a no-op here because the
@@ -451,5 +458,143 @@ describe("DeleteCourseButton focus restoration", () => {
       screen.queryByText(/0 more/),
       "a learner with no concepts taught elsewhere should not be told about a category that is empty for them",
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Checking a quiz answer, which unlike the four components above has two different
+ * things a submission can leave behind, and picks its target accordingly.
+ *
+ * A wrong answer keeps the item open: the button survives, re-enabled and relabelled
+ * "Try again", and the answer control (the text input, or the mcq's radios) is
+ * re-enabled with it. That is what disables both those controls mid-request and drops
+ * whichever held focus to the body, so the guard is the same body check as
+ * ConceptPractice, DaysOffControl and DeadlineForm, and the target is the answer
+ * control: the thing a keyboard learner needs a fresh attempt at, reached directly
+ * rather than by blind-tabbing back to it from wherever the body left them.
+ *
+ * A RIGHT answer is the other shape. Solving the item unmounts the button entirely and
+ * leaves the inputs disabled, so neither one exists to land on: the "Correct" message
+ * is the only thing left in the item that a keyboard learner can be put on, so it
+ * carries a `tabIndex={-1}` for exactly that. Which of the two targets a submission
+ * wants is decided from `ever_correct`, not from this attempt's own `correct`: an item
+ * solved earlier that takes another wrong attempt still has no button to return to.
+ */
+describe("QuizSection focus restoration", () => {
+  function renderQuiz(kind: "mcq" | "short") {
+    const item = quizItem({ id: 1, kind });
+    const view = render(<QuizSection quiz={[item]} progress={quizProgress({ items: 1 })} />);
+    const graded = deferred<AnswerResult>();
+    vi.mocked(answerQuiz).mockReturnValue(graded.promise);
+    return { item, graded, rerender: view.rerender };
+  }
+
+  /** A node outside the component, standing in for wherever a learner tabs off to. */
+  function decoy(): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.textContent = "elsewhere";
+    document.body.appendChild(button);
+    return button;
+  }
+
+  test("returns focus to the text input after a wrong short-answer that left focus on the body", async () => {
+    const { graded } = renderQuiz("short");
+    const input = screen.getByPlaceholderText("Your answer");
+    fireEvent.change(input, { target: { value: "Ellipse" } });
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    // fireEvent never moves focus, so the body holds it: the state a real browser
+    // reaches when disabling the pressed button and the re-enabled input blurs them.
+    expect(document.body).toHaveFocus();
+
+    await act(async () => graded.resolve(answerResult({ correct: false, expected: "Circular" })));
+
+    expect(
+      input,
+      "a wrong answer leaves the input open to a retry, so a keyboard learner reaches a fresh answer directly instead of blind-tabbing back to it",
+    ).toHaveFocus();
+  });
+
+  test("returns focus to the checked radio after a wrong mcq answer", async () => {
+    const { item, graded } = renderQuiz("mcq");
+    const option = screen.getByRole("radio", { name: item.options[0] });
+    fireEvent.click(option);
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    expect(document.body).toHaveFocus();
+
+    await act(async () => graded.resolve(answerResult({ correct: false, expected: item.options[1] })));
+
+    expect(
+      option,
+      "an mcq has no single answer control, so the checked radio is the one a retry needs: arrow keys move the selection from there without a blind tab back to the group",
+    ).toHaveFocus();
+  });
+
+  test("moves focus to the Correct message once a right short answer unmounts the button", async () => {
+    const { graded } = renderQuiz("short");
+    const input = screen.getByPlaceholderText("Your answer");
+    fireEvent.change(input, { target: { value: "Circular" } });
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    expect(document.body).toHaveFocus();
+
+    await act(async () => graded.resolve(answerResult({ correct: true, expected: "Circular" })));
+
+    expect(
+      screen.getByText("Correct"),
+      "solving the item unmounts the button and leaves the input disabled, so the message is the only thing left for a keyboard learner to land on",
+    ).toHaveFocus();
+    expect(screen.queryByRole("button", { name: /Check answer|Try again/ })).not.toBeInTheDocument();
+  });
+
+  test("moves focus to the Correct message once a right mcq answer unmounts the button", async () => {
+    const { item, graded } = renderQuiz("mcq");
+    fireEvent.click(screen.getByRole("radio", { name: item.options[0] }));
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    expect(document.body).toHaveFocus();
+
+    await act(async () => graded.resolve(answerResult({ correct: true, expected: item.options[0] })));
+
+    expect(screen.getByText("Correct")).toHaveFocus();
+  });
+
+  test("declines to move focus when the learner moved on mid-request", async () => {
+    const { graded } = renderQuiz("short");
+    const input = screen.getByPlaceholderText("Your answer");
+    fireEvent.change(input, { target: { value: "Ellipse" } });
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    // The learner tabbed away from the item while the request was in flight.
+    const elsewhere = decoy();
+    act(() => elsewhere.focus());
+
+    await act(async () => graded.resolve(answerResult({ correct: false, expected: "Circular" })));
+
+    expect(
+      elsewhere,
+      "a learner who moved on mid-request is where they want to be; pulling them into the input is worse than the problem being fixed",
+    ).toHaveFocus();
+    elsewhere.remove();
+  });
+
+  test("a declined restore consumes the intent rather than leaving it armed for a later commit", async () => {
+    const { item, graded, rerender } = renderQuiz("short");
+    const input = screen.getByPlaceholderText("Your answer");
+    fireEvent.change(input, { target: { value: "Ellipse" } });
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    const elsewhere = decoy();
+    act(() => elsewhere.focus());
+
+    await act(async () => graded.resolve(answerResult({ correct: false, expected: "Circular" })));
+    expect(elsewhere).toHaveFocus();
+
+    // Walk away from the decoy, back to the body, then force another commit of the
+    // focus effect without a fresh submission arming it: a stale intent left armed by
+    // the decline above would wrongly fire now, against a render it was never meant for.
+    act(() => elsewhere.blur());
+    rerender(<QuizSection quiz={[{ ...item }]} progress={quizProgress({ items: 1 })} />);
+
+    expect(
+      document.body,
+      "the input must not seize focus on an unrelated later render: the intent belonged to the attempt that resolved, and the declined restore should have consumed it",
+    ).toHaveFocus();
+    elsewhere.remove();
   });
 });
