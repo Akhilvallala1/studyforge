@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 import { CourseTabs } from "@/components/CourseTabs";
 import { DaysOffControl } from "@/components/DaysOffControl";
 import { DeadlineForm } from "@/components/DeadlineForm";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHeader } from "@/components/ui/PageHeader";
 import {
   ApiError,
   coursePlanIcsFilename,
@@ -227,7 +229,7 @@ function requiredDashNote(plan: CoursePlan): string {
 function PlanStat({ value, label }: { value: string; label: string }) {
   return (
     <div className="flex min-w-[8.5rem] flex-col-reverse">
-      <dt className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{label}</dt>
+      <dt className="mt-0.5 text-xs text-ink-muted">{label}</dt>
       <dd className="font-mono text-[26px] font-medium tabular-nums">{value}</dd>
     </div>
   );
@@ -414,11 +416,11 @@ function paceSentences(plan: CoursePlan): string[] {
  */
 function PassedPanel({ plan }: { plan: CoursePlan }) {
   return (
-    <section className="mt-5 rounded-lg border border-zinc-200 px-5 py-4 dark:border-zinc-800">
-      <p className="text-[15px] font-medium">
+    <section className="mt-5 rounded-surface border border-line px-5 py-4">
+      <p className="text-ui font-medium">
         {deadlineSentence(plan)} Your reviews continue, because you still know this.
       </p>
-      <p className="mt-1.5 text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+      <p className="mt-1.5 text-small text-ink-muted">
         Nothing was rescheduled when you set the date and nothing was rescheduled when it
         passed. Your concepts come back when your memory of them says so, exactly as they
         would have without a deadline. Clear it below, or set the next one.
@@ -430,22 +432,22 @@ function PassedPanel({ plan }: { plan: CoursePlan }) {
 function CalendarSection({ plan }: { plan: CoursePlan }) {
   return (
     <section aria-labelledby="plan-calendar-heading">
-      <h2 id="plan-calendar-heading" className="mt-9 text-[15px] font-semibold">
+      <h2 id="plan-calendar-heading" className="mt-9 text-subtitle">
         Put it in your calendar
       </h2>
-      <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+      <p className="mt-1.5 max-w-2xl text-small text-ink-muted">
         StudyForge cannot notify you. There are no accounts here and no server running when
         you are not using it, so nothing in this program can send you an email, a push
         notification, or a reminder of any kind, and that is by design. What it can do is
         hand you a calendar file, and let the calendar you already use do the reminding.
       </p>
       {plan.deadline == null ? (
-        <p className="mt-3 rounded-lg border border-zinc-200 px-5 py-4 text-[13px] text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+        <p className="mt-3 rounded-surface border border-line px-5 py-4 text-small text-ink-muted">
           Set a deadline above and the calendar file appears here.
         </p>
       ) : (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-4 rounded-lg border border-zinc-200 px-5 py-4 dark:border-zinc-800">
-          <p className="max-w-lg text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-4 rounded-surface border border-line px-5 py-4">
+          <p className="max-w-lg text-small text-ink-muted">
             One all-day event on {formatDayKey(plan.deadline)}, with where you stand written
             into it. It saves as {coursePlanIcsFilename(plan.course_id)}. This is a file you
             download and open once, not an address your calendar keeps checking: a calendar
@@ -455,7 +457,7 @@ function CalendarSection({ plan }: { plan: CoursePlan }) {
           </p>
           <a
             href={coursePlanIcsUrl(plan.course_id)}
-            className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-300 px-4 py-2 text-[13px] font-medium transition-colors hover:border-zinc-500 dark:border-zinc-700 dark:hover:border-zinc-500"
+            className="shrink-0 whitespace-nowrap rounded-control border border-line-strong px-4 py-2 text-small font-medium transition-colors duration-fast ease-standard hover:border-line-hover"
           >
             Download .ics
           </a>
@@ -474,7 +476,7 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
 
   return (
     <>
-      <p className="mt-5 max-w-2xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+      <p className="mt-5 max-w-2xl text-ui text-ink-muted">
         This page is about the rate new material goes in, and only that. Your reviews are
         scheduled by how your memory of each concept decays, and a deadline does not move
         any of them: nothing here brings a review forward, and nothing here is at risk
@@ -484,15 +486,15 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
       {plan.status === "passed" && <PassedPanel plan={plan} />}
 
       <section aria-labelledby="plan-pace-heading">
-        <h2 id="plan-pace-heading" className="mt-8 text-[15px] font-semibold">
+        <h2 id="plan-pace-heading" className="mt-8 text-subtitle">
           Your pace
         </h2>
         {plan.status === "active" && (
-          <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+          <p className="mt-1.5 max-w-2xl text-small text-ink-muted">
             {deadlineSentence(plan)} {studyDays}
           </p>
         )}
-        <div className="mt-4 rounded-lg border border-zinc-200 px-5 py-5 dark:border-zinc-800">
+        <div className="mt-4 rounded-surface border border-line px-5 py-5">
           <dl className="flex flex-wrap gap-x-12 gap-y-6">
             <PlanStat
               value={
@@ -557,7 +559,7 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
               label="Lessons a week, this course"
             />
           </dl>
-          <div className="mt-5 max-w-2xl border-t border-zinc-200 pt-4 text-[13px] leading-relaxed text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+          <div className="mt-5 max-w-2xl border-t border-line pt-4 text-small text-ink-muted">
             {paceSentences(plan).map((line) => (
               <p key={line} className="mt-1 first:mt-0">
                 {line}
@@ -568,10 +570,10 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
       </section>
 
       <section aria-labelledby="plan-deadline-heading">
-        <h2 id="plan-deadline-heading" className="mt-9 text-[15px] font-semibold">
+        <h2 id="plan-deadline-heading" className="mt-9 text-subtitle">
           Deadline
         </h2>
-        <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+        <p className="mt-1.5 max-w-2xl text-small text-ink-muted">
           {plan.deadline == null
             ? "This course has no deadline. Setting one works out the weekly rate above; it changes nothing else, and clearing it later puts everything back."
             : "Changing the date works out a new weekly rate. It moves no review and un-completes no lesson, and clearing it puts the course back to where it was."}
@@ -590,10 +592,10 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
       <CalendarSection plan={plan} />
 
       <section aria-labelledby="plan-days-off-heading">
-        <h2 id="plan-days-off-heading" className="mt-9 text-[15px] font-semibold">
+        <h2 id="plan-days-off-heading" className="mt-9 text-subtitle">
           Days off
         </h2>
-        <p className="mt-1.5 max-w-2xl text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+        <p className="mt-1.5 max-w-2xl text-small text-ink-muted">
           Days off apply to every course, not just this one. A day marked here stops counting
           as a study day everywhere, so the weekly rate on your other courses moves too. It
           changes no review: your concepts still come back when they come back.
@@ -622,15 +624,16 @@ export default async function CoursePlanPage(props: PageProps<"/courses/[courseI
     if (err instanceof ApiError && err.status === 404) notFound();
     return (
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-        <h1 className="text-3xl font-semibold tracking-tight">Plan</h1>
-        <p
-          role="alert"
-          className="mt-8 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-        >
-          {err instanceof ApiError
-            ? err.message
-            : "Could not reach the server. Is the backend running?"}
-        </p>
+        <PageHeader title="Plan" />
+        <ErrorState
+          title=""
+          className="mt-8"
+          message={
+            err instanceof ApiError
+              ? err.message
+              : "Could not reach the server. Is the backend running?"
+          }
+        />
       </main>
     );
   }
@@ -639,11 +642,11 @@ export default async function CoursePlanPage(props: PageProps<"/courses/[courseI
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
       <Link
         href="/courses"
-        className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+        className="text-small text-ink-muted transition-colors duration-fast ease-standard hover:text-ink"
       >
         &larr; All courses
       </Link>
-      <h1 className="mt-4 text-3xl font-semibold tracking-tight">{plan.title}</h1>
+      <PageHeader className="mt-4" title={plan.title} />
 
       <CourseTabs courseId={plan.course_id} active="plan" />
 

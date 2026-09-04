@@ -4,14 +4,23 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import { Button } from "@/components/ui/Button";
+import { Callout } from "@/components/ui/Callout";
 import { ApiError, addDayOff, removeDayOff } from "@/lib/api";
 import { formatDayKey } from "@/lib/copy";
 import { splitDaysOff } from "@/lib/plan";
 import type { DayOff } from "@/lib/types";
 
+/*
+ * No `focus:outline-none` here, where the raw version had one: globals.css's app-wide
+ * `:focus-visible` rule is unlayered, and Tailwind wraps its own utilities in
+ * `@layer utilities`, so an unlayered rule always wins over a layered one regardless of
+ * either side's specificity. Dropping the utility changes no rendered pixel; it only
+ * stops shipping a rule that could never have won.
+ */
 const FIELD_CLASS =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 " +
-  "focus:border-zinc-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
+  "w-full rounded-control border border-line-strong bg-transparent px-3 py-2 text-ui text-ink " +
+  "transition-colors duration-fast ease-standard hover:border-line-hover focus:border-line-hover";
 
 /**
  * Which control should hold focus once the request has landed.
@@ -49,20 +58,20 @@ function DayOffRow({
   return (
     <li className="flex items-center justify-between gap-4 py-2.5">
       <div className="min-w-0">
-        <div className="text-[13px]">{formatDayKey(entry.day)}</div>
-        {entry.note && (
-          <div className="truncate text-xs text-zinc-500 dark:text-zinc-400">{entry.note}</div>
-        )}
+        <div className="text-small">{formatDayKey(entry.day)}</div>
+        {entry.note && <div className="truncate text-xs text-ink-muted">{entry.note}</div>}
       </div>
-      <button
+      <Button
         type="button"
+        variant="secondary"
+        size="sm"
         disabled={pending}
         onClick={() => onUnmark(entry)}
         aria-label={`Unmark ${formatDayKey(entry.day)} as a day off`}
-        className="shrink-0 rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium transition-colors hover:border-zinc-500 disabled:opacity-60 dark:border-zinc-700 dark:hover:border-zinc-500"
+        className="shrink-0"
       >
         Unmark
-      </button>
+      </Button>
     </li>
   );
 }
@@ -184,14 +193,11 @@ export function DaysOffControl({
   }
 
   return (
-    <div className="mt-4 rounded-lg border border-zinc-200 px-5 py-4 dark:border-zinc-800">
+    <div className="mt-4 rounded-surface border border-line px-5 py-4">
       <form onSubmit={(event) => void submit(event)}>
         <div className="flex flex-wrap gap-4">
           <div className="min-w-[10rem] flex-1">
-            <label
-              htmlFor="day-off-day"
-              className="block text-[13px] font-medium text-zinc-700 dark:text-zinc-300"
-            >
+            <label htmlFor="day-off-day" className="block text-small font-medium text-ink-muted">
               Date
             </label>
             {/* Never disabled, mid-request included. Disabling the focused control
@@ -208,12 +214,8 @@ export function DaysOffControl({
             />
           </div>
           <div className="min-w-[10rem] flex-1">
-            <label
-              htmlFor="day-off-note"
-              className="block text-[13px] font-medium text-zinc-700 dark:text-zinc-300"
-            >
-              Why{" "}
-              <span className="font-normal text-zinc-500 dark:text-zinc-400">(optional)</span>
+            <label htmlFor="day-off-note" className="block text-small font-medium text-ink-muted">
+              Why <span className="font-normal text-ink-subtle">(optional)</span>
             </label>
             <input
               id="day-off-note"
@@ -226,40 +228,46 @@ export function DaysOffControl({
             />
           </div>
         </div>
-        <button
+        {/*
+          `secondary`, and one size up from the Unmark buttons in the list above. This
+          submit was an outline button on main, matching those siblings, and a filled
+          primary here would rank marking a day off above the page's real primary
+          actions. Dropping `size="sm"` keeps it a visible step larger than Unmark,
+          which is the hierarchy the raw classes had, rather than pixel-identical to it.
+        */}
+        <Button
           type="submit"
           ref={submitRef}
+          variant="secondary"
           disabled={pending || !day}
-          className="mt-3.5 rounded-lg border border-zinc-300 px-4 py-2 text-[13px] font-medium transition-colors hover:border-zinc-500 disabled:opacity-60 dark:border-zinc-700 dark:hover:border-zinc-500"
+          className="mt-3.5"
         >
           {saving ? "Saving…" : "Mark day off"}
-        </button>
+        </Button>
       </form>
 
       {error && (
-        <p role="alert" className="mt-3 text-[13px] text-red-700 dark:text-red-400">
+        <Callout tone="danger" role="alert" className="mt-3">
           {error}
-        </p>
+        </Callout>
       )}
       {notice && (
-        <p role="status" className="mt-3 text-[13px] text-zinc-600 dark:text-zinc-400">
+        <p role="status" className="mt-3 text-small text-ink-muted">
           {notice}
         </p>
       )}
 
       {daysOff.length === 0 ? (
-        <p className="mt-4 border-t border-zinc-200 pt-4 text-[13px] text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+        <p className="mt-4 border-t border-line pt-4 text-small text-ink-muted">
           No days marked off. Every day between now and a deadline counts as a day you could
           study on.
         </p>
       ) : (
-        <div className="mt-4 border-t border-zinc-200 dark:border-zinc-800">
+        <div className="mt-4 border-t border-line">
           {upcoming.length === 0 ? (
-            <p className="pt-4 text-[13px] text-zinc-500 dark:text-zinc-400">
-              No days off coming up.
-            </p>
+            <p className="pt-4 text-small text-ink-muted">No days off coming up.</p>
           ) : (
-            <ul className="flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
+            <ul className="flex flex-col divide-y divide-line">
               {upcoming.map((entry) => (
                 <DayOffRow key={entry.day} entry={entry} pending={pending} onUnmark={unmark} />
               ))}
@@ -279,11 +287,11 @@ export function DaysOffControl({
              * toggles, since nothing unmounts: the summary the learner is standing on is
              * the same element before and after.
              */
-            <details className="mt-1 border-t border-zinc-200 pt-2.5 dark:border-zinc-800">
-              <summary className="cursor-pointer text-xs text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200">
+            <details className="mt-1 border-t border-line pt-2.5">
+              <summary className="cursor-pointer text-xs text-ink-muted hover:text-ink">
                 {past.length === 1 ? "1 earlier day off" : `${past.length} earlier days off`}
               </summary>
-              <ul className="mt-1 flex flex-col divide-y divide-zinc-200 dark:divide-zinc-800">
+              <ul className="mt-1 flex flex-col divide-y divide-line">
                 {past.map((entry) => (
                   <DayOffRow key={entry.day} entry={entry} pending={pending} onUnmark={unmark} />
                 ))}

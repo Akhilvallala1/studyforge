@@ -3,12 +3,21 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { Button } from "@/components/ui/Button";
+import { Callout } from "@/components/ui/Callout";
 import { ApiError, clearCourseDeadline, setCourseDeadline } from "@/lib/api";
 import type { CoursePlan } from "@/lib/types";
 
+/*
+ * No `focus:outline-none` here, where the raw version had one: globals.css's app-wide
+ * `:focus-visible` rule is unlayered, and Tailwind wraps its own utilities in
+ * `@layer utilities`, so an unlayered rule always wins over a layered one regardless of
+ * either side's specificity. Dropping the utility changes no rendered pixel; it only
+ * stops shipping a rule that could never have won.
+ */
 const FIELD_CLASS =
-  "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 " +
-  "focus:border-zinc-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100";
+  "w-full rounded-control border border-line-strong bg-transparent px-3 py-2 text-ui text-ink " +
+  "transition-colors duration-fast ease-standard hover:border-line-hover focus:border-line-hover";
 
 /** Which control should hold focus once the request has landed and the tree is committed. */
 type DeadlineFocus = "day" | "label" | "submit";
@@ -128,14 +137,11 @@ export function DeadlineForm({ plan }: { plan: CoursePlan }) {
         if (!day) return;
         void run(() => setCourseDeadline(plan.course_id, day, label.trim()), activeField());
       }}
-      className="mt-4 rounded-lg border border-zinc-200 px-5 py-4 dark:border-zinc-800"
+      className="mt-4 rounded-surface border border-line px-5 py-4"
     >
       <div className="flex flex-wrap gap-4">
         <div className="min-w-[10rem] flex-1">
-          <label
-            htmlFor="deadline-day"
-            className="block text-[13px] font-medium text-zinc-700 dark:text-zinc-300"
-          >
+          <label htmlFor="deadline-day" className="block text-small font-medium text-ink-muted">
             Date
           </label>
           {/* Never disabled, mid-request included. Disabling the focused control blurs
@@ -151,12 +157,8 @@ export function DeadlineForm({ plan }: { plan: CoursePlan }) {
           />
         </div>
         <div className="min-w-[10rem] flex-1">
-          <label
-            htmlFor="deadline-label"
-            className="block text-[13px] font-medium text-zinc-700 dark:text-zinc-300"
-          >
-            What to call it{" "}
-            <span className="font-normal text-zinc-500 dark:text-zinc-400">(optional)</span>
+          <label htmlFor="deadline-label" className="block text-small font-medium text-ink-muted">
+            What to call it <span className="font-normal text-ink-subtle">(optional)</span>
           </label>
           <input
             id="deadline-label"
@@ -171,40 +173,35 @@ export function DeadlineForm({ plan }: { plan: CoursePlan }) {
         </div>
       </div>
 
-      <p className="mt-2.5 text-xs text-zinc-500 dark:text-zinc-400">
+      <p className="mt-2.5 text-xs text-ink-muted">
         The name is what shows up in your calendar. The date is the day you need to know the
         material by, so the day itself is not counted as study time.
       </p>
 
       <div className="mt-3.5 flex flex-wrap items-center gap-3">
-        <button
-          type="submit"
-          ref={submitRef}
-          disabled={pending || !day}
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
+        <Button type="submit" ref={submitRef} disabled={pending || !day}>
           {saving ? "Saving…" : hasDeadline ? "Change deadline" : "Set deadline"}
-        </button>
+        </Button>
         {hasDeadline && (
           // Focus goes to the date field rather than back here, because on the path that
           // succeeds this button does not exist afterwards: the deadline is gone, so
           // `hasDeadline` is false and the whole control is unmounted. The date field is
           // the nearest thing the learner would act on next.
-          <button
+          <Button
             type="button"
+            variant="secondary"
             disabled={pending}
             onClick={() => void run(() => clearCourseDeadline(plan.course_id), "day")}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-[13px] font-medium transition-colors hover:border-zinc-500 disabled:opacity-60 dark:border-zinc-700 dark:hover:border-zinc-500"
           >
             Clear deadline
-          </button>
+          </Button>
         )}
       </div>
 
       {error && (
-        <p role="alert" className="mt-3 text-[13px] text-red-700 dark:text-red-400">
+        <Callout tone="danger" role="alert" className="mt-3">
           {error}
-        </p>
+        </Callout>
       )}
     </form>
   );
