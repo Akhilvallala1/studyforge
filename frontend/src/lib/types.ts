@@ -867,3 +867,39 @@ export interface CourseDeletion {
   /** Spend attributed to this course. Kept in Usage after the course is gone. */
   spend_usd: number;
 }
+
+/** The generation caps a client should validate against before submitting, from GET /meta/limits. */
+export interface SourceLimits {
+  max_sources: number;
+  max_total_chars: number;
+  /** Applies to the SUM of every uploaded file's size in one request, not to any file alone. */
+  max_upload_bytes: number;
+}
+
+/**
+ * One text or URL entry of the `sources` field sent to POST /courses/generate/multipart.
+ * PDFs are not represented here: they ride as separate `file` parts in the same request,
+ * combined-order after these. `ref` is a label for the source; omit it to take the
+ * server's default (the URL itself for a url source, "source N" for a text source).
+ */
+export interface SourceInput {
+  kind: "text" | "url";
+  value: string;
+  ref?: string;
+}
+
+/**
+ * One entry of a 422 source_failed response from POST /courses/generate/multipart.
+ *
+ * `index` is this source's position in the COMBINED request as sent: `sources` entries
+ * first, in order, then `file` parts, in order. That is the field to map a failure back
+ * onto a row with. `ref` is a label for display only, not a stable identifier: two rows
+ * can legitimately share one (e.g. two files both named notes.pdf).
+ */
+export interface SourceFailure {
+  index: number;
+  kind: "text" | "url" | "pdf";
+  ref: string;
+  error: string;
+  message: string;
+}
