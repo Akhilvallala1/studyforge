@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
-import { Badge } from "@/components/ui/Badge";
 import { Callout } from "@/components/ui/Callout";
 import { ApiError, answerReviewCard, rateReviewCard } from "@/lib/api";
 import type { RatingName, RatingPreview, ReviewCard, ReviewQueue } from "@/lib/types";
@@ -245,7 +244,22 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
                 Concept
               </span>
               <span className="text-small text-ink-muted">{card.concept_label}</span>
-              {card.lapses > 0 && <Badge tone="warning">Missed last time</Badge>}
+              {card.lapses > 0 && (
+                /*
+                  Not the Badge primitive, and not `text-micro` either. Badge uppercases
+                  its children, which reads correctly for a one-word status but renders
+                  this four-word phrase as MISSED LAST TIME, a copy change the restyle
+                  was not supposed to make. `text-micro` is the size Badge uses, but the
+                  scale comment in globals.css states it is uppercase and tracked out by
+                  convention, and its 0.04em tracking is baked into the theme variable,
+                  so it is equally wrong for a sentence-case phrase. `text-small` is the
+                  nearest size that carries no case convention. Colour and pill geometry
+                  stay Badge's so the two still read as siblings.
+                */
+                <span className="inline-flex items-center rounded-full bg-warning-surface px-2.5 py-0.5 text-small font-medium text-warning">
+                  Missed last time
+                </span>
+              )}
             </div>
 
             <div className="mt-3.5 rounded-surface border border-line bg-surface p-8">

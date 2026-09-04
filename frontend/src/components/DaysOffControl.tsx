@@ -215,7 +215,7 @@ export function DaysOffControl({
           </div>
           <div className="min-w-[10rem] flex-1">
             <label htmlFor="day-off-note" className="block text-small font-medium text-ink-muted">
-              Why <span className="font-normal text-ink-muted">(optional)</span>
+              Why <span className="font-normal text-ink-subtle">(optional)</span>
             </label>
             <input
               id="day-off-note"
@@ -228,7 +228,20 @@ export function DaysOffControl({
             />
           </div>
         </div>
-        <Button type="submit" ref={submitRef} disabled={pending || !day} size="sm" className="mt-3.5">
+        {/*
+          `secondary`, and one size up from the Unmark buttons in the list above. This
+          submit was an outline button on main, matching those siblings, and a filled
+          primary here would rank marking a day off above the page's real primary
+          actions. Dropping `size="sm"` keeps it a visible step larger than Unmark,
+          which is the hierarchy the raw classes had, rather than pixel-identical to it.
+        */}
+        <Button
+          type="submit"
+          ref={submitRef}
+          variant="secondary"
+          disabled={pending || !day}
+          className="mt-3.5"
+        >
           {saving ? "Saving…" : "Mark day off"}
         </Button>
       </form>

@@ -476,7 +476,7 @@ function PlanScreen({ plan, daysOff }: { plan: CoursePlan; daysOff: DayOff[] }) 
 
   return (
     <>
-      <p className="mt-5 max-w-2xl text-small text-ink-muted">
+      <p className="mt-5 max-w-2xl text-ui text-ink-muted">
         This page is about the rate new material goes in, and only that. Your reviews are
         scheduled by how your memory of each concept decays, and a deadline does not move
         any of them: nothing here brings a review forward, and nothing here is at risk

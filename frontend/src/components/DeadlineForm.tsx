@@ -158,7 +158,7 @@ export function DeadlineForm({ plan }: { plan: CoursePlan }) {
         </div>
         <div className="min-w-[10rem] flex-1">
           <label htmlFor="deadline-label" className="block text-small font-medium text-ink-muted">
-            What to call it <span className="font-normal text-ink-muted">(optional)</span>
+            What to call it <span className="font-normal text-ink-subtle">(optional)</span>
           </label>
           <input
             id="deadline-label"
