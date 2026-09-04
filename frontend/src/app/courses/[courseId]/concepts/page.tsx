@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 
 import { ConceptMap, MasteryLegend } from "@/components/ConceptMap";
 import { CourseTabs } from "@/components/CourseTabs";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { ApiError, getCourseConcepts } from "@/lib/api";
 import type { CourseConcepts, WeakestConcept } from "@/lib/types";
 
@@ -30,6 +32,15 @@ function ConceptsEmptyState() {
   );
 }
 
+const BACK_TO_COURSES_LINK = (
+  <Link
+    href="/courses"
+    className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+  >
+    &larr; All courses
+  </Link>
+);
+
 export default async function CourseConceptsPage(
   props: PageProps<"/courses/[courseId]/concepts">,
 ) {
@@ -41,8 +52,29 @@ export default async function CourseConceptsPage(
   try {
     data = await getCourseConcepts(id);
   } catch (err) {
+    // This page was the last one in src/app still re-throwing, which mattered more than
+    // its position in the list suggests: CourseTabs links here as a sibling tab of the
+    // course page, so with the backend down a reader got the friendly message on
+    // /courses/1 and a blank 500 one click later on /courses/1/concepts. A genuine 404
+    // still 404s; everything else becomes the same inline message the other seven
+    // fetching pages show. See courses/page.tsx for the 200-vs-500 reasoning.
     if (err instanceof ApiError && err.status === 404) notFound();
-    throw err;
+    const message =
+      err instanceof ApiError ? err.message : "Could not reach the server. Is the backend running?";
+    return (
+      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
+        {BACK_TO_COURSES_LINK}
+        {/*
+          The fetch failed, so the real course title was never learned and PageHeader gets
+          the generic "Concept map" instead of the page having no h1 at all. Matches the
+          course and lesson error branches rather than this page's own raw-zinc h1: the
+          error branches are the thing being made uniform here, and the T8 restyle moves
+          the success branch onto PageHeader too.
+        */}
+        <PageHeader className="mt-4" title="Concept map" />
+        <ErrorState className="mt-8" message={message} />
+      </main>
+    );
   }
 
   const { concepts, lessons, weakest } = data;
@@ -50,12 +82,7 @@ export default async function CourseConceptsPage(
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-      <Link
-        href="/courses"
-        className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-      >
-        &larr; All courses
-      </Link>
+      {BACK_TO_COURSES_LINK}
       <h1 className="mt-4 text-3xl font-semibold tracking-tight">{data.title}</h1>
 
       <CourseTabs courseId={data.course_id} active="concepts" />

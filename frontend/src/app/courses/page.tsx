@@ -11,17 +11,20 @@ import type { CourseSummary } from "@/lib/types";
 export const dynamic = "force-dynamic";
 
 /*
- * 200-with-inline-error, not a thrown 500, and this decision is shared by the other two
- * pages in this batch (courses/[courseId], lessons/[lessonId]) plus the two pages that
- * already worked this way before this change (/ and /usage). A bare re-thrown fetch
- * failure used to reach Next's own error boundary, which renders a generic "A server
- * error occurred" screen with an opaque digest and genuinely returns 500: correct for a
- * bug in OUR code, wrong for "the backend is not running", which is an expected,
- * recoverable condition for a self-hoster and not a defect in this page.
+ * 200-with-inline-error, not a thrown 500, and this decision is now shared by every
+ * page under src/app that fetches. There are EIGHT of them, so count before editing this
+ * sentence: this page, courses/[courseId], courses/[courseId]/lessons/[lessonId] and
+ * courses/[courseId]/concepts (the four in this batch), plus /, /usage, /review and
+ * courses/[courseId]/plan, which already worked this way. courses/new is the one page
+ * that is not on the list, because it is a client form and fetches nothing on render.
+ * A bare re-thrown fetch failure used to reach Next's own error boundary, which renders
+ * a generic "A server error occurred" screen with an opaque digest and genuinely returns
+ * 500: correct for a bug in OUR code, wrong for "the backend is not running", which is
+ * an expected, recoverable condition for a self-hoster and not a defect in this page.
  *
  * The alternative, catch the error and still respond 500 with our own body, was
- * considered and rejected: it would mean every one of the five page types on this site
- * behaves differently under "backend down" depending on which one you loaded first,
+ * considered and rejected: it would mean those eight pages behave differently under
+ * "backend down" depending on which one you loaded first,
  * which is a worse failure mode for a self-hoster to debug than the status code being
  * arguably wrong. A monitoring probe watching a single route will treat a self-hosted
  * study tool as up as long as the Next process answers, backend or no; that is an
