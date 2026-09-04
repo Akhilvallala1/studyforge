@@ -1,5 +1,5 @@
 /**
- * The focus-restoration guard, in the three components that carry it.
+ * The focus-restoration guard, in every component that carries it.
  *
  * The house pattern: the focused control is never disabled mid-request, the buttons
  * are; a real `disabled` blurs the pressed button to the body, so focus has to be
@@ -40,6 +40,10 @@
  *     is what makes that test worth its own case rather than a variant of the first
  *   - never announce (DeleteCourseButton)        -> its live-region test fails
  *   - always render the shared-concept clause    -> the omit-when-zero test fails
+ *   - drop the guard (QuizSection)               -> its decline test and its
+ *     stale-intent test both fail
+ *   - drop the focus call (QuizSection)          -> its four restore tests fail (both
+ *     answer kinds, wrong and right)
  *
  * One of those exposed a COUPLING worth recording, since the fix is the reusable part:
  * the delete decline test first synchronised on the live region, so dropping the
@@ -66,25 +70,38 @@
  */
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { describe, expect, test, vi } from "vitest";
 
 import { ConceptTutor } from "@/components/ConceptTutor";
 import { DaysOffControl } from "@/components/DaysOffControl";
 import { DeadlineForm } from "@/components/DeadlineForm";
 import { CourseDeletionProvider, DeleteCourseButton } from "@/components/DeleteCourseButton";
+import { GenerateForm } from "@/components/GenerateForm";
+import { QuizSection } from "@/components/QuizSection";
 import type { TutorOutcome } from "@/lib/api";
 import {
+  answerQuiz,
   ApiError,
   deleteCourse,
+  generateFromSources,
   getDeletionPreview,
+  getGenerationLimits,
   getTutorConversation,
   removeDayOff,
   sendTutorMessage,
   setCourseDeadline,
 } from "@/lib/api";
-import type { CourseDeletion, CoursePlan, DayOffRemoval } from "@/lib/types";
+import type {
+  AnswerResult,
+  CourseDeletion,
+  CoursePlan,
+  DayOffRemoval,
+  GenerateResult,
+  SourceLimits,
+} from "@/lib/types";
 
-import { conversation, deferred, plan, tutorRow, turnOutcome } from "./fixtures";
+import { answerResult, conversation, deferred, plan, quizItem, quizProgress, tutorRow, turnOutcome } from "./fixtures";
 
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
@@ -96,6 +113,9 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   removeDayOff: vi.fn(),
   getDeletionPreview: vi.fn(),
   deleteCourse: vi.fn(),
+  answerQuiz: vi.fn(),
+  getGenerationLimits: vi.fn(),
+  generateFromSources: vi.fn(),
 }));
 
 // Both forms refresh the route after a save; the refresh is a no-op here because the
@@ -451,5 +471,363 @@ describe("DeleteCourseButton focus restoration", () => {
       screen.queryByText(/0 more/),
       "a learner with no concepts taught elsewhere should not be told about a category that is empty for them",
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Checking a quiz answer, which unlike the four components above has two different
+ * things a submission can leave behind, and picks its target accordingly.
+ *
+ * A wrong answer keeps the item open: the button survives, re-enabled and relabelled
+ * "Try again", and the answer control (the text input, or the mcq's radios) is
+ * re-enabled with it. That is what disables both those controls mid-request and drops
+ * whichever held focus to the body, so the guard is the same body check as
+ * ConceptPractice, DaysOffControl and DeadlineForm, and the target is the answer
+ * control: the thing a keyboard learner needs a fresh attempt at, reached directly
+ * rather than by blind-tabbing back to it from wherever the body left them.
+ *
+ * A RIGHT answer is the other shape. Solving the item unmounts the button entirely and
+ * leaves the inputs disabled, so neither one exists to land on: the "Correct" message
+ * is the only thing left in the item that a keyboard learner can be put on, so it
+ * carries a `tabIndex={-1}` for exactly that. Which of the two targets a submission
+ * wants is decided from `ever_correct`, not from this attempt's own `correct`: an item
+ * solved earlier that takes another wrong attempt still has no button to return to.
+ */
+describe("QuizSection focus restoration", () => {
+  function renderQuiz(kind: "mcq" | "short") {
+    const item = quizItem({ id: 1, kind });
+    const view = render(<QuizSection quiz={[item]} progress={quizProgress({ items: 1 })} />);
+    const graded = deferred<AnswerResult>();
+    vi.mocked(answerQuiz).mockReturnValue(graded.promise);
+    return { item, graded, rerender: view.rerender };
+  }
+
+  /** A node outside the component, standing in for wherever a learner tabs off to. */
+  function decoy(): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.textContent = "elsewhere";
+    document.body.appendChild(button);
+    return button;
+  }
+
+  test("returns focus to the text input after a wrong short-answer that left focus on the body", async () => {
+    const { graded } = renderQuiz("short");
+    const input = screen.getByPlaceholderText("Your answer");
+    fireEvent.change(input, { target: { value: "Ellipse" } });
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    // fireEvent never moves focus, so the body holds it: the state a real browser
+    // reaches when disabling the pressed button and the re-enabled input blurs them.
+    expect(document.body).toHaveFocus();
+
+    await act(async () => graded.resolve(answerResult({ correct: false, expected: "Circular" })));
+
+    expect(
+      input,
+      "a wrong answer leaves the input open to a retry, so a keyboard learner reaches a fresh answer directly instead of blind-tabbing back to it",
+    ).toHaveFocus();
+  });
+
+  test("returns focus to the checked radio after a wrong mcq answer", async () => {
+    const { item, graded } = renderQuiz("mcq");
+    const option = screen.getByRole("radio", { name: item.options[0] });
+    fireEvent.click(option);
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    expect(document.body).toHaveFocus();
+
+    await act(async () => graded.resolve(answerResult({ correct: false, expected: item.options[1] })));
+
+    expect(
+      option,
+      "an mcq has no single answer control, so the checked radio is the one a retry needs: arrow keys move the selection from there without a blind tab back to the group",
+    ).toHaveFocus();
+  });
+
+  test("moves focus to the Correct message once a right short answer unmounts the button", async () => {
+    const { graded } = renderQuiz("short");
+    const input = screen.getByPlaceholderText("Your answer");
+    fireEvent.change(input, { target: { value: "Circular" } });
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    expect(document.body).toHaveFocus();
+
+    await act(async () => graded.resolve(answerResult({ correct: true, expected: "Circular" })));
+
+    expect(
+      screen.getByText("Correct"),
+      "solving the item unmounts the button and leaves the input disabled, so the message is the only thing left for a keyboard learner to land on",
+    ).toHaveFocus();
+    expect(screen.queryByRole("button", { name: /Check answer|Try again/ })).not.toBeInTheDocument();
+  });
+
+  test("moves focus to the Correct message once a right mcq answer unmounts the button", async () => {
+    const { item, graded } = renderQuiz("mcq");
+    fireEvent.click(screen.getByRole("radio", { name: item.options[0] }));
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    expect(document.body).toHaveFocus();
+
+    await act(async () => graded.resolve(answerResult({ correct: true, expected: item.options[0] })));
+
+    expect(screen.getByText("Correct")).toHaveFocus();
+  });
+
+  test("declines to move focus when the learner moved on mid-request", async () => {
+    const { graded } = renderQuiz("short");
+    const input = screen.getByPlaceholderText("Your answer");
+    fireEvent.change(input, { target: { value: "Ellipse" } });
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    // The learner tabbed away from the item while the request was in flight.
+    const elsewhere = decoy();
+    act(() => elsewhere.focus());
+
+    await act(async () => graded.resolve(answerResult({ correct: false, expected: "Circular" })));
+
+    expect(
+      elsewhere,
+      "a learner who moved on mid-request is where they want to be; pulling them into the input is worse than the problem being fixed",
+    ).toHaveFocus();
+    elsewhere.remove();
+  });
+
+  test("a declined restore consumes the intent rather than leaving it armed for a later commit", async () => {
+    const { item, graded, rerender } = renderQuiz("short");
+    const input = screen.getByPlaceholderText("Your answer");
+    fireEvent.change(input, { target: { value: "Ellipse" } });
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    const elsewhere = decoy();
+    act(() => elsewhere.focus());
+
+    await act(async () => graded.resolve(answerResult({ correct: false, expected: "Circular" })));
+    expect(elsewhere).toHaveFocus();
+
+    // Walk away from the decoy, back to the body, then force another commit of the
+    // focus effect without a fresh submission arming it: a stale intent left armed by
+    // the decline above would wrongly fire now, against a render it was never meant for.
+    act(() => elsewhere.blur());
+    rerender(<QuizSection quiz={[{ ...item }]} progress={quizProgress({ items: 1 })} />);
+
+    expect(
+      document.body,
+      "the input must not seize focus on an unrelated later render: the intent belonged to the attempt that resolved, and the declined restore should have consumed it",
+    ).toHaveFocus();
+    elsewhere.remove();
+  });
+});
+
+/**
+ * GenerateForm has no single sender to restore focus to: rows are added and removed
+ * freely, so the target is a different control on almost every commit. That is what the
+ * four suites above have no equivalent of, and it is what most of these tests pin: which
+ * TARGET the add and remove effects pick once the list has changed shape. The house
+ * decline guard is here too, on the submit path, and is pinned alongside them.
+ */
+describe("GenerateForm focus restoration", () => {
+  const SOURCE_LIMITS: SourceLimits = {
+    max_sources: 20,
+    max_total_chars: 200_000,
+    max_upload_bytes: 20 * 1024 * 1024,
+  };
+
+  async function renderGenerateForm(extra?: ReactNode) {
+    vi.mocked(getGenerationLimits).mockResolvedValue(SOURCE_LIMITS);
+    const view = render(
+      <>
+        <GenerateForm />
+        {extra}
+      </>,
+    );
+    // Flushes the mount-time getGenerationLimits().then(...) inside act, rather than
+    // leaving it to resolve as a stray microtask after a test's own assertions run.
+    await act(async () => {});
+    return view;
+  }
+
+  test("adding a text row focuses its new textarea", async () => {
+    await renderGenerateForm();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add text" }));
+
+    expect(
+      screen.getByPlaceholderText(
+        "Paste lecture notes, an article, documentation - anything you want to learn.",
+      ),
+      "the row just added is where the learner is about to type, so it should already have focus",
+    ).toHaveFocus();
+  });
+
+  test("adding a url row focuses its new url input", async () => {
+    await renderGenerateForm();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add URL" }));
+
+    expect(
+      screen.getByPlaceholderText("https://example.com/article"),
+      "the row just added is where the learner is about to type, so it should already have focus",
+    ).toHaveFocus();
+  });
+
+  test("removing a row focuses the Remove button of the row that slides into its place, crossing from a text row into a PDF row", async () => {
+    const { container } = await renderGenerateForm();
+    const addText = screen.getByRole("button", { name: "+ Add text" });
+    fireEvent.click(addText);
+    fireEvent.click(addText);
+
+    const fileInput = container.querySelectorAll('input[type="file"]')[0];
+    const pdfFile = new File(["%PDF-1.4"], "notes.pdf", { type: "application/pdf" });
+    fireEvent.change(fileInput as HTMLInputElement, { target: { files: [pdfFile] } });
+    await screen.findByText("notes.pdf");
+
+    const removeButtons = screen.getAllByRole("button", { name: "Remove" });
+    expect(removeButtons).toHaveLength(3);
+    const pdfRemoveButton = removeButtons[2];
+
+    // Removes the second (and last) text row. Its successor in the combined
+    // [...rows, ...fileRows] order the form renders is the PDF row, not another text
+    // row: a fix that hunted for a successor inside `rows` alone would find nothing here.
+    fireEvent.click(removeButtons[1]);
+
+    expect(
+      pdfRemoveButton,
+      "the PDF row's Remove button is the removed row's successor in combined order and must take focus",
+    ).toHaveFocus();
+  });
+
+  test("removing the only row focuses the text-adding button", async () => {
+    await renderGenerateForm();
+    const addText = screen.getByRole("button", { name: "+ Add text" });
+    fireEvent.click(addText);
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+
+    expect(
+      addText,
+      "with no row left to hand focus to, the text-adding button is the nearest control to send it to",
+    ).toHaveFocus();
+  });
+
+  test("a failed submit moves focus to the summary alert", async () => {
+    await renderGenerateForm();
+    fireEvent.click(screen.getByRole("button", { name: "Generate course" }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("alert"),
+        "a submit that fails must land the learner on the announced reason, not leave focus stranded on the button",
+      ).toHaveFocus(),
+    );
+  });
+
+  test("a second submit failing with the same message still moves focus back to the alert", async () => {
+    await renderGenerateForm();
+    const submit = screen.getByRole("button", { name: "Generate course" });
+
+    fireEvent.click(submit);
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveFocus());
+
+    // The learner moves on before trying again. Nothing about the message is going to
+    // change on a second, identical failure, which is exactly the case a plain
+    // setSummaryError state update bails out of as a no-op: this must not silently fail
+    // to re-announce, or to re-focus, just because the text is byte-identical.
+    act(() => screen.getByRole("alert").blur());
+    expect(document.body).toHaveFocus();
+
+    fireEvent.click(submit);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("alert"),
+        "a byte-identical second failure is still a fresh announcement and must reclaim focus, not leave it wherever the learner moved it since the first",
+      ).toHaveFocus(),
+    );
+  });
+
+  test("a synchronous failure moves focus to the alert from the submit button itself, not only from the body", async () => {
+    await renderGenerateForm();
+    const submit = screen.getByRole("button", { name: "Generate course" });
+    act(() => submit.focus());
+    // The empty-list guard returns before submitting is ever set, so the button is
+    // never disabled and never blurs itself: activeElement is the button, not the
+    // body. This is the focusAtSend disjunct of the guard, not the body one, and the
+    // two prior "moves to alert" tests above never exercise it because fireEvent
+    // leaves focus on the body by default.
+    expect(submit).toHaveFocus();
+
+    fireEvent.click(submit);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("alert"),
+        "the learner sent from the button and never left it, so the restore must still land on the alert",
+      ).toHaveFocus(),
+    );
+  });
+
+  test("leaves focus alone when the learner moves on during a pending generation", async () => {
+    const generation = deferred<GenerateResult>();
+    vi.mocked(generateFromSources).mockReturnValue(generation.promise);
+    const elsewhereRef = { current: null as HTMLInputElement | null };
+    await renderGenerateForm(
+      <input
+        aria-label="Elsewhere"
+        ref={(node) => {
+          elsewhereRef.current = node;
+        }}
+      />,
+    );
+    const elsewhere = elsewhereRef.current;
+    if (!elsewhere) throw new Error("elsewhere input did not mount");
+
+    fireEvent.click(screen.getByRole("button", { name: "+ Add text" }));
+    fireEvent.change(
+      screen.getByPlaceholderText(
+        "Paste lecture notes, an article, documentation - anything you want to learn.",
+      ),
+      { target: { value: "Some notes to learn from." } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Generate course" }));
+
+    // Generation takes 1 to 3 minutes by this form's own copy, plenty of time for the
+    // learner to tab off to something else while it is still pending.
+    act(() => elsewhere.focus());
+    expect(elsewhere).toHaveFocus();
+
+    await act(async () => {
+      generation.reject(new ApiError(500, "Could not reach the server. Is the backend running?"));
+      await generation.promise.catch(() => {});
+    });
+
+    expect(
+      elsewhere,
+      "the learner moved on before the result landed and matches neither focusAtSend nor the body, so the failed restore must leave them where they went",
+    ).toHaveFocus();
+  });
+
+  test("the skip announcement pluralises its reason clause", async () => {
+    const { container } = await renderGenerateForm();
+    const fileInput = container.querySelectorAll('input[type="file"]')[0] as HTMLInputElement;
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [
+          new File(["notes"], "notes.txt", { type: "text/plain" }),
+          new File(["slides"], "slides.pptx", { type: "application/vnd.ms-powerpoint" }),
+        ],
+      },
+    });
+
+    expect(
+      (await screen.findByRole("status")).textContent,
+      "the reason clause counts two files, so it must agree in number rather than read '2 not a PDF'",
+    ).toContain("2 skipped: 2 not PDFs.");
+  });
+
+  test("the skip announcement keeps the singular reason clause for one file", async () => {
+    const { container } = await renderGenerateForm();
+    const fileInput = container.querySelectorAll('input[type="file"]')[0] as HTMLInputElement;
+
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["notes"], "notes.txt", { type: "text/plain" })] },
+    });
+
+    expect(
+      (await screen.findByRole("status")).textContent,
+      "one file must stay singular, so the plural fix cannot be a blanket 's'",
+    ).toContain("1 skipped: 1 not a PDF.");
   });
 });

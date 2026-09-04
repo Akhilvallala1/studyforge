@@ -13,7 +13,7 @@ export default function NewCoursePage() {
       </Link>
       <h1 className="mt-4 text-3xl font-semibold tracking-tight">Create a course</h1>
       <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-        Paste your material, point at a web page, or upload a PDF.
+        Combine pasted text, web pages, and PDFs into one course, in any mix.
       </p>
       <div className="mt-8">
         <GenerateForm />

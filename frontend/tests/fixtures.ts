@@ -13,7 +13,11 @@
 
 import type { TutorOutcome } from "@/lib/api";
 import type {
+  AnswerResult,
+  AttemptState,
   CoursePlan,
+  QuizItem,
+  QuizProgress,
   TutorConversation,
   TutorGuided,
   TutorLimits,
@@ -131,6 +135,62 @@ export function turnOutcome(reply: TutorRow, question = "What grows stability?")
  *     projection_reason is null because a date exists. A deadline is not required for a
  *     projection, so a null deadline sits with a real date quite legitimately.
  */
+/** No attempts yet, the state `restored` builds for an item the learner has not touched. */
+export const UNANSWERED: AttemptState = {
+  attempts: 0,
+  first_attempt_correct: null,
+  ever_correct: false,
+  latest_quiz_attempt: null,
+};
+
+/**
+ * One quiz item. `options` defaults to a plausible mcq set for an mcq item and to an
+ * empty array otherwise, matching what the server sends for a short-answer item.
+ */
+export function quizItem(fields: { id: number; kind: "mcq" | "short" } & Partial<QuizItem>): QuizItem {
+  return {
+    id: fields.id,
+    question: fields.question ?? "Which orbit shape keeps a satellite's altitude constant?",
+    kind: fields.kind,
+    options: fields.options ?? (fields.kind === "mcq" ? ["Circular", "Elliptical", "Parabolic"] : []),
+    concept: fields.concept ?? "orbital-stability",
+    attempt_state: fields.attempt_state ?? UNANSWERED,
+  };
+}
+
+export function quizProgress(overrides: Partial<QuizProgress> = {}): QuizProgress {
+  return { items: 1, answered: 0, correct: 0, first_try_correct: 0, ...overrides };
+}
+
+/**
+ * What POSTing a quiz answer hands back. `everCorrect` defaults to this attempt's own
+ * verdict, but is its own parameter because it can disagree: an item solved on an
+ * earlier attempt stays `ever_correct` even when this one is wrong.
+ */
+export function answerResult(fields: {
+  correct: boolean;
+  expected: string;
+  everCorrect?: boolean;
+}): AnswerResult {
+  return {
+    correct: fields.correct,
+    expected: fields.expected,
+    attempt_id: 1,
+    attempt_no: 1,
+    attempt_state: {
+      attempts: 1,
+      first_attempt_correct: fields.correct,
+      ever_correct: fields.everCorrect ?? fields.correct,
+      latest_quiz_attempt: {
+        answer: "the learner's submitted answer",
+        correct: fields.correct,
+        expected: fields.expected,
+        created_at: "2026-09-01T12:00:05Z",
+      },
+    },
+  };
+}
+
 export function plan(overrides: Partial<CoursePlan> = {}): CoursePlan {
   return {
     course_id: 1,

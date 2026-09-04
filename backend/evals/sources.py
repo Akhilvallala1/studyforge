@@ -5,9 +5,12 @@ text the generator actually receives (crude tag-stripping artifacts included)
 rather than a cleaned-up version the app would never see.
 """
 
-from dataclasses import dataclass
 
-from app import ingest
+# Lifted into app.ingest, which is where this harness already got its text from. Imported
+# rather than redefined so the eval and the app cannot disagree about what a source is.
+from app.ingest import Source, from_pdf_bytes, from_text, from_url
+
+__all__ = ["Source", "build_pdf", "from_pdf_bytes", "from_text", "from_url"]
 
 PAGE_WIDTH = 612
 PAGE_HEIGHT = 792
@@ -16,29 +19,6 @@ FONT_SIZE = 11
 LEADING = 15
 LINES_PER_PAGE = (PAGE_HEIGHT - 2 * MARGIN) // LEADING
 WRAP_COLUMNS = 88
-
-
-@dataclass
-class Source:
-    key: str
-    kind: str  # "url" | "text" | "pdf"
-    ref: str
-    text: str
-
-    def meta(self) -> dict:
-        return {"key": self.key, "kind": self.kind, "ref": self.ref}
-
-
-def from_url(key: str, url: str) -> Source:
-    return Source(key=key, kind="url", ref=url, text=ingest.extract_url(url))
-
-
-def from_text(key: str, label: str, text: str) -> Source:
-    return Source(key=key, kind="text", ref=label, text=ingest.clean_text(text))
-
-
-def from_pdf_bytes(key: str, label: str, data: bytes) -> Source:
-    return Source(key=key, kind="pdf", ref=label, text=ingest.extract_pdf(data))
 
 
 def _escape(text: str) -> str:

@@ -1,0 +1,199 @@
+{
+  "label": "akv-multi-tagged-3",
+  "prompts": {
+    "outline_system": "51268cb63391",
+    "lesson_system": "1e6fc5164c70",
+    "outline_system_chars": 850,
+    "lesson_system_chars": 1578
+  },
+  "runs": [
+    {
+      "name": "multi-darwin-pep8",
+      "ok": false,
+      "error": "APIStatusError: {'type': 'error', 'error': {'details': None, 'type': 'overloaded_error', 'message': 'Overloaded'}, 'request_id': 'req_011Cegapi8yBLgJZe8r2ssKp'}",
+      "run_id": "743e07e4ee5b4875a41d88530dfbad8d",
+      "prompts": {
+        "outline_system": "51268cb63391",
+        "lesson_system": "1e6fc5164c70",
+        "outline_system_chars": 850,
+        "lesson_system_chars": 1578
+      },
+      "source": {
+        "key": "multi-darwin-pep8",
+        "kind": "text",
+        "ref": "darwin-origin + pep8-style-guide",
+        "chars": 13639,
+        "chunks": 3,
+        "chunk_chars": [
+          7888,
+          2747,
+          3000
+        ],
+        "documents": [
+          "darwin-origin",
+          "pep8-style-guide"
+        ],
+        "source_tags": true
+      },
+      "wall_clock_s": 245.93,
+      "parse_reliability": {
+        "total_calls": 6,
+        "strict_json_first_try": 5,
+        "tolerant_parse_ok": 5,
+        "hard_parse_failures": 1,
+        "retry_path_exists": true,
+        "per_stage": {
+          "lesson": {
+            "calls": 5,
+            "strict_json_first_try": 4,
+            "tolerant_parse_ok": 4,
+            "needed_code_fence_strip": 0,
+            "needed_prose_trim": 0,
+            "schema_ok": 4,
+            "hard_parse_failures": 1,
+            "call_errors": 1
+          },
+          "outline": {
+            "calls": 1,
+            "strict_json_first_try": 1,
+            "tolerant_parse_ok": 1,
+            "needed_code_fence_strip": 0,
+            "needed_prose_trim": 0,
+            "schema_ok": 1,
+            "hard_parse_failures": 0,
+            "call_errors": 0
+          }
+        }
+      },
+      "cost_latency": {
+        "calls": 6,
+        "model": "claude-opus-5",
+        "provider": "anthropic",
+        "total_llm_latency_s": 245.92,
+        "input_tokens": 16012,
+        "output_tokens": 18388,
+        "cost_usd": 0.53976,
+        "any_approximate": false,
+        "per_stage": {
+          "lesson": {
+            "calls": 5,
+            "total_latency_s": 225.75,
+            "mean_latency_s": 45.15,
+            "max_latency_s": 61.76,
+            "input_tokens": 10911,
+            "output_tokens": 16882,
+            "cost_usd": 0.476605
+          },
+          "outline": {
+            "calls": 1,
+            "total_latency_s": 20.17,
+            "mean_latency_s": 20.17,
+            "max_latency_s": 20.17,
+            "input_tokens": 5101,
+            "output_tokens": 1506,
+            "cost_usd": 0.063155
+          }
+        }
+      },
+      "calls": [
+        {
+          "index": 0,
+          "stage": "outline",
+          "latency_s": 20.171631099889055,
+          "prompt_chars": 15172,
+          "response_chars": 4290,
+          "strict_json": true,
+          "tolerant_json": true,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": true,
+          "error": null,
+          "input_tokens": 5101,
+          "output_tokens": 1506,
+          "cost_usd": 0.06315499999999999
+        },
+        {
+          "index": 1,
+          "stage": "lesson",
+          "latency_s": 48.938054599799216,
+          "prompt_chars": 10007,
+          "response_chars": 11460,
+          "strict_json": true,
+          "tolerant_json": true,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": true,
+          "error": null,
+          "input_tokens": 3092,
+          "output_tokens": 3782,
+          "cost_usd": 0.11001000000000001
+        },
+        {
+          "index": 2,
+          "stage": "lesson",
+          "latency_s": 61.75754350004718,
+          "prompt_chars": 10090,
+          "response_chars": 15485,
+          "strict_json": true,
+          "tolerant_json": true,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": true,
+          "error": null,
+          "input_tokens": 3124,
+          "output_tokens": 4847,
+          "cost_usd": 0.136795
+        },
+        {
+          "index": 3,
+          "stage": "lesson",
+          "latency_s": 51.59067469998263,
+          "prompt_chars": 10014,
+          "response_chars": 13105,
+          "strict_json": true,
+          "tolerant_json": true,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": true,
+          "error": null,
+          "input_tokens": 3095,
+          "output_tokens": 4117,
+          "cost_usd": 0.1184
+        },
+        {
+          "index": 4,
+          "stage": "lesson",
+          "latency_s": 54.31374870007858,
+          "prompt_chars": 4927,
+          "response_chars": 11401,
+          "strict_json": true,
+          "tolerant_json": true,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": true,
+          "error": null,
+          "input_tokens": 1600,
+          "output_tokens": 4136,
+          "cost_usd": 0.1114
+        },
+        {
+          "index": 5,
+          "stage": "lesson",
+          "latency_s": 9.150626700138673,
+          "prompt_chars": 5069,
+          "response_chars": 0,
+          "strict_json": false,
+          "tolerant_json": false,
+          "used_code_fence": false,
+          "used_prose_trim": false,
+          "schema_ok": false,
+          "error": "APIStatusError: {'type': 'error', 'error': {'details': None, 'type': 'overloaded_error', 'message': 'Overloaded'}, 'request_id': 'req_011Cegapi8yBLgJZe8r2ssKp'}",
+          "input_tokens": null,
+          "output_tokens": null,
+          "cost_usd": 0.0
+        }
+      ],
+      "failing_raw_response": "{\"content\": \"# Trifling Characters: Colour, Down, and the Daily Scrutiny of Nature\\n\\n## The metaphor of ceaseless inspection\\n\\nDarwin asks us to picture natural selection not as an occasional catastrophe but as a continuous, patient inspector:\\n\\n> \\\"It may be said that natural selection is daily and hourly scrutinising, throughout the world, every variation, even the slightest; rejecting that which is bad, preserving and adding up all that is good; silently and insensibly working, whenever and wherever opportunity offers, at the improvement of each organic being in relation to its organic and inorganic conditions of life.\\\"\\n\\nThree features of the image deserve attention.\\n\\n1. **Scope.** *Every* variation, *even the slightest*, is examined \u2014 not just the dramatic ones.\\n2. **Two-sided bookkeeping.** Bad variations are rejected; good ones are not merely preserved but **added up**. Selection accumulates.\\n3. **Relational standard.** \\\"Good\\\" and \\\"bad\\\" are not absolute. Improvement is always *in relation to* an organism's organic conditions (its enemies, competitors, food) and inorganic conditions (climate, soil). There is no general excellence, only fitness to a particular situation.\\n\\nThe process is \\\"silent and insensible\\\" \u2014 invisible on any human timescale. As Darwin puts it, \\\"We see nothing of these slow changes in progress, until the hand of time has marked the long lapse of ages.\\\" And even then our view is doubly limited: the geological record is so imperfect that we can only observe that the forms of life *are now different from what they formerly were*. We infer the process; we never watch it happen.\\n\\n## The problem of trifling characters\\n\\nNatural selection acts only through and for the good of each being. That principle seems to leave a puzzle: what about characters that appear to make no difference at all \u2014 the exact shade of a bird's plumage, the fuzz on a peach? Darwin's answer is that our sense of what is trifling is unreliable. Characters we dismiss can be exactly the ones under scrutiny.\\n\\n### Colour and concealment\\n\\nDarwin lists a set of correspondences too neat to be accidental:\\n\\n| Organism | Colour | Background |\\n|---|---|---|\\n| Leaf-eating insects | green | foliage |\\n| Bark-feeders | mottled-grey | bark |\\n| Alpine ptarmigan | white in winter | snow |\\n| Red grouse | colour of heather | heather |\\n| Black grouse | colour of peaty earth | peat |\\n\\nEach animal matches the surface on which it lives. \\\"We must believe that these tints are of service to these birds and insects in preserving them from danger.\\\"\\n\\n### Why the danger is real\\n\\nThe argument does not rest on the pattern alone; Darwin supplies the selecting agent.\\n\\n- Grouse, **if not destroyed at some period of their lives, would increase in countless numbers** \u2014 so heavy destruction is going on.\\n- They are known to suffer largely from birds of prey.\\n- **Hawks are guided by eyesight to their prey.** Therefore visibility is precisely the trait that decides which individuals die.\\n\\nAs corroboration Darwin cites a piece of practical folk knowledge: on parts of the Continent, people are warned not to keep white pigeons, as being the most liable to destruction. Here is an everyday, human-scale confirmation that colour alone determines survival when a visual hunter is doing the choosing.\\n\\nGiven this, Darwin sees no reason to doubt that natural selection could both **give** each kind of grouse its proper colour and, once acquired, **keep that colour true and constant** \u2014 selection maintains as well as creates.\\n\\n### The white sheep analogy\\n\\nOne might object that killing off the odd oddly-coloured individual is too rare an event to matter. Darwin's reply is drawn from breeding: \\\"we should remember how essential it is in a flock of white sheep to destroy every lamb with the faintest trace of black.\\\" Breeders know that even occasional, small-scale culling of a slight deviation is what keeps a flock uniform. Rare removal, repeated, is powerful.\\n\\n## Downing on fruit: down and colour\\n\\nDarwin then leaves animals for plants, where the \\\"trifling\\\" charge is even stronger: botanists consider the down on a fruit and the colour of its flesh characters of the most trifling importance. Against this he sets the observations of \\\"an excellent horticulturist, Downing,\\\" in the United States:\\n\\n- **Smooth-skinned fruits suffer far more from a beetle, a curculio, than those with down.** (Down protects; smoothness invites the beetle.)\\n- **Purple plums suffer far more from a certain disease than yellow plums.**\\n- **Another disease attacks yellow-fleshed peaches far more than those with other coloured flesh.**\\n\\nNotice that the third case cuts the opposite way from the second: yellow is an advantage in plums against one disease, a liability in peaches against another. There is no universally superior colour \u2014 only advantage relative to the particular enemy at hand.\\n\\nDarwin's conclusion is a comparison of two settings. In the orchard, *with all the aids of art* \u2014 the grower's care, spraying, pruning, protection \u2014 these slight differences already make a great difference in cultivating the several varieties. In a state of nature, where trees must struggle with other trees and with a host of enemies and receive no help at all, such differences \\\"would effectually settle which variety, whether a smooth or downy, a yellow or purple fleshed fruit, should succeed.\\\" If a trait is decisive even under human protection, it must be more decisive without it.\\n\\n## Summary\\n\\nDarwin's method here is worth naming. He (1) identifies a character we would call unimportant, (2) points to a specific agent of destruction \u2014 a hawk's eyesight, a curculio, a disease \u2014 for which that character is exactly what counts, and (3) shows that the destruction is heavy and repeated. Under those conditions the trifling character is not trifling at all; it is what the daily and hourly scrutiny of nature is looking at.\", \"concepts\": [\"Natural selection as daily and hourly scrutiny: rejecting bad variations, accumulating good ones, silently and invisibly\", \"The imperfection of our view: change is perceptible only after the long lapse of ages, and even then only as difference between past and present forms\", \"Protective coloration and the visual predator: green insects, mottled bark-feeders, white winter ptarmigan, heather-coloured red grouse, and hawks guided by eyesight\", \"Cumulative effect of rare destruction, illustrated by culling every lamb with a trace of black from a white flock\", \"Downing's horticultural evidence that down and flesh-colour determine susceptibility to particular beetles and diseases\"], \"quiz\": [{\"question\": \"According to Darwin, natural selection acts on every variation by:\", \"kind\": \"mcq\", \"options\": [\"rejecting what is bad and preserving and adding up all that is good\", \"preserving the average form and eliminating extremes on either side\", \"favouring whichever variation is strongest, independent of surroundings\", \"producing new variations wherever the conditions of life demand them\"], \"answer\": \"rejecting what is bad and preserving and adding up all that is good\", \"concept\": \"Natural selection as daily and hourly scrutiny: rejecting bad variations, accumulating good ones, silently and invisibly\"}, {\"question\": \"Why does Darwin bring up the warning, given on parts of the Continent, against keeping white pigeons?\", \"kind\": \"short\", \"options\": [], \"answer\": \"Because hawks are guided by eyesight to their prey, white pigeons are the most liable to destruction. This everyday observation confirms that colour alone can determine which individuals are killed by a visual predator, supporting his claim that the tints of grouse and insects serve to preserve them from danger.\", \"concept\": \"Protective coloration and the visual predator: green insects, mottled bark-feeders, white winter ptarmigan, heather-coloured red grouse, and hawks guided by eyesight\"}, {\"question\": \"Which of Downing's observations does Darwin cite?\", \"kind\": \"mcq\", \"options\": [\"Smooth-skinned fruits suffer far more from a curculio than downy ones, and purple plums suffer more from a certain disease than yellow plums\", \"Downy fruits are more often attacked by a curculio, while purple plums resist disease better than yellow ones\", \"Yellow-fleshed peaches resist disease better than other peaches, and downy fruits attract more beetles than smooth ones\", \"Smooth fruits and yellow plums both prove hardier than their downy and purple counterparts against beetles and disease\"], \"answer\": \"Smooth-skinned fruits suffer far more from a curculio than downy ones, and purple plums suffer more from a certain disease than yellow plums\", \"concept\": \"Downing's horticultural evidence that down and flesh-colour determine susceptibility to particular beetles and diseases\"}, {\"question\": \"What point is Darwin making with the flock of white sheep in which every lamb with the faintest trace of black must be destroyed?\", \"kind\": \"mcq\", \"options\": [\"That occasional destruction of individuals with a slight deviation is enough to keep a character constant\", \"That breeders can produce far greater changes than nature can, because their selection is deliberate\", \"That black lambs are naturally weaker and would be eliminated even without the shepherd's help\", \"That a character must be strongly marked before selection can get any purchase on it\"], \"answer\": \"That occasional destruction of individuals with a slight deviation is enough to keep a character constant\", \"concept\": \"Cumulative effect of rare destruction, illustrated by culling every lamb with a trace of black from a white flock\"}, {\"question\": \"Darwin says we see nothing of these slow changes in progress. What, according to him, do we eventually see, and why is even that limited?\", \"kind\": \"short\", \"options\": [], \"answer\": \"Only after the hand of time has marked the long lapse of ages do the changes become apparent; and because our view into long past geological ages is so imperfect, we see merely that the forms of life are now different from what they formerly were.\", \"concept\": \"The imperfection of our view: change is perceptible only after the long lapse of ages, and even then only as difference between past and present forms\"}, {\"question\": \"How does Darwin use the contrast between cultivated orchards and a state of nature to strengthen his argument about down and fruit colour?\", \"kind\": \"mcq\", \"options\": [\"Since these slight differences already matter greatly even with all the aids of art, they would be still more decisive where trees struggle unaided against other trees and many enemies\", \"Since cultivation shelters trees from their enemies, only in the orchard can such small differences ever decide which variety succeeds\", \"Since wild trees face fewer diseases than cultivated ones, natural selection acts on flesh colour more weakly outside the orchard\", \"Since horticulturists deliberately choose downy and yellow varieties, nature must be selecting for the same qualities everywhere\"], \"answer\": \"Since these slight differences already matter greatly even with all the aids of art, they would be still more decisive where trees struggle unaided against other trees and many enemies\", \"concept\": \"Downing's horticultural evidence that down and flesh-colour determine susceptibility to particular beetles and diseases\"}]}"
+    }
+  ]
+}
