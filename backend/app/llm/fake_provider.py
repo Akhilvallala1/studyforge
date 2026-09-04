@@ -107,7 +107,14 @@ GUIDED_RUNG2_MARKER = "STATE THE METHOD FOR THE FINAL MOVE EXPLICITLY"
 # Txt") rather than its subject. That is the exact case multi-source tests and QA runs
 # exist to exercise, so the one scenario the fixture had to model was the one it got
 # wrong, and it got it wrong quietly, in output that still looked like a course.
-SEGMENT_LABEL = re.compile(r"\[segment \d+\](?: \[document: [^\]]*\])?")
+# The inner class excludes newlines as well as "]", matching the sibling pattern
+# generation._SEGMENT_LABEL_FORGERY. The label grammar is single-line by
+# construction, since document_label collapses line terminators, so an unbounded
+# class buys nothing and costs something: defuse_segment_labels is "^"-anchored,
+# so a forged label MID-LINE in chunk text reaches here un-neutralised, and an
+# unclosed one would then match on past its own line and swallow the next
+# chunk's real label along with it.
+SEGMENT_LABEL = re.compile(r"\[segment \d+\](?: \[document: [^\]\n]*\])?")
 
 
 def _source_material(prompt: str) -> str:
