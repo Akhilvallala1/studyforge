@@ -28,6 +28,24 @@ export default async function LessonPage(
   // The API resolves a lesson by its own id, so /courses/2/lessons/1 would otherwise
   // render course 1's lesson under course 2's breadcrumb with a 200, and "Back to
   // course" would send the reader somewhere the lesson does not exist.
+  //
+  // Strict inequality, so a payload with no course_id at all fails closed. That is the
+  // right direction but it has one bad symptom worth naming: against a backend too old
+  // to send the key, course_id is undefined, undefined !== course is always true, and
+  // EVERY lesson 404s including correctly paired ones. This project has already lost
+  // hours twice to a uvicorn --reload that survived a branch switch and went on serving
+  // pre-merge code, so the log line is not decoration: it is the difference between
+  // "restart your backend" and a silent site-wide 404 with nothing to search for.
+  // Cast because the type states the CONTRACT (course_id is always sent) while this
+  // check exists for a violation of it. Widening the type instead would push a null
+  // check onto every honest caller to describe a backend that is simply out of date.
+  if ((lesson.course_id as number | undefined) === undefined) {
+    console.error(
+      `Lesson ${id} came back without a course_id. The backend is older than this ` +
+        "frontend and cannot be scope-checked, so the lesson is being refused. Restart " +
+        "the backend on current code.",
+    );
+  }
   if (lesson.course_id !== course) notFound();
 
   return (
