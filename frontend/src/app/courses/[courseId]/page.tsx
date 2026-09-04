@@ -2,23 +2,47 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CourseTabs } from "@/components/CourseTabs";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ApiError, getCourse } from "@/lib/api";
 import type { CourseDetail } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
+const BACK_TO_COURSES_LINK = (
+  <Link
+    href="/courses"
+    className="text-small text-ink-muted transition-colors duration-fast ease-standard hover:text-ink"
+  >
+    &larr; All courses
+  </Link>
+);
+
 export default async function CoursePage(props: PageProps<"/courses/[courseId]">) {
   const { courseId } = await props.params;
   const id = Number(courseId);
+  // Preserved exactly: a non-numeric id is a genuine 404, not a backend failure, and
+  // must keep 404ing even though everything below it now treats a caught error as a
+  // friendly inline message instead of a re-thrown 500. See courses/page.tsx for the
+  // 200-vs-500 reasoning this page shares.
   if (!Number.isInteger(id)) notFound();
 
   let course: CourseDetail;
   try {
     course = await getCourse(id);
   } catch (err) {
+    // A genuine 404 (course does not exist) must still 404. Everything else, backend
+    // down, network failure, a 500 from the API, becomes the inline friendly message
+    // instead of propagating into Next's generic error screen.
     if (err instanceof ApiError && err.status === 404) notFound();
-    throw err;
+    const message =
+      err instanceof ApiError ? err.message : "Could not reach the server. Is the backend running?";
+    return (
+      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
+        {BACK_TO_COURSES_LINK}
+        <ErrorState className="mt-8" message={message} />
+      </main>
+    );
   }
 
   const lessons = course.modules.flatMap((m) => m.lessons);
@@ -26,12 +50,7 @@ export default async function CoursePage(props: PageProps<"/courses/[courseId]">
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-      <Link
-        href="/courses"
-        className="text-small text-ink-muted transition-colors duration-fast ease-standard hover:text-ink"
-      >
-        &larr; All courses
-      </Link>
+      {BACK_TO_COURSES_LINK}
 
       <PageHeader className="mt-4" title={course.title} />
 

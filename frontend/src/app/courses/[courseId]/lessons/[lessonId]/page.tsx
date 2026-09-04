@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { LessonMarkdown } from "@/components/LessonMarkdown";
 import { MarkCompleteButton } from "@/components/MarkCompleteButton";
 import { QuizSection } from "@/components/QuizSection";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { ApiError, getLesson } from "@/lib/api";
 import type { LessonDetail } from "@/lib/types";
 
@@ -15,14 +16,31 @@ export default async function LessonPage(
   const { courseId, lessonId } = await props.params;
   const id = Number(lessonId);
   const course = Number(courseId);
+  // Preserved exactly: non-numeric ids are a genuine 404, not a backend failure. See
+  // courses/page.tsx for the 200-vs-500 reasoning this page shares.
   if (!Number.isInteger(id) || !Number.isInteger(course)) notFound();
 
   let lesson: LessonDetail;
   try {
     lesson = await getLesson(id);
   } catch (err) {
+    // A genuine 404 (lesson does not exist) must still 404. Everything else, backend
+    // down, network failure, a 500 from the API, becomes the inline friendly message
+    // instead of propagating into Next's generic error screen.
     if (err instanceof ApiError && err.status === 404) notFound();
-    throw err;
+    const message =
+      err instanceof ApiError ? err.message : "Could not reach the server. Is the backend running?";
+    return (
+      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
+        <Link
+          href={`/courses/${courseId}`}
+          className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+        >
+          &larr; Back to course
+        </Link>
+        <ErrorState className="mt-8" message={message} />
+      </main>
+    );
   }
 
   // The API resolves a lesson by its own id, so /courses/2/lessons/1 would otherwise
