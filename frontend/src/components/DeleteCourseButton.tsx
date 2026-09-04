@@ -213,15 +213,18 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
    * so a keyboard learner is not left on a control that has just changed meaning
    * underneath them.
    *
-   * Gated on `!loadingPreview` rather than trusting that `preview` alone means the
-   * button is enabled: it does on the FIRST open, when `preview` starts null, but not
-   * on a re-open after Cancel. Cancel's `setPreview(null)` runs before the abandoned
-   * fetch resolves, so that fetch's `setPreview(result)` can still land after the
-   * panel is reopened, leaving `preview` non-null while `loadingPreview` is (briefly)
-   * true again for the new request. Verified: open, Cancel before the preview lands,
-   * let the stale fetch resolve, reopen; without this guard `.focus()` is called on
-   * the button `loadingPreview` has just disabled, and both jsdom and real browsers
-   * refuse that focus, leaving it on the body for the whole refetch.
+   * Gated on `!loadingPreview` as defence in depth, NOT because a reachable path needs
+   * it today. The case it reads as guarding against, a stale fetch's `setPreview`
+   * landing after the panel is reopened, is already prevented one level up by Cancel's
+   * `generationRef.current++`: the abandoned request returns before `setPreview(result)`,
+   * so `preview` is null on reopen and the `preview` check alone declines.
+   *
+   * Measured, do not restate this without re-running it: dropping the `!loadingPreview`
+   * gate and throwing if the effect ever focuses a disabled button leaves the whole
+   * suite green, so the throw never fires. An earlier version of this comment called the
+   * opposite "verified"; it described the world before Cancel's bump existed, and the
+   * bump and that comment landed in the same commit. Keep the gate if Cancel's bump is
+   * ever removed, but it is redundant while both are here.
    */
   useEffect(() => {
     if (open && preview && !loadingPreview) confirmRef.current?.focus();

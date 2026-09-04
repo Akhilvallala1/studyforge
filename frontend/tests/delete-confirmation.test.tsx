@@ -16,16 +16,22 @@
  * intermittency made it look like test noise. It is pinned here with a held promise
  * instead of a busy CPU, so it fails the same way every time.
  *
- * Mutation-verified, each confirmed by making the change and watching this go red:
- * - remove `disabled` from the confirming button (`disabled={false}`) -> only the
- *   `toBeDisabled()` assertion in the first test fails ("Received element is not
- *   disabled"). Removing that assertion too does NOT make the "not yet called"
- *   assertion fail in its place: `confirmDelete`'s own `if (pending) return` still
- *   refuses the press regardless of whether the button looks disabled, so with both
- *   removed all 4 tests pass. That gap is real and not one this file closes; the
- *   `toBeDisabled()` assertion above is the only thing here that would catch a
- *   dropped `disabled` prop, which is exactly why it stays even though the button
- *   would still (silently) refuse the click without it.
+ * Mutation-verified against the nine tests in this file, every mutation re-run here
+ * rather than inherited from an earlier round:
+ * - remove `disabled` from the confirming button (`disabled={false}`) -> TWO tests go
+ *   red, not one. This one, on "it cannot honour a press yet, so it must not present
+ *   itself as able to take one", and "cancelling while the preview loads does not
+ *   swallow the very next press", on "the second preview must actually be loading, not
+ *   silently refused". Deleting this test's `toBeDisabled()` as well still leaves that
+ *   second test red, and "cancelling while the preview loads" carries its own
+ *   `toBeDisabled()` assertions, so a dropped `disabled` prop is caught in more than
+ *   one place. (An earlier version of this block claimed one failing test, four tests
+ *   in the file, and a coverage gap that does not exist. All three were wrong.)
+ * - the `not.toHaveBeenCalled()` assertion below is NOT what proves the fix.
+ *   `confirmDelete`'s own `if (pending) return` refuses the press whether or not the
+ *   button looks disabled, so that line reads green before and after the fix and
+ *   asserts the bug as readily as it asserts the fix. The `toBeDisabled()` above is
+ *   what carries this test.
  * - widen it to `disabled={pending}` -> NOT this test. It still passes, because by
  *   the time the press below lands `busy` is already false and the button is
  *   enabled either way. The test that goes red is "stays pressable while the delete
@@ -383,6 +389,51 @@ describe("delete confirmation before the preview lands", () => {
     expect(
       screen.queryByText(/8 of them completed/),
       "the abandoned preview must not be painted into the reopened panel",
+    ).toBeNull();
+    expect(screen.getByText(/Checking what this would delete/)).toBeInTheDocument();
+
+    await act(async () => second.resolve(preview));
+    await waitFor(() =>
+      expect(screen.getByText(/8 of them completed/)).toBeInTheDocument(),
+    );
+  });
+  /*
+   * The error-path twin of the test above. Cancel's generation bump and the `finally`
+   * guard are each pinned by a test; the `catch` branch's own generation check was not,
+   * and deleting it left the whole suite green. It is load-bearing: without it an
+   * abandoned preview that REJECTS writes its message into state, and the reopened
+   * panel renders that error over an unrelated, still-loading request.
+   */
+  test("a preview abandoned by Cancel cannot paint its failure into the reopened panel", async () => {
+    const first = deferred<CourseDeletion>();
+    const second = deferred<CourseDeletion>();
+    vi.mocked(getDeletionPreview)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+
+    render(
+      <CourseDeletionProvider>
+        <DeleteCourseButton courseId={1} title="Organic Chemistry" />
+      </CourseDeletionProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await screen.findByRole("button", { name: "Delete permanently" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await screen.findByRole("button", { name: "Delete permanently" });
+
+    // The abandoned request fails only AFTER the panel is reopened. Rejecting it while
+    // the panel is closed proves nothing, because `openConfirm` calls `setError(null)`
+    // on the way in and would wipe the stale error before it could ever render.
+    await act(async () => {
+      first.reject(new Error("the abandoned preview blew up"));
+    });
+
+    expect(
+      screen.queryByRole("alert"),
+      "an abandoned preview's failure must not paint an error over the next request",
     ).toBeNull();
     expect(screen.getByText(/Checking what this would delete/)).toBeInTheDocument();
 
