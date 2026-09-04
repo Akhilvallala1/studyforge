@@ -14,22 +14,23 @@
  * Mutation-verified: removing role="alert" from the <p> makes the first test red,
  * and moving the <p> inside the polite region makes the second red.
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import { QuizSection } from "@/components/QuizSection";
+import { ApiError, answerQuiz } from "@/lib/api";
 
-import { quizItem, quizProgress } from "./fixtures";
+import { deferred, quizItem, quizProgress } from "./fixtures";
 
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   answerQuiz: vi.fn(),
 }));
 
-function renderQuiz() {
-  return render(
-    <QuizSection quiz={[quizItem({ id: 1, kind: "short" })]} progress={quizProgress()} />,
-  );
+function renderQuiz(kind: "mcq" | "short" = "short") {
+  const item = quizItem({ id: 1, kind });
+  const view = render(<QuizSection quiz={[item]} progress={quizProgress()} />);
+  return { ...view, item };
 }
 
 describe("empty-answer validation message", () => {
@@ -54,5 +55,119 @@ describe("empty-answer validation message", () => {
       container.querySelector('[aria-live="polite"]')?.contains(alert),
       "the validation error must not live inside the polite result region",
     ).toBe(false);
+  });
+});
+
+/**
+ * Editing the answer after a validation complaint about it.
+ *
+ * "Enter an answer first." is a claim about the CURRENT answer, so it goes stale the
+ * moment that answer changes; leaving it on screen (and, since the earlier suite, in an
+ * ASSERTIVE role) after the learner has already fixed the thing it complained about
+ * means a screen reader user is told their valid answer is still empty.
+ *
+ * A server error is a different claim: it is about the last REQUEST, not about what is
+ * currently typed, and editing the field does not undo a failed request. So it is left
+ * in place on edit and only resolved by the next submit. See the ErrorKind comment in
+ * QuizSection.tsx for the same reasoning at the source.
+ *
+ * Mutation-verified: dropping the errorKind check in the text input's onChange (always
+ * clearing on edit) makes the "leaves a server error in place" test fail, quoted below
+ * next to the change.
+ */
+describe("editing the answer clears a stale validation error", () => {
+  test("clears it when a short-answer input changes", () => {
+    renderQuiz("short");
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter an answer first.");
+
+    fireEvent.change(screen.getByPlaceholderText("Your answer"), {
+      target: { value: "Circular" },
+    });
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("clears it when an mcq option is picked", () => {
+    const { item } = renderQuiz("mcq");
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Enter an answer first.");
+
+    fireEvent.click(screen.getByRole("radio", { name: item.options[0] }));
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  test("leaves a server error in place, since editing the answer does not undo a failed request", async () => {
+    renderQuiz("short");
+    const failure = deferred<never>();
+    vi.mocked(answerQuiz).mockReturnValue(failure.promise);
+    fireEvent.change(screen.getByPlaceholderText("Your answer"), {
+      target: { value: "Circular" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Check answer" }));
+    await act(async () => failure.reject(new ApiError(500, "Could not reach the server.")));
+    expect(screen.getByRole("alert")).toHaveTextContent("Could not reach the server.");
+
+    fireEvent.change(screen.getByPlaceholderText("Your answer"), {
+      target: { value: "Ellipse" },
+    });
+
+    expect(
+      screen.getByRole("alert"),
+      "a server error describes the last request, not the current answer, so editing must not silently drop it",
+    ).toHaveTextContent("Could not reach the server.");
+  });
+});
+
+/**
+ * Re-announcing an unchanged validation error.
+ *
+ * `role="alert"` announces on the node being INSERTED or its text CHANGING. Pressing
+ * "Check answer" twice on a field that is still empty sets `error` to the identical
+ * literal both times, so with no key change the paragraph is the same DOM node before
+ * and after the second click, its text unchanged, and a MutationObserver on it records
+ * nothing: an assistive-tech user hears the message once and then silence on the
+ * second, identical press. Keying the paragraph on an incrementing nonce forces React
+ * to tear the old node down and mount a fresh one on every submit, identical text or
+ * not, which is what this test measures directly on the node reference (the same
+ * technique the PR review used with a MutationObserver, applied to node identity
+ * instead of watching for a mutation record).
+ *
+ * Mutation-verified: removing the `key={state.errorNonce}` prop from the alert
+ * paragraph in QuizSection.tsx makes "gets a new DOM node" fail with
+ * `expect(second).not.toBe(first) // second is first`, since the two clicks then
+ * commit into the very same <p>.
+ */
+describe("a repeated identical validation error re-announces", () => {
+  test("gets a new DOM node on the second identical empty submit", () => {
+    renderQuiz("short");
+    const button = screen.getByRole("button", { name: "Check answer" });
+
+    fireEvent.click(button);
+    const first = screen.getByRole("alert");
+    fireEvent.click(button);
+    const second = screen.getByRole("alert");
+
+    expect(second, "a role=\"alert\" node reused across two identical submits never re-announces").not.toBe(first);
+    expect(second).toHaveTextContent("Enter an answer first.");
+  });
+
+  test("does not move focus off the button across two identical empty submits", () => {
+    renderQuiz("short");
+    const button = screen.getByRole("button", { name: "Check answer" });
+    // fireEvent.click does not focus its target in jsdom, so focus has to be placed
+    // explicitly to mean anything: without this line the assertions below would pass
+    // whether or not the button ever actually held focus.
+    act(() => button.focus());
+    expect(button).toHaveFocus();
+
+    fireEvent.click(button);
+    expect(
+      button,
+      "the empty-answer guard returns before submitting is ever set, so nothing here should disable or blur the button",
+    ).toHaveFocus();
+    fireEvent.click(button);
+    expect(button).toHaveFocus();
   });
 });

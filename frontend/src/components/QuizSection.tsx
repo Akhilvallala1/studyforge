@@ -10,12 +10,34 @@ interface Feedback {
   expected: string;
 }
 
+/**
+ * "validation" is the empty-answer guard in `submit`, entirely a client-side complaint
+ * about the CURRENT `answer`, so it goes stale the instant the learner edits that answer
+ * and is cleared on the next `onChange`. "server" is `answerQuiz` failing (network down,
+ * `ApiError`), a fact about the last REQUEST, not about what is currently typed; editing
+ * the field doesn't undo that the previous attempt never reached the server, so it is
+ * left in place until the next submit (successful or not) decides its fate. Kept as a
+ * separate field rather than inferred from the message text so clearing logic never has
+ * to pattern-match app copy.
+ */
+type ErrorKind = "validation" | "server";
+
 interface ItemState {
   answer: string;
   feedback: Feedback | null;
   attemptState: AttemptState;
   submitting: boolean;
   error: string | null;
+  errorKind: ErrorKind | null;
+  /**
+   * Bumped every time `error` is set, and used as the error paragraph's `key`. `error`
+   * can be set to the SAME literal twice in a row (two empty submits with no edit
+   * between them), which leaves the string child unchanged, so React neither unmounts
+   * nor patches the text node, and `role="alert"` has nothing to re-announce. Changing
+   * the key forces the old node out and a fresh one in on every set, identical text or
+   * not, so the second submit gets its own node to announce from.
+   */
+  errorNonce: number;
 }
 
 /**
@@ -34,6 +56,8 @@ function restored(item: QuizItem): ItemState {
     attemptState: item.attempt_state,
     submitting: false,
     error: null,
+    errorKind: null,
+    errorNonce: 0,
   };
 }
 
@@ -76,8 +100,22 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
   const pendingFocus = useRef<Map<number, PendingFocus>>(new Map());
 
   const stateOf = (item: QuizItem) => answers[item.id] ?? restored(item);
-  const patch = (item: QuizItem, update: Partial<ItemState>) =>
-    setAnswers((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? restored(item)), ...update } }));
+  /**
+   * `update` may be a plain object or a function of the item's PRIOR state. The function
+   * form exists for `errorNonce`, which has to increment off whatever the last render
+   * actually stored, not off the `state` a caller closed over: `submit`'s catch branch
+   * runs after an `await`, and a caller reading a nonce it captured before that await
+   * would double-write the same next value if two submits for the same item ever raced.
+   */
+  const patch = (
+    item: QuizItem,
+    update: Partial<ItemState> | ((prev: ItemState) => Partial<ItemState>),
+  ) =>
+    setAnswers((prev) => {
+      const base = prev[item.id] ?? restored(item);
+      const next = typeof update === "function" ? update(base) : update;
+      return { ...prev, [item.id]: { ...base, ...next } };
+    });
 
   useEffect(() => {
     for (const item of quiz) markShown(shownAt.current, item.id);
@@ -119,10 +157,17 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
   async function submit(item: QuizItem) {
     const { answer } = stateOf(item);
     if (!answer.trim()) {
-      patch(item, { error: "Enter an answer first." });
+      // Pressing "Check answer" again on a still-empty field re-sets the identical
+      // literal; bumping errorNonce off the prior value (not a value closed over above)
+      // is what forces the paragraph below to remount and re-announce.
+      patch(item, (prev) => ({
+        error: "Enter an answer first.",
+        errorKind: "validation",
+        errorNonce: prev.errorNonce + 1,
+      }));
       return;
     }
-    patch(item, { submitting: true, error: null });
+    patch(item, { submitting: true, error: null, errorKind: null });
     try {
       const result = await answerQuiz(item.id, answer, elapsedSince(shownAt.current, item.id));
       // Time a retry from this attempt, not from the first time the item appeared.
@@ -137,10 +182,12 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
         submitting: false,
       });
     } catch (err) {
-      patch(item, {
+      patch(item, (prev) => ({
         error: err instanceof ApiError ? err.message : "Could not reach the server.",
+        errorKind: "server",
+        errorNonce: prev.errorNonce + 1,
         submitting: false,
-      });
+      }));
     }
   }
 
@@ -186,7 +233,17 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                         value={option}
                         checked={state.answer === option}
                         disabled={state.submitting || solved}
-                        onChange={() => patch(item, { answer: option })}
+                        onChange={() =>
+                          // A stale "Enter an answer first." no longer applies the moment
+                          // an option is picked; a server error is left alone (see
+                          // ErrorKind above) since picking an option doesn't undo the
+                          // last request having failed.
+                          patch(item, (prev) =>
+                            prev.errorKind === "validation"
+                              ? { answer: option, error: null, errorKind: null }
+                              : { answer: option },
+                          )
+                        }
                         ref={(el) => {
                           // Only the checked option's node is worth keeping: it is the
                           // one the focus effect looks up by the current answer, and an
@@ -208,7 +265,17 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                   type="text"
                   value={state.answer}
                   disabled={state.submitting || solved}
-                  onChange={(e) => patch(item, { answer: e.target.value })}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    // Same reasoning as the mcq onChange just above: a validation
+                    // complaint about the answer goes stale the moment the answer
+                    // changes, a server error does not.
+                    patch(item, (prev) =>
+                      prev.errorKind === "validation"
+                        ? { answer: value, error: null, errorKind: null }
+                        : { answer: value },
+                    );
+                  }}
                   ref={(el) => {
                     if (el) inputRefs.current.set(item.id, el);
                     else inputRefs.current.delete(item.id);
@@ -231,7 +298,11 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                   carrying the RESULT, so folding a validation error into it would make
                   that comment false. Same shape as DeleteCourseButton's error. */}
               {state.error && (
-                <p role="alert" className="mt-3 text-sm text-red-700 dark:text-red-400">
+                <p
+                  key={state.errorNonce}
+                  role="alert"
+                  className="mt-3 text-sm text-red-700 dark:text-red-400"
+                >
                   {state.error}
                 </p>
               )}
