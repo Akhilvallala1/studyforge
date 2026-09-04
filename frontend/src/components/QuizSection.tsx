@@ -224,8 +224,16 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                 />
               )}
 
+              {/* role="alert" (implicitly assertive) rather than sitting inside the
+                  polite region below, for two reasons. This is a response to something
+                  the learner just did, so it should interrupt rather than queue behind
+                  the result announcement; and the region below is documented as
+                  carrying the RESULT, so folding a validation error into it would make
+                  that comment false. Same shape as DeleteCourseButton's error. */}
               {state.error && (
-                <p className="mt-3 text-sm text-red-700 dark:text-red-400">{state.error}</p>
+                <p role="alert" className="mt-3 text-sm text-red-700 dark:text-red-400">
+                  {state.error}
+                </p>
               )}
 
               {/* aria-live so the result is announced regardless of where focus lands.
