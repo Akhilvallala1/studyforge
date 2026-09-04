@@ -392,6 +392,12 @@ describe("DeleteCourseButton focus restoration", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     const confirm = await screen.findByRole("button", { name: "Delete permanently" });
+    // That name also matches while the preview is still loading, when the button is
+    // disabled and refuses the press. Clicking it there is a no-op, and every
+    // assertion below then waits on an announcement that never comes: this is the
+    // race that made this file fail about one run in eight on a loaded machine. See
+    // tests/delete-confirmation.test.tsx for the defect it was reporting.
+    await waitFor(() => expect(confirm).toBeEnabled());
     const removal = deferred<CourseDeletion>();
     vi.mocked(deleteCourse).mockReturnValue(removal.promise);
     return { confirm, removal };
