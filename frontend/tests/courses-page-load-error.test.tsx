@@ -64,9 +64,10 @@ describe("courses page load failure", () => {
     // the error branch below rendered no error-specific markup at all. #create-first-course
     // is the one that actually pins the error-vs-empty distinction: the ternary below
     // renders ErrorState (not EmptyState) whenever loadError is set, and
-    // courses-page-load-error's own success-path sibling tests, plus
-    // courses-page-contract.test.tsx, are what confirm this id shows up once the list is
-    // genuinely empty instead.
+    // courses-page-contract.test.tsx is what confirms this id shows up once the list is
+    // genuinely empty instead. That file is named alone on purpose: THIS file has no
+    // success-path test to lean on (no mockResolvedValue anywhere in it), so an earlier
+    // version of this sentence credited siblings that do not exist.
     expect(document.querySelector("#new-course")).toBeNull();
     expect(document.querySelector("#create-first-course")).toBeNull();
   });

@@ -34,11 +34,16 @@ function renderPage(courseId: string) {
 
 describe("course page load failure", () => {
   // Braces, not an expression body: `mockReset()` returns the mock itself, and Vitest
-  // treats a value returned from beforeEach as a teardown to run after the test. That
-  // teardown would call the mock with whatever implementation the test just set
-  // (mockRejectedValue), producing an unhandled rejection attributed to an unrelated
-  // line. Confirmed by hand: switching this back to the expression form reintroduces
-  // three unhandled-rejection failures with no relation to the assertions themselves.
+  // treats a value returned from beforeEach as a teardown to run after the test, which
+  // would call the mock with the rejection the test just installed. Switching this back
+  // to the expression form turns most of this describe block red.
+  //
+  // Deliberately no failure count here, and deliberately not called an unhandled
+  // rejection. An earlier version of this comment said "three unhandled-rejection
+  // failures" and both halves had rotted: the count, because a test was added to the
+  // block afterwards, and the label, because vitest reports these as
+  // ordinary failures attributed to each test's own mockRejectedValue line, so grepping
+  // the output for "unhandled" finds nothing.
   beforeEach(() => {
     vi.mocked(getCourse).mockReset();
   });

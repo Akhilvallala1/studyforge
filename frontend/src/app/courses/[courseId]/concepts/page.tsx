@@ -52,12 +52,14 @@ export default async function CourseConceptsPage(
   try {
     data = await getCourseConcepts(id);
   } catch (err) {
-    // This page was the last one in src/app still re-throwing, which mattered more than
-    // its position in the list suggests: CourseTabs links here as a sibling tab of the
-    // course page, so with the backend down a reader got the friendly message on
-    // /courses/1 and a blank 500 one click later on /courses/1/concepts. A genuine 404
-    // still 404s; everything else becomes the same inline message the other seven
-    // fetching pages show. See courses/page.tsx for the 200-vs-500 reasoning.
+    // This is the last of the three pages this PR converts, and the order matters for
+    // reading the sentence: on main, /courses/1, its lesson pages and this page ALL
+    // re-threw and all served a blank Next 500, so the contrast being fixed is not
+    // "the course page was friendly and this one was not". It is that CourseTabs links
+    // here as a sibling tab, so converting the course page without this one would have
+    // created that split one click wide. A genuine 404 still 404s; everything else
+    // becomes the same inline message the other seven fetching pages show. See
+    // courses/page.tsx for the 200-vs-500 reasoning.
     if (err instanceof ApiError && err.status === 404) notFound();
     const message =
       err instanceof ApiError ? err.message : "Could not reach the server. Is the backend running?";
@@ -68,8 +70,14 @@ export default async function CourseConceptsPage(
           The fetch failed, so the real course title was never learned and PageHeader gets
           the generic "Concept map" instead of the page having no h1 at all. It is the same
           primitive the success branch below uses: the T8 restyle (PR #34) moved that branch
-          onto PageHeader before this one merged, so the two now differ in their heading TEXT
-          and in nothing else, which is also how the course and lesson error branches read.
+          onto PageHeader before this one merged, so on THIS page the two branches differ in
+          their heading text and in nothing else.
+
+          That last part is specific to this page, so do not generalise it. Every error
+          branch in this batch uses PageHeader with a generic title, but the LESSON page's
+          success branch still hand-rolls its own h1 next to MarkCompleteButton, and its
+          own comment says so: there, the two branches differ in their primitive as well as
+          their text.
         */}
         <PageHeader className="mt-4" title="Concept map" />
         <ErrorState className="mt-8" message={message} />

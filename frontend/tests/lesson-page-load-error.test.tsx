@@ -49,8 +49,8 @@ function renderPage(courseId: string, lessonId: string) {
 }
 
 describe("lesson page load failure", () => {
-  // Braces, not an expression body: see course-page-load-error.test.tsx for why an
-  // expression-bodied beforeEach here causes an unrelated unhandled rejection.
+  // Braces, not an expression body: see course-page-load-error.test.tsx for why the
+  // expression form breaks a describe block shaped like this one.
   beforeEach(() => {
     vi.mocked(getLesson).mockReset();
   });
