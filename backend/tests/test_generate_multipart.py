@@ -26,9 +26,15 @@ this file is about what happens to several sources of different kinds once each 
 read.
 """
 
+import asyncio
+import io
 import json
 
+import fastapi
 import pytest
+from fastapi import HTTPException
+from fastapi.testclient import TestClient
+from starlette.datastructures import UploadFile
 
 from app import ingest, main
 from app.llm.fake_provider import FakeProvider
@@ -39,6 +45,15 @@ GOOD_TEXT = "Gradient descent walks downhill by following the slope. " * 30
 
 GOOD_URL_HOST = "93.184.216.34"  # a public address of example.com; see module docstring
 PRIVATE_URL = "http://127.0.0.1/wiki"
+
+# The one refusal body a present-but-empty `sources` field must produce, whichever of "" or
+# whitespace-only it was spelled, alone or with a file attached. The agreement is the
+# property under test, so every case below is asserted against this single constant rather
+# than each writing out its own copy that could quietly diverge.
+_EMPTY_SOURCES_DETAIL = {
+    "error": main.INVALID_REQUEST_ERROR,
+    "message": f"{main.INVALID_REQUEST_MESSAGE} 'sources' must not be empty.",
+}
 
 
 def _fake_extract_url(url: str) -> str:
@@ -174,8 +189,32 @@ def test_neither_part_present_is_the_shared_no_source_shape(client):
 
 
 def test_six_combined_sources_refuses_before_any_provider_call(client, monkeypatch):
-    """Acceptance 5: the combined count, across both parts, is what the cap counts."""
+    """Acceptance 5: the combined count, across both parts, is what the cap counts.
+
+    ALSO PINS THAT THE GUARD IS EARLY, not merely that the count is enforced. The response
+    body cannot tell the two guards apart: ingest.load_sources's own (identical) TooManySources
+    check, one layer down, raises through the exact same too_many_sources_message() helper
+    with the same count, so the status, error code and message text are byte-for-byte the
+    same whichever guard catches it. Spying on ingest.extract_pdf does not discriminate them
+    either, because load_sources's own count check runs before its own extraction loop, so
+    extract_pdf is never called from either arm - it is a constant, not a discriminator.
+
+    What the early guard actually buys, and the only thing distinguishing it, is that
+    generate_multipart's spec-building loop below (`value=upload.file.read()`) runs BEFORE
+    ingest.load_sources is ever called - so without the early guard, every uploaded file is
+    still read fully into memory before the deep guard gets a chance to refuse. Spying on
+    load_sources itself is what proves that: with the early guard in place, load_sources is
+    never invoked at all for an over-cap request.
+    """
     monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
+    load_sources_calls: list[int] = []
+    original_load_sources = ingest.load_sources
+
+    def _spy_load_sources(specs, *args, **kwargs):
+        load_sources_calls.append(len(specs))
+        return original_load_sources(specs, *args, **kwargs)
+
+    monkeypatch.setattr(ingest, "load_sources", _spy_load_sources)
     over = ingest.MAX_SOURCES + 1
     text_sources = [{"kind": "text", "value": GOOD_TEXT} for _ in range(over - 2)]
     files = [_pdf_part(f"pdf{i}") for i in range(2)]
@@ -186,6 +225,10 @@ def test_six_combined_sources_refuses_before_any_provider_call(client, monkeypat
     detail = response.json()["detail"]
     assert detail["error"] == "too_many_sources"
     assert str(over) in detail["message"]
+    assert load_sources_calls == [], (
+        "too_many_sources must refuse before load_sources is ever called, "
+        "since reaching it means every uploaded file was already read into memory"
+    )
 
 
 def test_one_bad_url_and_one_good_pdf_reports_only_the_bad_one(client, monkeypatch):
@@ -274,8 +317,17 @@ def test_malformed_sources_is_invalid_request_before_any_fetch(
 
 
 def test_over_cap_uploads_are_refused_without_reading_any_file(client, monkeypatch):
-    """Acceptance 11: MAX_UPLOAD_BYTES on the sum of file sizes, before the provider is touched."""
+    """Acceptance 11: MAX_UPLOAD_BYTES on the sum of file sizes, before the provider is touched.
+
+    ALSO PINS THAT THIS RUNS BEFORE EXTRACTION, the same gap as the count guard above. The
+    character cap in _ingest_or_refuse would refuse this request too, on the same error
+    code, once both PDFs had been decoded to their (huge) text - which proves the cap
+    exists, not that the byte check ran first and skipped reading them. extract_pdf being
+    untouched is the property the "before reading" half of this test's name promises.
+    """
     monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
+    pdf_reads: list[bytes] = []
+    monkeypatch.setattr(ingest, "extract_pdf", lambda data: pdf_reads.append(data) or data.decode())
     each = ingest.MAX_UPLOAD_BYTES // 2 + 1
 
     response = client.post(
@@ -290,6 +342,117 @@ def test_over_cap_uploads_are_refused_without_reading_any_file(client, monkeypat
     detail = response.json()["detail"]
     assert detail["error"] == "source_too_large"
     assert str(ingest.MAX_UPLOAD_BYTES) in detail["message"].replace(",", "")
+    assert pdf_reads == [], "the byte cap must refuse before any uploaded PDF is read"
+
+
+class _NoSourcesRequest:
+    """A minimal stand-in for fastapi.Request.
+
+    generate_multipart only calls `request.form()`, and only to read `sources`, before the
+    size guard this test targets ever runs. What this test pins does not depend on `sources`
+    at all, so this returns an empty mapping (`sources` absent) rather than a real Request.
+    """
+
+    async def form(self):
+        return {}
+
+
+def test_unknown_upload_size_is_refused_as_over_cap_not_under():
+    """Reviewer finding 1: an UploadFile whose size is unknown must be refused, not summed as 0.
+
+    Called directly rather than through TestClient: Starlette 1.6.0's own multipart parser
+    always sets UploadFile.size before a route ever sees it, so a None size is not reachable
+    through a real request today. It is reachable if that ever changes, or if a caller
+    constructs an UploadFile by hand the way this test does, so the route guards against it
+    rather than trusting the library's current behavior to hold forever.
+
+    The payload is 10 bytes, nowhere near MAX_UPLOAD_BYTES, so the only thing that can cause
+    a source_too_large refusal here is the None-size rule itself, not the byte count.
+
+    session=None is deliberate, not a shortcut: generate_multipart never touches `session`
+    until after both size checks, so passing None and still getting the refusal is itself
+    part of what this test pins - the refusal happens before any database access.
+    """
+    upload = UploadFile(file=io.BytesIO(b"x" * 10), size=None, filename="huge.pdf")
+
+    async def _call():
+        return await main.generate_multipart(
+            request=_NoSourcesRequest(), sources=None, file=[upload], session=None
+        )
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(_call())
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail["error"] == "source_too_large"
+
+
+@pytest.mark.parametrize("raw_sources", ["", "   "], ids=["empty-string", "whitespace-only"])
+def test_present_but_empty_sources_is_invalid_request_alone(client, raw_sources):
+    """Reviewer finding 2: `sources=""` and `sources="   "` are the same mistake, refused alike.
+
+    Before this fix, `sources: str | None = Form(default=None)` was the route's only source
+    of truth, and FastAPI's own Form() dependency resolution collapses "" to None before the
+    route body ever runs (see test_form_field_collapses_empty_string_to_none below), so "" was
+    silently treated as omitted while "   " reached _parse_multipart_sources and failed to
+    parse as JSON - two different refusals for what is the same caller mistake. The route now
+    reads `sources` from the raw form data instead, which keeps "" and "   " both non-None and
+    both are decided by the identical `raw.strip()` check, so they are asserted here against
+    the identical _EMPTY_SOURCES_DETAIL body, which is the property under test.
+    """
+    response = client.post("/courses/generate/multipart", data={"sources": raw_sources})
+
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == _EMPTY_SOURCES_DETAIL
+
+
+@pytest.mark.parametrize("raw_sources", ["", "   "], ids=["empty-string", "whitespace-only"])
+def test_present_but_empty_sources_is_invalid_request_with_a_file_attached(
+    client, monkeypatch, raw_sources
+):
+    """Reviewer finding 2, sharper case: a real file must not paper over an empty `sources`.
+
+    Before this fix, `sources=""` with a file attached collapsed to None at the Form()
+    dependency layer and reached the provider on the file alone, silently ignoring that
+    `sources` was sent and empty - the silent-partial failure mode this whole feature exists
+    to avoid (a client with three URLs and one PDF whose serialization bug yields "" would get
+    a course built from the PDF alone and believe the links are in it). NeverCalledProvider
+    proves that no longer happens for either spelling: the refusal happens before the file is
+    ever ingested.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
+
+    response = client.post(
+        "/courses/generate/multipart",
+        data={"sources": raw_sources},
+        files=[("file", _pdf_part("irrelevant"))],
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == _EMPTY_SOURCES_DETAIL
+
+
+def test_form_field_collapses_empty_string_to_none():
+    """Pins the FastAPI assumption generate_multipart's raw-form-read workaround depends on.
+
+    Verified against FastAPI 0.141.1: fastapi/dependencies/utils.py::_get_multidict_value
+    replaces a present-but-empty ("") value for any `Form()`-declared field with that field's
+    default before the route body ever runs, so `sources: str | None = Form(default=None)`
+    can never itself distinguish "" from an omitted field. generate_multipart works around
+    this by reading `sources` from the raw form data instead (see its docstring). If a future
+    FastAPI stops collapsing "" this way, that workaround becomes unnecessary rather than
+    wrong, but this test failing is what would tell us that has happened, instead of it going
+    unnoticed.
+    """
+    probe = fastapi.FastAPI()
+
+    @probe.post("/probe")
+    def echo(sources: str | None = fastapi.Form(default=None)):
+        return {"sources": sources, "is_none": sources is None}
+
+    response = TestClient(probe).post("/probe", data={"sources": ""})
+
+    assert response.json() == {"sources": None, "is_none": True}
 
 
 # --------------------------------------------------------------------------

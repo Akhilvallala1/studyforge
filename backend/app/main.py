@@ -649,6 +649,14 @@ def _parse_multipart_sources(raw: str) -> list[SourceInput]:
     before the next runs, so one malformed request gets one problem named rather than
     a pydantic error about elements of something that was never an array.
     """
+    if not raw.strip():
+        # Named explicitly rather than left to fall into the JSON decoder below, which
+        # would call this "not valid JSON" - true, but not the actual problem, and not
+        # the same sentence a caller who sent whitespace instead of "" would get for what
+        # is the same mistake. Naming it here is what makes the two spellings agree.
+        raise _unprocessable(
+            INVALID_REQUEST_ERROR, f"{INVALID_REQUEST_MESSAGE} 'sources' must not be empty."
+        )
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -712,7 +720,8 @@ def generate_from_pdf(file: list[UploadFile], session: Session = Depends(get_ses
 
 
 @app.post("/courses/generate/multipart")
-def generate_multipart(
+async def generate_multipart(
+    request: Request,
     sources: str | None = Form(default=None),
     file: list[UploadFile] = File(default=[]),
     session: Session = Depends(get_session),
@@ -733,8 +742,32 @@ def generate_multipart(
     sent. `sources` and `file` are both spellings a client using this route already knows
     about, unlike the deprecated top-level `text` and `url` on /courses/generate, so there
     is no caller here for the bare-string seam to protect.
+
+    The `sources: str | None = Form(...)` parameter above exists so `sources` still appears
+    in the OpenAPI schema and the Swagger UI form widget - it is documentation, not what the
+    route actually reads. FastAPI's own Form() dependency resolution collapses a
+    present-but-empty ("") value to this parameter's default (None) before the route body
+    ever runs, which would make "" indistinguishable from an omitted field if this were the
+    only source of truth (see fastapi/dependencies/utils.py::_get_multidict_value, pinned
+    against FastAPI 0.141.1 by test_form_field_collapses_empty_string_to_none below). The
+    route needs that distinction, so it re-reads the raw value from `request.form()` instead,
+    which is cached from FastAPI's own earlier parse (nothing is read from the body twice).
     """
-    parsed_sources = _parse_multipart_sources(sources) if sources else []
+    raw_sources = (await request.form()).get("sources")
+    if raw_sources is not None and not isinstance(raw_sources, str):
+        # Someone sent a `sources` part as a file rather than text. request.form() hands
+        # back whatever arrived, unlike the Form()-declared parameter above, which would
+        # have rejected this itself through ordinary type validation.
+        raise _unprocessable(
+            INVALID_REQUEST_ERROR, f"{INVALID_REQUEST_MESSAGE} 'sources' must be a string."
+        )
+
+    # `is not None`, not truthiness. Defensively correct on its own terms, and required for
+    # a future FastAPI that stops collapsing "" to None (the case the framework test below
+    # exists to catch), but it is not what makes "" and "   " agree today: request.form()
+    # already hands back both verbatim, and the agreement between them is made by
+    # _parse_multipart_sources's own raw.strip() check, not by this conditional.
+    parsed_sources = _parse_multipart_sources(raw_sources) if raw_sources is not None else []
 
     combined_count = len(parsed_sources) + len(file)
     if combined_count == 0:
@@ -745,7 +778,23 @@ def generate_multipart(
     # Checked on UploadFile.size, before any file is read. upload.file.read() below pulls a
     # whole file into memory, and doing that for every part before finding out the batch is
     # over budget is the accidental-huge-request this cap exists to avoid.
-    upload_total_bytes = sum(upload.size or 0 for upload in file)
+    #
+    # A None size is refused rather than summed as zero. UNKNOWN IS TREATED AS OVER THE
+    # CAP, NOT UNDER IT, because the cap is a memory guard: an upload whose size cannot be
+    # trusted is exactly the case it exists to catch, and letting it through because the
+    # one signal available is missing would make the guard a no-op for the one input it
+    # cannot vouch for. Not reachable through this app's own multipart parser today, which
+    # always sets size before an UploadFile reaches a route, but that is a fact about the
+    # library version pinned today, not a promise, and this must not become a guard that
+    # quietly fails open the day it stops being true.
+    if any(upload.size is None for upload in file):
+        raise _unprocessable(
+            "source_too_large",
+            "One of those files did not report its size, so it cannot be checked against "
+            f"the {ingest.MAX_UPLOAD_BYTES:,}-byte limit. Nothing was generated and nothing "
+            "was charged. Try uploading it again.",
+        )
+    upload_total_bytes = sum(upload.size for upload in file)
     if upload_total_bytes > ingest.MAX_UPLOAD_BYTES:
         raise _unprocessable("source_too_large", upload_too_large_message(upload_total_bytes))
 
