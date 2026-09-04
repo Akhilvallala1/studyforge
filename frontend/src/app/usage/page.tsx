@@ -94,19 +94,20 @@ export default async function UsagePage() {
               )}
             </p>
             {usage.limit.configured ? (
-              <p className="mt-1">
-                Hard spend cap:{" "}
-                <span className="font-medium tabular-nums">{formatUsd(usage.limit.limit_usd)}</span>
-                {usage.limit.reached ? (
-                  <Badge tone="danger" className="ml-2">
-                    Reached, further paid generations are blocked
+              <>
+                <p className="mt-1">
+                  Hard spend cap:{" "}
+                  <span className="font-medium tabular-nums">
+                    {formatUsd(usage.limit.limit_usd)}
+                  </span>
+                  <Badge tone={usage.limit.reached ? "danger" : "success"} className="ml-2">
+                    {usage.limit.reached ? "Reached" : "Not reached"}
                   </Badge>
-                ) : (
-                  <Badge tone="success" className="ml-2">
-                    Not reached
-                  </Badge>
+                </p>
+                {usage.limit.reached && (
+                  <p className="mt-1 text-ink-muted">Further paid generations are blocked.</p>
                 )}
-              </p>
+              </>
             ) : (
               <p className="mt-1 text-ink-muted">
                 No hard spend cap is configured, generations are never blocked on cost.

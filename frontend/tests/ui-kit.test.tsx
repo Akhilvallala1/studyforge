@@ -49,3 +49,20 @@ describe("ErrorState role", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
+
+/**
+ * The Today and Usage pages both pass `title=""` to suppress the heading paragraph,
+ * relying on `{title && <p>...}` treating an empty string as falsy. Tightening that
+ * check to `{title !== undefined && <p>...}` (a natural-looking edit: it reads as
+ * "only skip this when the caller didn't pass a title at all") renders an empty,
+ * bold paragraph above the message instead, and nothing else in this suite catches
+ * it because every other test either omits `title` or passes a non-empty one.
+ */
+describe("ErrorState title suppression", () => {
+  test('title="" renders only the message paragraph, no heading', () => {
+    const { container } = render(<ErrorState title="" message="x" />);
+
+    expect(container.querySelectorAll("p")).toHaveLength(1);
+    expect(screen.getByText("x")).toBeInTheDocument();
+  });
+});

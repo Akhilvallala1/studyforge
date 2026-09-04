@@ -45,8 +45,10 @@
   /* Text ("ink"). */
   --sf-ink: #171717;
   --sf-ink-muted: oklch(44.2% 0.017 285.786); /* zinc-600 */
-  --sf-ink-subtle: oklch(55.2% 0.016 285.938); /* zinc-500: distinct from muted in
-    both modes, not just in light, unlike round 1's --text-subtle. */
+  --sf-ink-subtle: oklch(55.2% 0.016 285.938); /* zinc-500 here, but NOT in dark:
+    see the override below, which lightens it to clear 4.5:1 on the dark page. What
+    holds in both modes is that it stays distinct from muted, unlike round 1's
+    --text-subtle. */
 
   /* The one accent. Reserved for focus rings, inline text links, and the active
      nav/tab indicator, never a large fill: emerald, amber and red already carry
@@ -277,8 +279,12 @@
 
     --sf-ink: #ededed;
     --sf-ink-muted: oklch(70.5% 0.015 286.067); /* zinc-400 */
-    --sf-ink-subtle: oklch(55.2% 0.016 285.938); /* zinc-500, same step as light:
-      distinct from --sf-ink-muted's zinc-400 here too. */
+    --sf-ink-subtle: oklch(61% 0.016 285.938); /* #82828d, measures 5.21:1 on the
+      #0a0a0a page (zinc-500 here measured only 4.10:1, under the 4.5 floor
+      text-small/text-micro need). Not a Tailwind palette step: no zinc step sits
+      between 400 and 500. Lightness sits 0.095 below --sf-ink-muted's 0.705, close
+      to light mode's 0.11 step between the same pair, so the three-step scale
+      (ink / muted / subtle) stays roughly even in both modes. */
 
     --sf-accent: oklch(70.7% 0.165 254.624); /* blue-400 */
 

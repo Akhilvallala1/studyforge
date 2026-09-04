@@ -255,7 +255,7 @@ export default async function TodayPage() {
             </div>
             <Link
               href={`/courses/${nextUp.course.id}/lessons/${nextUp.lesson.id}`}
-              className="shrink-0 rounded-control border border-line px-4 py-1.5 text-small font-medium text-ink transition-colors duration-fast ease-standard hover:border-line-hover"
+              className="shrink-0 rounded-control border border-line px-4 py-1.5 text-small font-medium text-ink transition-colors duration-fast ease-standard hover:border-line-hover hover:bg-surface-sunken"
             >
               Continue
             </Link>
