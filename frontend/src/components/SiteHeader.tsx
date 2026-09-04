@@ -23,12 +23,12 @@ export function SiteHeader() {
   if (pathname === "/review" || pathname.startsWith("/review/")) return null;
 
   return (
-    <header className="border-b border-zinc-200 dark:border-zinc-800">
+    <header className="border-b border-line">
       <nav className="mx-auto flex w-full max-w-4xl items-center justify-between px-6 py-3">
-        <Link href="/" className="text-sm font-semibold tracking-tight">
+        <Link href="/" className="text-subtitle tracking-tight text-ink">
           StudyForge
         </Link>
-        <div className="flex items-center gap-5 text-sm">
+        <div className="flex items-center gap-5 text-ui">
           {LINKS.map((link) => {
             const active = isActive(pathname, link.href);
             return (
@@ -36,10 +36,13 @@ export function SiteHeader() {
                 key={link.href}
                 href={link.href}
                 aria-current={active ? "page" : undefined}
+                // The accent is spent here on purpose: it is one of the three places
+                // this design allows it (focus rings, inline links, the active
+                // nav/tab indicator), never as a fill.
                 className={
                   active
-                    ? "font-medium text-zinc-900 dark:text-zinc-100"
-                    : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+                    ? "font-medium text-accent"
+                    : "text-ink-muted transition-colors duration-fast ease-standard hover:text-ink"
                 }
               >
                 {link.label}
