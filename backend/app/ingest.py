@@ -96,6 +96,13 @@ MAX_TOTAL_CHARS = 150_000
 # happen where the marker grammar is known, the way tutor.py scrubs its own fences and
 # register labels through untrusted.as_data rather than trusting its inputs to be tame.
 MAX_REF_CHARS = 200
+# Cap on the SUM of uploaded file sizes, checked against UploadFile.size before any file is
+# read. Only the multipart route applies it: /courses/generate/pdf stays uncapped so no
+# existing caller changes. upload.file.read() pulls a whole file into memory, and a request
+# that combines several uploads (a folder drop, say) makes an accidental huge request easy
+# in a way a single PDF upload does not, so this is checked before any of them are read
+# rather than left to MAX_TOTAL_CHARS, which only sees the text AFTER extraction.
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 # The delimiters of generation's document tag, mapped to their round equivalents. See
 # clean_ref on why translated rather than stripped.
 _DELIMITERS = str.maketrans({"[": "(", "]": ")"})
@@ -319,15 +326,29 @@ class SourceFailure:
     matching the refusal shape the rest of this API uses. The message is the SAME copy the
     single-source path has always returned, so multi-source reporting is that message
     repeated per source rather than a second vocabulary.
+
+    `index` is the position of this source IN THE REQUEST AS SENT, not its position among
+    the failures. `ref` looks like a handle but is not one: clean_ref truncates and
+    rewrites it, and two files named notes.pdf or two requests to the same URL collide on
+    it. A client that sent four sources and got two failures back needs `index` to know
+    which two, and load_sources is the one place that can say so, since it is the only
+    code that still has the original list.
     """
 
     kind: str
     ref: str
     error: str
     message: str
+    index: int
 
     def payload(self) -> dict:
-        return {"kind": self.kind, "ref": self.ref, "error": self.error, "message": self.message}
+        return {
+            "index": self.index,
+            "kind": self.kind,
+            "ref": self.ref,
+            "error": self.error,
+            "message": self.message,
+        }
 
 
 class TooManySources(ValueError):
@@ -467,7 +488,7 @@ def load_sources(
 
     sources: list[Source] = []
     failures: list[SourceFailure] = []
-    for raw_spec in specs:
+    for index, raw_spec in enumerate(specs):
         # Cleaned once, here, so the Source and the SourceFailure carry the same label and
         # neither path can be the one that forgot.
         spec = SourceSpec(kind=raw_spec.kind, ref=clean_ref(raw_spec.ref), value=raw_spec.value)
@@ -475,7 +496,13 @@ def load_sources(
             sources.append(load_source(spec, copy))
         except SourceError as exc:
             failures.append(
-                SourceFailure(kind=spec.kind, ref=spec.ref, error=exc.error, message=exc.message)
+                SourceFailure(
+                    kind=spec.kind,
+                    ref=spec.ref,
+                    error=exc.error,
+                    message=exc.message,
+                    index=index,
+                )
             )
     return sources, failures
 
