@@ -254,13 +254,18 @@ export default async function TodayPage() {
               </div>
             </div>
             {/* Deliberately not Button's `secondary` variant: `secondary` rests on
-                `border-line`, which is 1.33:1 against the #0a0a0a page, below what
-                the sibling outline control on this page (ReteachConcept's re-teach
-                button, border-line-strong) uses. This link keeps border-line-strong
-                at rest instead (1.90:1 dark) so the two same-size outline controls
-                on the Today page match. The app-wide `secondary` border token is an
-                open follow-up; fixing it there affects every secondary control in
-                the app and needs its own QA pass. */}
+                `border-line`, 1.33:1 against the #0a0a0a page, while the sibling
+                outline control here (ReteachConcept's re-teach button) uses
+                `border-line-strong`. This link keeps `border-line-strong` too
+                (1.90:1 dark), which is what it already had as `border-zinc-300
+                dark:border-zinc-700`: those emit the same hexes, so versus main
+                this is contrast-neutral, and it is only an improvement against the
+                `border-line` an earlier round of this branch briefly gave it.
+                Only the BORDER is shared with the re-teach button; that one is
+                px-3.5 with an untokenised transition against this one's px-4 and
+                duration-fast ease-standard. Reconciling `secondary` itself is an
+                open follow-up: it affects every secondary control in the app and
+                needs its own QA pass. */}
             <Link
               href={`/courses/${nextUp.course.id}/lessons/${nextUp.lesson.id}`}
               className="shrink-0 rounded-control border border-line-strong px-4 py-1.5 text-small font-medium text-ink transition-colors duration-fast ease-standard hover:border-line-hover"

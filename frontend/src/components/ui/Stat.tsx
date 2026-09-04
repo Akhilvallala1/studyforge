@@ -18,13 +18,14 @@ export interface StatProps extends HTMLAttributes<HTMLDivElement> {
  *     (20px/semibold);
  *   - the value's line-height goes from inherited (unset on `text-[22px]`) to
  *     `text-title`'s explicit 1.75rem;
- *   - the label moves from Tailwind's `text-xs text-zinc-500 dark:text-zinc-400`
- *     (12px/16px) to the token `text-small text-ink-subtle` (13px/20px), a
- *     deliberate move onto the same label size and colour token used elsewhere in
- *     this redesign (e.g. the Usage page's `<dt>`s), not an accident. Light is
- *     unchanged (zinc-500 either way); dark moves from zinc-400 (`#9f9fa9`,
- *     7.55:1 on the `#0a0a0a` page) to ink-subtle's dark value (`#82828d`,
- *     5.21:1), which still clears the 4.5:1 AA floor for this size;
+ *  - the label's SIZE moves from Tailwind's `text-xs` (12px/16px) to the token
+ *    `text-small` (13px/20px), the same label size used elsewhere in the
+ *    redesign (e.g. the Usage page's `<dt>`s), not an accident;
+ *  - the label's COLOUR moves from `text-zinc-500 dark:text-zinc-400` to
+ *    `text-ink-subtle`. Light is unchanged (zinc-500 either way); dark moves
+ *    from zinc-400 (`#9f9fa9`, 7.55:1 on the `#0a0a0a` page) to ink-subtle's
+ *    dark value (`#82828d`, 5.21:1), which still clears the 4.5:1 AA floor at
+ *    this size;
  *   - `emphasis` moves from a raw `text-emerald-600 dark:text-emerald-500` to the
  *     token-driven `text-success`, which resolves to a nearby but not identical
  *     colour.
