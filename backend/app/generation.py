@@ -390,6 +390,7 @@ def label_segments(
         parts.append(f"{label}\n{defuse_segment_labels(chunks[i])}")
     return "\n\n".join(parts)
 
+
 def generate_outline(meter: Meter, chunks: list[str], owners: list[str] | None = None) -> dict:
     """The outline call. `owners` names the document each chunk came from, if several.
 
