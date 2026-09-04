@@ -179,7 +179,7 @@ export function DeadlineForm({ plan }: { plan: CoursePlan }) {
       </p>
 
       <div className="mt-3.5 flex flex-wrap items-center gap-3">
-        <Button type="submit" ref={submitRef} disabled={pending || !day} size="sm">
+        <Button type="submit" ref={submitRef} disabled={pending || !day}>
           {saving ? "Saving…" : hasDeadline ? "Change deadline" : "Set deadline"}
         </Button>
         {hasDeadline && (
@@ -190,7 +190,6 @@ export function DeadlineForm({ plan }: { plan: CoursePlan }) {
           <Button
             type="button"
             variant="secondary"
-            size="sm"
             disabled={pending}
             onClick={() => void run(() => clearCourseDeadline(plan.course_id), "day")}
           >

@@ -417,7 +417,7 @@ function paceSentences(plan: CoursePlan): string[] {
 function PassedPanel({ plan }: { plan: CoursePlan }) {
   return (
     <section className="mt-5 rounded-surface border border-line px-5 py-4">
-      <p className="text-[15px] font-medium">
+      <p className="text-ui font-medium">
         {deadlineSentence(plan)} Your reviews continue, because you still know this.
       </p>
       <p className="mt-1.5 text-small text-ink-muted">

@@ -22,12 +22,20 @@ const RATING_STYLES: Record<RatingName, { title: string; className: string }> = 
   easy: { title: "Easy", className: "text-success" },
 };
 
-/** Matches Button's primary variant; a Link cannot use that component (it wraps a
- * native <button> only), so its classes are restated here, same as courses/page.tsx's
- * PRIMARY_LINK_CLASSES for the identical reason. */
+/**
+ * Byte-identical to courses/page.tsx's constant of the same name, which is in turn
+ * Button's BASE + primary + md minus its two `disabled:` utilities, an anchor having no
+ * disabled state to style. A Link cannot use Button (it wraps a native <button> only),
+ * so the classes are restated, and the two copies are kept in sync BY HAND until
+ * a link-flavoured variant of the primitive exists. Keep them identical: two constants
+ * sharing a name while rendering different geometry is worse than either shape alone,
+ * because the next person to dedupe them silently resizes one set of call sites.
+ * Margin is deliberately not in here; it belongs to the layout, not to the button.
+ */
 const PRIMARY_LINK_CLASSES =
-  "mt-6 inline-block rounded-control bg-fill px-5 py-2.5 text-ui font-medium text-on-fill " +
-  "transition-colors duration-fast ease-standard hover:bg-fill-hover";
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control bg-fill " +
+  "px-4 py-2 text-ui font-medium text-on-fill transition-colors duration-fast ease-standard " +
+  "hover:bg-fill-hover";
 
 /**
  * What the learner has done with the current card.
@@ -217,7 +225,7 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
               Concepts come back as their recall probability drops. Finish a lesson to put new
               ones into the schedule.
             </p>
-            <Link href="/" className={PRIMARY_LINK_CLASSES}>
+            <Link href="/" className={`mt-6 ${PRIMARY_LINK_CLASSES}`}>
               Back to Today
             </Link>
           </div>
@@ -231,7 +239,7 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
               {queue.due_total > queue.cards.length &&
                 ` ${queue.due_total - queue.cards.length} more are still due: start another session when you are ready.`}
             </p>
-            <Link href="/" className={PRIMARY_LINK_CLASSES}>
+            <Link href="/" className={`mt-6 ${PRIMARY_LINK_CLASSES}`}>
               Back to Today
             </Link>
           </div>
@@ -240,10 +248,10 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
         {card && item && !finished && (
           <>
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-muted">
+              <span className="font-mono text-micro uppercase text-ink-muted">
                 Concept
               </span>
-              <span className="text-small text-ink-muted">{card.concept_label}</span>
+              <span className="text-small text-ink">{card.concept_label}</span>
               {card.lapses > 0 && (
                 /*
                   Not the Badge primitive, and not `text-micro` either. Badge uppercases
@@ -256,7 +264,7 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
                   nearest size that carries no case convention. Colour and pill geometry
                   stay Badge's so the two still read as siblings.
                 */
-                <span className="inline-flex items-center rounded-full bg-warning-surface px-2.5 py-0.5 text-small font-medium text-warning">
+                <span className="inline-flex items-center rounded-full bg-warning-surface px-2 py-0.5 text-small font-medium text-warning">
                   Missed last time
                 </span>
               )}
@@ -347,16 +355,16 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
                   ) : (
                     <>
                       <div className="mt-6 border-t border-line pt-5">
-                        <p className="mb-2.5 font-mono text-xs uppercase tracking-[0.06em] text-ink-muted">
+                        <p className="mb-2.5 font-mono text-micro uppercase text-ink-muted">
                           Your answer
                         </p>
-                        <p className="text-[15px] leading-relaxed text-ink">{phase.submitted}</p>
+                        <p className="text-ui leading-relaxed text-ink">{phase.submitted}</p>
                       </div>
                       <div className="mt-5 border-t border-line pt-5">
-                        <p className="mb-2.5 font-mono text-xs uppercase tracking-[0.06em] text-ink-muted">
+                        <p className="mb-2.5 font-mono text-micro uppercase text-ink-muted">
                           Reference answer
                         </p>
-                        <p className="text-[15px] leading-relaxed text-ink-muted">
+                        <p className="text-ui leading-relaxed text-ink-muted">
                           {phase.expected}
                         </p>
                       </div>
