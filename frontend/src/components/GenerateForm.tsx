@@ -130,6 +130,11 @@ export function GenerateForm() {
   const folderInputRef = useRef<HTMLInputElement>(null);
   const summaryRef = useRef<HTMLDivElement>(null);
   const focusSummaryNext = useRef(false);
+  // Captured at the top of handleSubmit, before the submit button disables itself, so
+  // the summary-focus effect below can tell "nothing has taken focus away since this
+  // submit" from "the learner tabbed off somewhere during the request" once the result
+  // (which can take 1 to 3 minutes) lands.
+  const focusAtSend = useRef<Element | null>(null);
   const addTextButtonRef = useRef<HTMLButtonElement>(null);
   // Live DOM handles for controls that need to be re-focused after a state change
   // unmounts or repositions whatever previously held focus: a row's main input (added)
@@ -192,10 +197,20 @@ export function GenerateForm() {
   // keyboard or screen-reader learner is not left on the just-re-enabled submit button
   // with no indication anything happened. Keyed on the seq, not the message itself, so
   // two submits in a row that fail the same way both move focus.
+  //
+  // Only when the learner has not moved since they sent. Two things satisfy that and
+  // they are not the same thing: the body, which is where a disabled submit button drops
+  // focus while the request is in flight, and focusAtSend, wherever focus actually was
+  // the moment they submitted. Testing only the body would be a proxy that happens to
+  // hold here because the button disables itself, but generation takes 1 to 3 minutes by
+  // this form's own copy, long enough for a learner to tab off to read something else;
+  // that learner matches neither test and must be left where they went, not yanked to
+  // the alert the instant it appears.
   useEffect(() => {
     if (!focusSummaryNext.current) return;
     focusSummaryNext.current = false;
-    summaryRef.current?.focus();
+    const active = document.activeElement;
+    if (active === document.body || active === focusAtSend.current) summaryRef.current?.focus();
   }, [summaryErrorSeq]);
 
   // A freshly added row's input takes focus, the same way opening any new field would.
@@ -411,6 +426,10 @@ export function GenerateForm() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    // Taken before anything else runs, which is the only moment it is still guaranteed
+    // to be wherever the learner actually sent from: the submit button for a click, or
+    // wherever a keyboard submit left it.
+    focusAtSend.current = document.activeElement;
     setSummaryError(null);
     setRows((prev) => prev.map((row) => ({ ...row, error: null })));
     setFileRows((prev) => prev.map((row) => ({ ...row, error: null })));

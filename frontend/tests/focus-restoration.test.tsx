@@ -1,5 +1,5 @@
 /**
- * The focus-restoration guard, in the three components that carry it.
+ * The focus-restoration guard, in every component that carries it.
  *
  * The house pattern: the focused control is never disabled mid-request, the buttons
  * are; a real `disabled` blurs the pressed button to the body, so focus has to be
@@ -66,6 +66,7 @@
  */
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { describe, expect, test, vi } from "vitest";
 
 import { ConceptTutor } from "@/components/ConceptTutor";
@@ -77,6 +78,7 @@ import type { TutorOutcome } from "@/lib/api";
 import {
   ApiError,
   deleteCourse,
+  generateFromSources,
   getDeletionPreview,
   getGenerationLimits,
   getTutorConversation,
@@ -84,7 +86,13 @@ import {
   sendTutorMessage,
   setCourseDeadline,
 } from "@/lib/api";
-import type { CourseDeletion, CoursePlan, DayOffRemoval, SourceLimits } from "@/lib/types";
+import type {
+  CourseDeletion,
+  CoursePlan,
+  DayOffRemoval,
+  GenerateResult,
+  SourceLimits,
+} from "@/lib/types";
 
 import { conversation, deferred, plan, tutorRow, turnOutcome } from "./fixtures";
 
@@ -472,9 +480,14 @@ describe("GenerateForm focus restoration", () => {
     max_upload_bytes: 20 * 1024 * 1024,
   };
 
-  async function renderGenerateForm() {
+  async function renderGenerateForm(extra?: ReactNode) {
     vi.mocked(getGenerationLimits).mockResolvedValue(SOURCE_LIMITS);
-    const view = render(<GenerateForm />);
+    const view = render(
+      <>
+        <GenerateForm />
+        {extra}
+      </>,
+    );
     // Flushes the mount-time getGenerationLimits().then(...) inside act, rather than
     // leaving it to resolve as a stray microtask after a test's own assertions run.
     await act(async () => {});
@@ -576,6 +589,67 @@ describe("GenerateForm focus restoration", () => {
         "a byte-identical second failure is still a fresh announcement and must reclaim focus, not leave it wherever the learner moved it since the first",
       ).toHaveFocus(),
     );
+  });
+
+  test("a synchronous failure moves focus to the alert from the submit button itself, not only from the body", async () => {
+    await renderGenerateForm();
+    const submit = screen.getByRole("button", { name: "Generate course" });
+    act(() => submit.focus());
+    // The empty-list guard returns before submitting is ever set, so the button is
+    // never disabled and never blurs itself: activeElement is the button, not the
+    // body. This is the focusAtSend disjunct of the guard, not the body one, and the
+    // two prior "moves to alert" tests above never exercise it because fireEvent
+    // leaves focus on the body by default.
+    expect(submit).toHaveFocus();
+
+    fireEvent.click(submit);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("alert"),
+        "the learner sent from the button and never left it, so the restore must still land on the alert",
+      ).toHaveFocus(),
+    );
+  });
+
+  test("leaves focus alone when the learner moves on during a pending generation", async () => {
+    const generation = deferred<GenerateResult>();
+    vi.mocked(generateFromSources).mockReturnValue(generation.promise);
+    const elsewhereRef = { current: null as HTMLInputElement | null };
+    await renderGenerateForm(
+      <input
+        aria-label="Elsewhere"
+        ref={(node) => {
+          elsewhereRef.current = node;
+        }}
+      />,
+    );
+    const elsewhere = elsewhereRef.current;
+    if (!elsewhere) throw new Error("elsewhere input did not mount");
+
+    fireEvent.click(screen.getByRole("button", { name: "+ Add text" }));
+    fireEvent.change(
+      screen.getByPlaceholderText(
+        "Paste lecture notes, an article, documentation - anything you want to learn.",
+      ),
+      { target: { value: "Some notes to learn from." } },
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Generate course" }));
+
+    // Generation takes 1 to 3 minutes by this form's own copy, plenty of time for the
+    // learner to tab off to something else while it is still pending.
+    act(() => elsewhere.focus());
+    expect(elsewhere).toHaveFocus();
+
+    await act(async () => {
+      generation.reject(new ApiError(500, "Could not reach the server. Is the backend running?"));
+      await generation.promise.catch(() => {});
+    });
+
+    expect(
+      elsewhere,
+      "the learner moved on before the result landed and matches neither focusAtSend nor the body, so the failed restore must leave them where they went",
+    ).toHaveFocus();
   });
 
   test("the skip announcement pluralises its reason clause", async () => {
