@@ -940,6 +940,11 @@ def get_lesson(lesson_id: int, session: Session = Depends(get_session)):
 
     return {
         "id": lesson.id,
+        # The course this lesson belongs to. The route is keyed on the lesson id alone,
+        # so without this a client that nests the lesson under a course in its own URL
+        # has no way to tell that the two disagree, and will happily render lesson 1
+        # under course 2's heading with a 200.
+        "course_id": lesson.module.course_id,
         "title": lesson.title,
         "content": lesson.content,
         "concepts": lesson.concepts,

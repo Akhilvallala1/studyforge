@@ -14,7 +14,8 @@ export default async function LessonPage(
 ) {
   const { courseId, lessonId } = await props.params;
   const id = Number(lessonId);
-  if (!Number.isInteger(id)) notFound();
+  const course = Number(courseId);
+  if (!Number.isInteger(id) || !Number.isInteger(course)) notFound();
 
   let lesson: LessonDetail;
   try {
@@ -23,6 +24,11 @@ export default async function LessonPage(
     if (err instanceof ApiError && err.status === 404) notFound();
     throw err;
   }
+
+  // The API resolves a lesson by its own id, so /courses/2/lessons/1 would otherwise
+  // render course 1's lesson under course 2's breadcrumb with a 200, and "Back to
+  // course" would send the reader somewhere the lesson does not exist.
+  if (lesson.course_id !== course) notFound();
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">

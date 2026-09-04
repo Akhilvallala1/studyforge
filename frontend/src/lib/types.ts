@@ -68,6 +68,9 @@ export interface QuizItem {
 
 export interface LessonDetail {
   id: number;
+  /** The course this lesson belongs to, so a page nesting it under a course id can
+   *  tell that the two disagree. The API is keyed on the lesson id alone. */
+  course_id: number;
   title: string;
   /** Markdown source rendered by the lesson view. */
   content: string;
