@@ -1,6 +1,14 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState, useTransition } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+} from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
@@ -23,9 +31,65 @@ import type { CourseDeletion } from "@/lib/types";
 const NEW_COURSE_ID = "new-course";
 const FIRST_COURSE_ID = "create-first-course";
 
+/**
+ * Where a delete's announcement and focus land once the server has confirmed it.
+ *
+ * "restore-focus" is the list's own entry point: the row unmounts and the surviving
+ * page header is what a learner returns to, so the provider refreshes in place and
+ * moves focus there (see the effect below).
+ *
+ * "navigate-to-list" is for an entry point where the course being deleted IS the page,
+ * such as the course detail view: refreshing that page in place would leave the learner
+ * looking at a course that the server has just told them no longer exists. This
+ * navigates to the course list instead, and hands the announcement and the focus
+ * restore to THAT page's own provider instance via sessionStorage (see
+ * DELETED_TITLE_KEY below), since this component is about to unmount along with
+ * everything it holds in React state.
+ */
+export type AfterDelete = "restore-focus" | "navigate-to-list";
+
+/**
+ * A one-shot handoff for a delete that navigates away from its own provider instance.
+ *
+ * sessionStorage, not a module-level variable, because `router.push` is not guaranteed
+ * to stay a client-side transition (Next can fall back to a full navigation), and a
+ * plain variable would silently lose the announcement across that boundary while
+ * sessionStorage survives it. Read once, on mount, and removed immediately after: a
+ * stray reload of the list page must not replay a deletion that already happened.
+ *
+ * Read through `useSyncExternalStore` below rather than copied into `announcement`
+ * state from a mount effect. A mount effect that read this and called `setAnnouncement`
+ * is exactly the shape `react-hooks/set-state-in-effect` rejects, and its own fix
+ * suggestion is this hook: it hands back the value on the very first render, including
+ * the server-rendered one (via `getServerSnapshot`), instead of paying for an extra
+ * commit to mirror an external source into state that was never going to change again
+ * during this component's lifetime.
+ */
+const DELETED_TITLE_KEY = "studyforge:deleted-course-title";
+
+/**
+ * No real subscription: nothing else in this tab writes this key while a provider is
+ * mounted to read it. The one write that matters (see `onDeleted`'s "navigate-to-list"
+ * branch) always happens before this component's first render, since it is followed
+ * immediately by the `router.push` that mounts it, so there is no later change here
+ * for a subscriber to react to.
+ */
+function subscribeToDeletionHandoff(): () => void {
+  return () => {};
+}
+
+function getDeletionHandoffSnapshot(): string | null {
+  return window.sessionStorage.getItem(DELETED_TITLE_KEY);
+}
+
+/** SSR never carries a pending deletion: sessionStorage is only ever written client-side. */
+function getServerDeletionHandoffSnapshot(): null {
+  return null;
+}
+
 interface DeletionContext {
   /** Called once the server has confirmed the delete. Owns the refresh and the announcement. */
-  onDeleted: (title: string) => void;
+  onDeleted: (title: string, afterDelete: AfterDelete) => void;
   /** True while the list is being refreshed, so a second delete cannot start mid-flight. */
   refreshing: boolean;
 }
@@ -53,12 +117,44 @@ export function CourseDeletionProvider({ children }: { children: ReactNode }) {
   const [refreshing, startTransition] = useTransition();
   const [announcement, setAnnouncement] = useState("");
   const wantsFocus = useRef(false);
+  const handoffTitle = useSyncExternalStore(
+    subscribeToDeletionHandoff,
+    getDeletionHandoffSnapshot,
+    getServerDeletionHandoffSnapshot,
+  );
 
-  function onDeleted(title: string) {
+  function onDeleted(title: string, afterDelete: AfterDelete) {
+    if (afterDelete === "navigate-to-list") {
+      // This instance is about to unmount with the page it belongs to, so neither the
+      // announcement nor the focus intent set here would survive to be read. Stash the
+      // title for the list page's own provider to pick up on mount instead.
+      window.sessionStorage.setItem(DELETED_TITLE_KEY, title);
+      router.push("/courses");
+      return;
+    }
     wantsFocus.current = true;
     setAnnouncement(`${title} deleted.`);
     startTransition(() => router.refresh());
   }
+
+  /**
+   * Consume a deletion handed off by a "navigate-to-list" entry point elsewhere.
+   *
+   * No `setState` here on purpose: the announcement itself is `handoffTitle`, read
+   * above and rendered directly below, so this effect's only job is arming the shared
+   * focus restore and clearing the one-shot key so a stray future reload of this page
+   * cannot replay it.
+   *
+   * Declared before the focus-restore effect below, and that order is load-bearing:
+   * effects run in declaration order within one commit, so setting `wantsFocus.current`
+   * here happens before that effect reads it on this same mount, letting the two share
+   * one restore path instead of this needing a duplicated copy of it.
+   */
+  useEffect(() => {
+    if (!handoffTitle) return;
+    window.sessionStorage.removeItem(DELETED_TITLE_KEY);
+    wantsFocus.current = true;
+  }, [handoffTitle]);
 
   /**
    * Put focus somewhere real once the refreshed list has committed.
@@ -88,9 +184,13 @@ export function CourseDeletionProvider({ children }: { children: ReactNode }) {
         Outside the list on purpose, so deleting the last course does not remove the
         element that has to announce it. Assertive rather than polite: the thing being
         announced is that the row the learner was standing on has gone.
+
+        `announcement` first, not `handoffTitle`: once a later in-page delete sets
+        `announcement`, it must win even though `handoffTitle` is still sitting in
+        sessionStorage's read-through snapshot from the page's own arrival.
       */}
       <div role="status" aria-live="assertive" className="sr-only">
-        {announcement}
+        {announcement || (handoffTitle ? `${handoffTitle} deleted.` : "")}
       </div>
     </Ctx.Provider>
   );
@@ -138,7 +238,16 @@ function previewLines(preview: CourseDeletion): string[] {
  * seriousness rather than conveying it. What carries the weight is the counts, which are
  * real and specific, and which a fixed "are you sure" could not show.
  */
-export function DeleteCourseButton({ courseId, title }: { courseId: number; title: string }) {
+export function DeleteCourseButton({
+  courseId,
+  title,
+  afterDelete = "restore-focus",
+}: {
+  courseId: number;
+  title: string;
+  /** See `AfterDelete` above. Defaults to the list's existing in-place behaviour. */
+  afterDelete?: AfterDelete;
+}) {
   const ctx = useContext(Ctx);
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<CourseDeletion | null>(null);
@@ -256,7 +365,7 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
     setError(null);
     try {
       await deleteCourse(courseId);
-      onDeleted(title);
+      onDeleted(title, afterDelete);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not reach the server.");
       setBusy(false);

@@ -71,7 +71,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { ConceptTutor } from "@/components/ConceptTutor";
 import { DaysOffControl } from "@/components/DaysOffControl";
@@ -120,8 +120,15 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 
 // Both forms refresh the route after a save; the refresh is a no-op here because the
 // server data a refresh would carry is exactly what the props already hold.
+//
+// `push` and `refresh` are hoisted rather than built fresh per `useRouter()` call so
+// the "navigates to the course list" test below can assert on the very mock the
+// component calls: DeleteCourseButton's provider only calls `useRouter()` once per
+// mount, but a factory that returns a new pair of `vi.fn()`s on every call would still
+// leave this file with no stable handle on it.
+const { push, refresh } = vi.hoisted(() => ({ push: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ refresh, push }),
 }));
 
 describe("ConceptTutor focus restoration", () => {
@@ -359,6 +366,15 @@ describe("DeleteCourseButton focus restoration", () => {
     spend_usd: 0.42,
   };
 
+  // Only the "navigate-to-list" tests below read sessionStorage or the hoisted
+  // router mocks; clearing them for every test in this describe rather than only
+  // those keeps the ordering of tests in this file from mattering to any of them.
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    push.mockClear();
+    refresh.mockClear();
+  });
+
   async function renderList(options: { empty?: boolean; kept?: number } = {}) {
     vi.mocked(getDeletionPreview).mockResolvedValue({
       ...preview,
@@ -477,6 +493,95 @@ describe("DeleteCourseButton focus restoration", () => {
       screen.queryByText(/0 more/),
       "a learner with no concepts taught elsewhere should not be told about a category that is empty for them",
     ).not.toBeInTheDocument();
+  });
+
+  /*
+   * The detail page's entry point: `afterDelete="navigate-to-list"`. This is the
+   * regression risk T4 introduces, so it is pinned alongside the list's own restore
+   * tests above rather than instead of them: those five `renderList`-based tests
+   * render `DeleteCourseButton` with no `afterDelete` prop at all, and still pass
+   * unmodified (confirmed by re-running the file against this change), which is what
+   * pins the default staying "restore-focus". Mutation-verified the other direction
+   * too: temporarily flipping the default parameter to "navigate-to-list" turns
+   * every one of those five tests red (each waits on a `New course` or `Create your
+   * first course` link gaining focus, and none ever does once the delete navigates
+   * away instead), while this test is what would catch the default going the other
+   * way, since `push` would then never be called.
+   */
+  test("navigates to the course list instead of restoring focus in place", async () => {
+    vi.mocked(getDeletionPreview).mockResolvedValue(preview);
+    const removal = deferred<CourseDeletion>();
+    vi.mocked(deleteCourse).mockReturnValue(removal.promise);
+
+    render(
+      <CourseDeletionProvider>
+        <DeleteCourseButton
+          courseId={1}
+          title="Organic Chemistry"
+          afterDelete="navigate-to-list"
+        />
+      </CourseDeletionProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const confirm = await screen.findByRole("button", { name: "Delete permanently" });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+
+    await act(async () => removal.resolve(preview));
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/courses"));
+    expect(
+      refresh,
+      "the page being deleted has nowhere sensible to refresh back to",
+    ).not.toHaveBeenCalled();
+    // The announcement and the focus restore both belong to the destination page's
+    // own provider instance now; see the handoff test below for that side of it.
+    expect(window.sessionStorage.getItem("studyforge:deleted-course-title")).toBe(
+      "Organic Chemistry",
+    );
+  });
+
+  /*
+   * The arrival side of the same handoff, exercised on a fresh provider instance the
+   * way the real list page mounts one after `router.push`: the announcement comes
+   * back from `useSyncExternalStore`'s very first read of the stashed title, and the
+   * focus restore is the SAME effect the in-place delete above uses, armed by the
+   * mount effect that reads the handoff instead of by `onDeleted`.
+   *
+   * Mutation-verified: removing `wantsFocus.current = true` from the handoff effect
+   * in DeleteCourseButton.tsx makes the focus assertion below fail (the link never
+   * gains focus); removing the `if (!handoffTitle) return` guard's window.sessionStorage
+   * write is not otherwise reachable here, since a mount with nothing stashed renders
+   * an empty status region regardless, so this test's coverage of the effect starts
+   * from the handoff being present, not from proving the guard's negative case.
+   */
+  test("announces and moves focus on arrival after a navigate-to-list delete elsewhere", async () => {
+    window.sessionStorage.setItem("studyforge:deleted-course-title", "Organic Chemistry");
+
+    render(
+      <CourseDeletionProvider>
+        <a id="new-course" href="#top">
+          New course
+        </a>
+      </CourseDeletionProvider>,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("status"),
+        "a learner who just navigated here from the detail page must be told what happened, even though the delete itself happened on a page that no longer exists",
+      ).toHaveTextContent("Organic Chemistry deleted."),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("link", { name: "New course" }),
+        "arriving here left focus on the body (a fresh navigation, not a click within this page), so the restore fires exactly as it would for an in-place delete",
+      ).toHaveFocus(),
+    );
+    expect(
+      window.sessionStorage.getItem("studyforge:deleted-course-title"),
+      "consumed once, so a later reload of this same page cannot replay it",
+    ).toBeNull();
   });
 });
 

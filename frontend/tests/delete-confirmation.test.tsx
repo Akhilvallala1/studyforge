@@ -55,8 +55,13 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   deleteCourse: vi.fn(),
 }));
 
+// Hoisted so the "navigate-to-list" test below can assert on the same `push` the
+// component calls: a fresh `{ refresh: vi.fn(), push: vi.fn() }` per `useRouter()`
+// call (the shape every other test in this file relies on for its own, unrelated
+// reasons) would hand this test a mock it never sees the component touch.
+const { push, refresh } = vi.hoisted(() => ({ push: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ refresh, push }),
 }));
 
 const preview: CourseDeletion = {
@@ -73,7 +78,10 @@ const preview: CourseDeletion = {
 };
 
 describe("delete confirmation before the preview lands", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.sessionStorage.clear();
+  });
 
   test("refuses the press while loading, then honours it once the preview is there", async () => {
     const previewCall = deferred<CourseDeletion>();
@@ -440,6 +448,39 @@ describe("delete confirmation before the preview lands", () => {
     await act(async () => second.resolve(preview));
     await waitFor(() =>
       expect(screen.getByText(/8 of them completed/)).toBeInTheDocument(),
+    );
+  });
+
+  /*
+   * The detail page's entry point, `afterDelete="navigate-to-list"`. Preview and
+   * Cancel are shared code with the list's own trigger and already covered above;
+   * this pins the one thing that differs once a delete actually confirms: no
+   * `router.refresh`, and a `router.push` to the list instead, carrying the title
+   * for that page's own provider to pick up (see the focus-restoration suite for
+   * the arrival side of that handoff).
+   */
+  test("navigates to the course list instead of refreshing in place", async () => {
+    vi.mocked(getDeletionPreview).mockResolvedValue(preview);
+    vi.mocked(deleteCourse).mockResolvedValue(preview);
+
+    render(
+      <CourseDeletionProvider>
+        <DeleteCourseButton courseId={1} title="Organic Chemistry" afterDelete="navigate-to-list" />
+      </CourseDeletionProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const confirm = await screen.findByRole("button", { name: "Delete permanently" });
+    await waitFor(() => expect(confirm).toBeEnabled());
+
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/courses"));
+    expect(
+      refresh,
+      "the row this deletes is the whole page; refreshing it in place is the list's behaviour, not this one's",
+    ).not.toHaveBeenCalled();
+    expect(window.sessionStorage.getItem("studyforge:deleted-course-title")).toBe(
+      "Organic Chemistry",
     );
   });
 });
