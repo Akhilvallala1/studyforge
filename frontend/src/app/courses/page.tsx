@@ -10,7 +10,7 @@ import type { CourseSummary } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-/**
+/*
  * 200-with-inline-error, not a thrown 500, and this decision is shared by the other two
  * pages in this batch (courses/[courseId], lessons/[lessonId]) plus the two pages that
  * already worked this way before this change (/ and /usage). A bare re-thrown fetch
@@ -72,11 +72,11 @@ export default async function CoursesPage() {
           title="StudyForge"
           description="Turn any material into a structured course with quizzes."
           actions={
-            // Suppressed on error too: a load failure means we do not reliably know
-            // whether there are zero courses or many, so neither "new course" id below
-            // is a truthful thing to offer, and rendering one here would put it on
-            // screen alongside the empty-state link that error branch also skips.
-            !loadError &&
+            // `courses` stays `[]` on the error path (see the try/catch above: it is
+            // never assigned there), so `courses.length > 0` is already false whenever
+            // loadError is set. That is what keeps #new-course off screen during a load
+            // failure, on its own, with no separate `!loadError` check needed here: a
+            // second guard for the same outcome was dead code, so it has been removed.
             courses.length > 0 && (
               <Link id="new-course" href="/courses/new" className={PRIMARY_LINK_CLASSES}>
                 New course

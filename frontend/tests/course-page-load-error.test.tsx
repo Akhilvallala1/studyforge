@@ -61,6 +61,14 @@ describe("course page load failure", () => {
     expect(screen.getByText("Internal server error")).toBeInTheDocument();
   });
 
+  test("renders a heading on the error branch, so the page is not left without one", async () => {
+    vi.mocked(getCourse).mockRejectedValue(new ApiError(500, "Internal server error"));
+
+    render(await renderPage("1"));
+
+    expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
+  });
+
   test("still calls notFound() on a genuine 404, rather than showing the friendly message", async () => {
     vi.mocked(getCourse).mockRejectedValue(new ApiError(404, "Course not found"));
 

@@ -56,6 +56,17 @@ describe("courses page load failure", () => {
 
     render(await CoursesPage());
 
+    // Both assertions currently hold, but for different reasons and not equally
+    // load-bearing. #new-course is null because `courses` stays at its `[]` default on
+    // this path (it is only ever assigned in the try block, which threw) and its guard
+    // is `courses.length > 0`; this line is a regression guard on that default staying
+    // `[]`, NOT proof of any error-specific suppression, and it would stay green even if
+    // the error branch below rendered no error-specific markup at all. #create-first-course
+    // is the one that actually pins the error-vs-empty distinction: the ternary below
+    // renders ErrorState (not EmptyState) whenever loadError is set, and
+    // courses-page-load-error's own success-path sibling tests, plus
+    // courses-page-contract.test.tsx, are what confirm this id shows up once the list is
+    // genuinely empty instead.
     expect(document.querySelector("#new-course")).toBeNull();
     expect(document.querySelector("#create-first-course")).toBeNull();
   });

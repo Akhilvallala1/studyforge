@@ -40,6 +40,14 @@ export default async function CoursePage(props: PageProps<"/courses/[courseId]">
     return (
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
         {BACK_TO_COURSES_LINK}
+        {/*
+          The failed fetch means we never learned the real course title, so PageHeader
+          gets the generic "Course" rather than leaving the page with no h1 at all: a
+          screen reader landing here previously had nothing to announce as the page's
+          heading, unlike the courses list, whose PageHeader renders unconditionally
+          before its own error/empty/list ternary.
+        */}
+        <PageHeader className="mt-4" title="Course" />
         <ErrorState className="mt-8" message={message} />
       </main>
     );
