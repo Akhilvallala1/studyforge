@@ -1,9 +1,24 @@
 import Link from "next/link";
 
 import { CourseDeletionProvider, DeleteCourseButton } from "@/components/DeleteCourseButton";
+import { Card } from "@/components/ui/Card";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { listCourses } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Shared with both "new course" entry points below rather than routed through Button:
+ * Button only wraps a native <button>, and both of these have to be real links so the
+ * empty-list focus restore (see DeleteCourseButton) can find them by id and Next can
+ * prefetch the route. The string is Button's own BASE + primary + md, kept in sync by
+ * hand until a link-flavoured variant of that primitive exists.
+ */
+const PRIMARY_LINK_CLASSES =
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control bg-fill " +
+  "px-4 py-2 text-ui font-medium text-on-fill transition-colors duration-fast ease-standard " +
+  "hover:bg-fill-hover";
 
 /**
  * THE CARD IS NO LONGER ONE BIG LINK, and it had to stop being one. Delete is a button,
@@ -23,52 +38,42 @@ export default async function CoursesPage() {
   return (
     <CourseDeletionProvider>
       <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-        <div className="mb-10 flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-semibold tracking-tight">StudyForge</h1>
-            <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-              Turn any material into a structured course with quizzes.
-            </p>
-          </div>
-          {courses.length > 0 && (
-            <Link
-              id="new-course"
-              href="/courses/new"
-              className="shrink-0 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-            >
-              New course
-            </Link>
-          )}
-        </div>
+        <PageHeader
+          className="mb-10"
+          title="StudyForge"
+          description="Turn any material into a structured course with quizzes."
+          actions={
+            courses.length > 0 && (
+              <Link id="new-course" href="/courses/new" className={PRIMARY_LINK_CLASSES}>
+                New course
+              </Link>
+            )
+          }
+        />
 
         {courses.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-zinc-300 px-6 py-16 text-center dark:border-zinc-700">
-            <p className="text-lg font-medium">No courses yet</p>
-            <p className="mt-1 text-zinc-600 dark:text-zinc-400">
-              Paste text, drop in a URL, or upload a PDF to get started.
-            </p>
-            <Link
-              id="create-first-course"
-              href="/courses/new"
-              className="mt-6 inline-block rounded-lg bg-zinc-900 px-5 py-2.5 font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-            >
-              Create your first course
-            </Link>
-          </div>
+          <EmptyState
+            title="No courses yet"
+            description="Paste text, drop in a URL, or upload a PDF to get started."
+            action={
+              <Link id="create-first-course" href="/courses/new" className={PRIMARY_LINK_CLASSES}>
+                Create your first course
+              </Link>
+            }
+          />
         ) : (
           <ul className="flex flex-col gap-4">
             {courses.map((course) => (
-              <li
-                key={course.id}
-                className="rounded-xl border border-zinc-200 p-5 transition-colors hover:border-zinc-400 dark:border-zinc-800 dark:hover:border-zinc-600"
-              >
-                <Link href={`/courses/${course.id}`} className="block">
-                  <h2 className="text-lg font-medium">{course.title}</h2>
-                  <p className="mt-1 line-clamp-2 text-sm text-zinc-600 dark:text-zinc-400">
-                    {course.description}
-                  </p>
-                </Link>
-                <DeleteCourseButton courseId={course.id} title={course.title} />
+              <li key={course.id}>
+                <Card className="transition-colors duration-fast ease-standard hover:border-line-hover">
+                  <Link href={`/courses/${course.id}`} className="block">
+                    <h2 className="text-subtitle">{course.title}</h2>
+                    <p className="mt-1 line-clamp-2 text-ui text-ink-muted">
+                      {course.description}
+                    </p>
+                  </Link>
+                  <DeleteCourseButton courseId={course.id} title={course.title} />
+                </Card>
               </li>
             ))}
           </ul>
