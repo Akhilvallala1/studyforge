@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ConceptMap, MasteryLegend } from "@/components/ConceptMap";
 import { CourseTabs } from "@/components/CourseTabs";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ApiError, getCourseConcepts } from "@/lib/api";
 import type { CourseConcepts, WeakestConcept } from "@/lib/types";
@@ -31,6 +32,15 @@ function ConceptsEmptyState() {
   );
 }
 
+const BACK_TO_COURSES_LINK = (
+  <Link
+    href="/courses"
+    className="text-small text-ink-muted transition-colors duration-fast ease-standard hover:text-ink"
+  >
+    &larr; All courses
+  </Link>
+);
+
 export default async function CourseConceptsPage(
   props: PageProps<"/courses/[courseId]/concepts">,
 ) {
@@ -42,8 +52,40 @@ export default async function CourseConceptsPage(
   try {
     data = await getCourseConcepts(id);
   } catch (err) {
+    // This is the last of the three re-throwing pages this PR converts, and the order
+    // matters for reading the sentence: on main, /courses/1, its lesson pages and this
+    // page ALL re-threw and all served a blank Next 500, so the contrast being fixed is not
+    // "the course page was friendly and this one was not". It is that CourseTabs links
+    // here as a sibling tab, so converting the course page without this one would have
+    // created that split one click wide. A genuine 404 still 404s; everything else
+    // becomes the same inline message the other seven fetching pages show. See
+    // courses/page.tsx for the 200-vs-500 reasoning.
     if (err instanceof ApiError && err.status === 404) notFound();
-    throw err;
+    const message =
+      err instanceof ApiError ? err.message : "Could not reach the server. Is the backend running?";
+    return (
+      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
+        {BACK_TO_COURSES_LINK}
+        {/*
+          The fetch failed, so the real course title was never learned and PageHeader gets
+          the generic "Concept map" instead of the page having no h1 at all. It is the same
+          primitive the success branch below uses: the T8 restyle (PR #34) moved that branch
+          onto PageHeader before this one merged, so on THIS page the two branches differ in
+          their heading text and in nothing else.
+
+          That last part is specific to this page, so do not generalise it. Every error
+          branch on the three id-taking pages uses PageHeader with a generic title (the
+          courses LIST page is not one of them: its PageHeader sits outside the ternary
+          and carries the real title "StudyForge", with ErrorState alone inside). But the
+          LESSON page's success branch still hand-rolls its own h1 next to
+          MarkCompleteButton, and its own comment says so: there, the two branches
+          differ in their primitive as well as
+          their text.
+        */}
+        <PageHeader className="mt-4" title="Concept map" />
+        <ErrorState className="mt-8" message={message} />
+      </main>
+    );
   }
 
   const { concepts, lessons, weakest } = data;
@@ -51,12 +93,7 @@ export default async function CourseConceptsPage(
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-      <Link
-        href="/courses"
-        className="text-small text-ink-muted transition-colors duration-fast ease-standard hover:text-ink"
-      >
-        &larr; All courses
-      </Link>
+      {BACK_TO_COURSES_LINK}
 
       <PageHeader className="mt-4" title={data.title} />
 

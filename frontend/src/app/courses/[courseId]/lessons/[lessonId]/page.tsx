@@ -4,10 +4,29 @@ import { notFound } from "next/navigation";
 import { LessonMarkdown } from "@/components/LessonMarkdown";
 import { MarkCompleteButton } from "@/components/MarkCompleteButton";
 import { QuizSection } from "@/components/QuizSection";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { ApiError, getLesson } from "@/lib/api";
 import type { LessonDetail } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Shared by both the error branch and the success path below. Previously the identical
+ * JSX was pasted verbatim in both places; factored out here the same way the sibling
+ * course page factored its own back link into BACK_TO_COURSES_LINK, so the two copies
+ * cannot silently drift apart from each other again.
+ */
+function backToCourseLink(courseId: string) {
+  return (
+    <Link
+      href={`/courses/${courseId}`}
+      className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+    >
+      &larr; Back to course
+    </Link>
+  );
+}
 
 export default async function LessonPage(
   props: PageProps<"/courses/[courseId]/lessons/[lessonId]">,
@@ -15,14 +34,33 @@ export default async function LessonPage(
   const { courseId, lessonId } = await props.params;
   const id = Number(lessonId);
   const course = Number(courseId);
+  // Preserved exactly: non-numeric ids are a genuine 404, not a backend failure. See
+  // courses/page.tsx for the 200-vs-500 reasoning this page shares.
   if (!Number.isInteger(id) || !Number.isInteger(course)) notFound();
 
   let lesson: LessonDetail;
   try {
     lesson = await getLesson(id);
   } catch (err) {
+    // A genuine 404 (lesson does not exist) must still 404. Everything else, backend
+    // down, network failure, a 500 from the API, becomes the inline friendly message
+    // instead of propagating into Next's generic error screen.
     if (err instanceof ApiError && err.status === 404) notFound();
-    throw err;
+    const message =
+      err instanceof ApiError ? err.message : "Could not reach the server. Is the backend running?";
+    return (
+      <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
+        {backToCourseLink(courseId)}
+        {/*
+          The failed fetch means we never learned the real lesson title, so PageHeader
+          gets the generic "Lesson" rather than leaving the page with no h1 at all. The
+          success path below keeps its own hand-rolled <h1>{lesson.title}</h1>; that is
+          unchanged, since it has a real title to show and this branch does not.
+        */}
+        <PageHeader className="mt-4" title="Lesson" />
+        <ErrorState className="mt-8" message={message} />
+      </main>
+    );
   }
 
   // The API resolves a lesson by its own id, so /courses/2/lessons/1 would otherwise
@@ -50,12 +88,7 @@ export default async function LessonPage(
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
-      <Link
-        href={`/courses/${courseId}`}
-        className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
-      >
-        &larr; Back to course
-      </Link>
+      {backToCourseLink(courseId)}
 
       <div className="mt-4 flex items-start justify-between gap-4">
         <h1 className="text-3xl font-semibold tracking-tight">{lesson.title}</h1>
