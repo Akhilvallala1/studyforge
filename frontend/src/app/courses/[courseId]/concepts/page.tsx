@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ConceptMap, MasteryLegend } from "@/components/ConceptMap";
 import { CourseTabs } from "@/components/CourseTabs";
+import { PageHeader } from "@/components/ui/PageHeader";
 import { ApiError, getCourseConcepts } from "@/lib/api";
 import type { CourseConcepts, WeakestConcept } from "@/lib/types";
 
@@ -23,7 +24,7 @@ function weakestExplanation(weakest: WeakestConcept): string {
 
 function ConceptsEmptyState() {
   return (
-    <p className="mt-5 rounded-lg border border-zinc-200 px-4 py-6 text-sm text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+    <p className="mt-5 rounded-surface border border-line px-4 py-6 text-ui text-ink-muted">
       This course has no concepts to map yet. Concepts are listed by each lesson when the course
       is generated, so a map appears here as soon as its lessons name any.
     </p>
@@ -52,15 +53,16 @@ export default async function CourseConceptsPage(
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
       <Link
         href="/courses"
-        className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+        className="text-small text-ink-muted transition-colors duration-fast ease-standard hover:text-ink"
       >
         &larr; All courses
       </Link>
-      <h1 className="mt-4 text-3xl font-semibold tracking-tight">{data.title}</h1>
+
+      <PageHeader className="mt-4" title={data.title} />
 
       <CourseTabs courseId={data.course_id} active="concepts" />
 
-      <p className="mt-5 max-w-xl text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+      <p className="mt-5 max-w-xl text-ui text-ink-muted">
         Concepts grouped by the lesson that teaches them, sized by how often they come up and
         filled by your current mastery. Reading left to right is the order the course teaches
         them.
@@ -85,7 +87,7 @@ export default async function CourseConceptsPage(
           <MasteryLegend />
 
           {weakest ? (
-            <section className="mt-6 flex items-center justify-between gap-5 rounded-lg border border-zinc-200 px-5 py-4 dark:border-zinc-800">
+            <section className="mt-6 flex items-center justify-between gap-5 rounded-surface border border-line px-5 py-4">
               <div>
                 {/*
                   Scoped in the heading, not only in the sentence under it. Only
@@ -93,28 +95,33 @@ export default async function CourseConceptsPage(
                   unqualified would claim a comparison across the whole course that was
                   never made.
                 */}
-                <h2 className="text-[15px] font-semibold">
+                <h2 className="text-subtitle">
                   {weakest.concept_label} is the weakest concept you have studied so far
                 </h2>
-                <p className="mt-1 text-[13px] text-zinc-600 dark:text-zinc-400">
-                  {weakestExplanation(weakest)}
-                </p>
+                <p className="mt-1 text-small text-ink-muted">{weakestExplanation(weakest)}</p>
               </div>
               <Link
                 href={`/courses/${data.course_id}/lessons/${weakest.lesson_id}`}
-                className="shrink-0 whitespace-nowrap rounded-lg bg-zinc-900 px-4 py-2 text-[13px] font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                className="shrink-0 whitespace-nowrap rounded-control bg-fill px-4 py-2 text-small font-medium text-on-fill transition-colors duration-fast ease-standard hover:bg-fill-hover"
               >
                 Study this
               </Link>
             </section>
           ) : (
-            <p className="mt-6 rounded-lg border border-zinc-200 px-5 py-4 text-[13px] text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+            <p className="mt-6 rounded-surface border border-line px-5 py-4 text-small text-ink-muted">
               Nothing here has been scheduled for review yet, so there is no weakest concept to
               name. Finish a lesson and answer its quiz, and its concepts start earning a colour.
             </p>
           )}
 
-          <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-500">
+          {/*
+            ink-muted, not ink-subtle. The raw classes here were text-zinc-500 in both modes,
+            measuring 4.83:1 light and 4.10:1 dark, so the dark value was under the 4.5 floor
+            this text size needs. ink-muted takes both to 7.72:1 and 7.55:1, an improvement in
+            BOTH modes rather than only dark. Do not "simplify" this to ink-subtle: it is the
+            lower-contrast of the two ink tokens, and globals.css carries its measured figures.
+          */}
+          <p className="mt-4 text-xs text-ink-muted">
             {studied} of {concepts.length} concepts have been studied at least once.
           </p>
         </>

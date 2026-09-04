@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ReviewSession } from "@/components/ReviewSession";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { ApiError, getReviewQueue } from "@/lib/api";
 import type { ReviewQueue } from "@/lib/types";
 
@@ -23,15 +24,13 @@ export default async function ReviewPage() {
     return (
       <main className="mx-auto w-full max-w-[720px] flex-1 px-6 py-14">
         <h1 className="text-xl font-semibold">Review session</h1>
-        <p
-          role="alert"
-          className="mt-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-        >
-          {message}
-        </p>
+        {/* title="" suppresses ErrorState's default "Something went wrong" heading: this
+            screen only ever showed the one message, and the restyle must not add text
+            that was not there before. */}
+        <ErrorState title="" message={message} className="mt-4" />
         <Link
           href="/"
-          className="mt-6 inline-block text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+          className="mt-6 inline-block text-small text-ink-muted transition-colors duration-fast ease-standard hover:text-ink"
         >
           &larr; Back to Today
         </Link>

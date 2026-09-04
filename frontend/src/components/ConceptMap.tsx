@@ -252,7 +252,7 @@ export function ConceptMap({
         role="group"
         aria-label={title}
         tabIndex={0}
-        className="scroll-hint-x mx-auto mt-5 w-fit max-w-full overflow-x-auto rounded-lg border border-zinc-200 p-2 dark:border-zinc-800"
+        className="scroll-hint-x mx-auto mt-5 w-fit max-w-full overflow-x-auto rounded-surface border border-line p-2"
       >
         <svg
           role="img"
@@ -403,7 +403,7 @@ export function MasteryLegend() {
         return (
           <li
             key={bucket}
-            className="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400"
+            className="flex items-center gap-2 text-xs text-ink-muted"
           >
             <span
               aria-hidden

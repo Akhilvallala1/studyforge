@@ -3,16 +3,39 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import { Callout } from "@/components/ui/Callout";
 import { ApiError, answerReviewCard, rateReviewCard } from "@/lib/api";
 import type { RatingName, RatingPreview, ReviewCard, ReviewQueue } from "@/lib/types";
 
-/** The four buttons, in rating order, with the colour each carries in the design. */
+/**
+ * The four buttons, in rating order, with the colour each carries in the design.
+ *
+ * The status tokens (danger/warning/success), not raw Tailwind colours: globals.css's
+ * comment on `--sf-success`/`--sf-warning`/`--sf-danger` names "the review rating
+ * colours" directly as the existing use these tones were already carrying, so this is
+ * the one place the token comment is describing.
+ */
 const RATING_STYLES: Record<RatingName, { title: string; className: string }> = {
-  again: { title: "Again", className: "text-red-700 dark:text-red-400" },
-  hard: { title: "Hard", className: "text-amber-700 dark:text-amber-500" },
+  again: { title: "Again", className: "text-danger" },
+  hard: { title: "Hard", className: "text-warning" },
   good: { title: "Good", className: "" },
-  easy: { title: "Easy", className: "text-emerald-700 dark:text-emerald-500" },
+  easy: { title: "Easy", className: "text-success" },
 };
+
+/**
+ * Byte-identical to courses/page.tsx's constant of the same name, which is in turn
+ * Button's BASE + primary + md minus its two `disabled:` utilities, an anchor having no
+ * disabled state to style. A Link cannot use Button (it wraps a native <button> only),
+ * so the classes are restated, and the two copies are kept in sync BY HAND until
+ * a link-flavoured variant of the primitive exists. Keep them identical: two constants
+ * sharing a name while rendering different geometry is worse than either shape alone,
+ * because the next person to dedupe them silently resizes one set of call sites.
+ * Margin is deliberately not in here; it belongs to the layout, not to the button.
+ */
+const PRIMARY_LINK_CLASSES =
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control bg-fill " +
+  "px-4 py-2 text-ui font-medium text-on-fill transition-colors duration-fast ease-standard " +
+  "hover:bg-fill-hover";
 
 /**
  * What the learner has done with the current card.
@@ -159,12 +182,12 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
   }
 
   return (
-    <div className="flex flex-1 flex-col bg-zinc-50 dark:bg-zinc-950">
-      <div className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="flex flex-1 flex-col bg-surface-sunken">
+      <div className="border-b border-line bg-surface">
         <div className="mx-auto flex w-full max-w-4xl items-center justify-between gap-5 px-6 py-3">
           <Link
             href="/"
-            className="text-sm font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+            className="text-small font-medium text-ink-muted transition-colors duration-fast ease-standard hover:text-ink"
           >
             End session
           </Link>
@@ -175,54 +198,48 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
             aria-valuemax={total}
             aria-valuenow={done}
             aria-valuetext={`${done} of ${total} cards reviewed`}
-            className="h-1 max-w-[420px] flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
+            className="h-1 max-w-[420px] flex-1 overflow-hidden rounded-full bg-line"
           >
             <div
-              className="h-full bg-zinc-900 transition-[width] dark:bg-zinc-100"
+              className="h-full bg-fill transition-[width]"
               style={{ width: `${percent}%` }}
             />
           </div>
-          <span className="whitespace-nowrap font-mono text-[13px] tabular-nums text-zinc-500 dark:text-zinc-400">
+          <span className="whitespace-nowrap font-mono text-small tabular-nums text-ink-muted">
             {total === 0 ? "0 / 0" : `${position} / ${total}`}
           </span>
         </div>
       </div>
 
       {notes.length > 0 && (
-        <p className="mx-auto w-full max-w-4xl px-6 pt-3 text-[13px] text-zinc-500 dark:text-zinc-400">
+        <p className="mx-auto w-full max-w-4xl px-6 pt-3 text-small text-ink-muted">
           {notes.join(" · ")}
         </p>
       )}
 
       <div className="mx-auto w-full max-w-[720px] flex-1 px-6 py-14">
         {total === 0 && (
-          <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="rounded-surface border border-line bg-surface p-8 text-center">
             <p className="text-lg font-medium">Nothing to review right now</p>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            <p className="mt-1 text-ui text-ink-muted">
               Concepts come back as their recall probability drops. Finish a lesson to put new
               ones into the schedule.
             </p>
-            <Link
-              href="/"
-              className="mt-6 inline-block rounded-lg bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-            >
+            <Link href="/" className={`mt-6 ${PRIMARY_LINK_CLASSES}`}>
               Back to Today
             </Link>
           </div>
         )}
 
         {total > 0 && finished && (
-          <div className="rounded-lg border border-zinc-200 bg-white p-8 text-center dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="rounded-surface border border-line bg-surface p-8 text-center">
             <p className="text-lg font-medium">Session complete</p>
-            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            <p className="mt-1 text-ui text-ink-muted">
               {total} {total === 1 ? "concept" : "concepts"} reviewed and rescheduled.
               {queue.due_total > queue.cards.length &&
                 ` ${queue.due_total - queue.cards.length} more are still due: start another session when you are ready.`}
             </p>
-            <Link
-              href="/"
-              className="mt-6 inline-block rounded-lg bg-zinc-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-            >
+            <Link href="/" className={`mt-6 ${PRIMARY_LINK_CLASSES}`}>
               Back to Today
             </Link>
           </div>
@@ -231,20 +248,29 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
         {card && item && !finished && (
           <>
             <div className="flex flex-wrap items-center gap-2.5">
-              <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-zinc-500 dark:text-zinc-400">
+              <span className="font-mono text-micro uppercase text-ink-muted">
                 Concept
               </span>
-              <span className="text-[13px] text-zinc-700 dark:text-zinc-300">
-                {card.concept_label}
-              </span>
+              <span className="text-small text-ink">{card.concept_label}</span>
               {card.lapses > 0 && (
-                <span className="rounded-full bg-amber-100 px-2.5 py-[3px] text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                /*
+                  Not the Badge primitive, and not `text-micro` either. Badge uppercases
+                  its children, which reads correctly for a one-word status but renders
+                  this four-word phrase as MISSED LAST TIME, a copy change the restyle
+                  was not supposed to make. `text-micro` is the size Badge uses, but the
+                  scale comment in globals.css states it is uppercase and tracked out by
+                  convention, and its 0.04em tracking is baked into the theme variable,
+                  so it is equally wrong for a sentence-case phrase. `text-small` is the
+                  nearest size that carries no case convention. Colour and pill geometry
+                  stay Badge's so the two still read as siblings.
+                */
+                <span className="inline-flex items-center rounded-full bg-warning-surface px-2 py-0.5 text-small font-medium text-warning">
                   Missed last time
                 </span>
               )}
             </div>
 
-            <div className="mt-3.5 rounded-lg border border-zinc-200 bg-white p-8 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="mt-3.5 rounded-surface border border-line bg-surface p-8">
               <p className="text-xl font-medium leading-[1.45]">{item.question}</p>
 
               {phase.kind === "answering" && (
@@ -285,7 +311,15 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
                           }
                         }}
                         placeholder="Your answer"
-                        className="w-full rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-500 disabled:opacity-60 dark:border-zinc-700"
+                        /*
+                          No `outline-none` here, deliberately, where the raw version had one:
+                          globals.css's app-wide `:focus-visible` rule is unlayered, and Tailwind
+                          wraps its own utilities in `@layer utilities`, so an unlayered rule
+                          always wins over a layered one regardless of either side's specificity.
+                          Removing this utility changes no rendered pixel; it only stops shipping
+                          a rule that could never have won.
+                        */
+                        className="w-full rounded-control border border-line-strong bg-transparent px-3 py-2 text-ui text-ink transition-colors duration-fast ease-standard hover:border-line-hover focus:border-line-hover disabled:opacity-60"
                       />
                     </>
                   )}
@@ -294,7 +328,7 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
                     type="button"
                     onClick={() => void submitAnswer()}
                     disabled={busy}
-                    className="mt-4 rounded-lg bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-60 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+                    className="mt-4 rounded-control bg-fill px-5 py-2 text-ui font-medium text-on-fill transition-colors duration-fast ease-standard hover:bg-fill-hover disabled:opacity-60"
                   >
                     {busy ? "Checking…" : "Show answer"}
                   </button>
@@ -311,28 +345,26 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
                 {phase.kind !== "answering" && (
                   <>
                   {phase.alreadyAnswered ? (
-                    <div className="mt-6 border-t border-zinc-100 pt-5 dark:border-zinc-800">
-                      <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                    <div className="mt-6 border-t border-line pt-5">
+                      <Callout tone="warning">
                         You already answered this question earlier in this review, so it was not
                         recorded again. Rate how well you recalled it and the card will be
                         rescheduled.
-                      </p>
+                      </Callout>
                     </div>
                   ) : (
                     <>
-                      <div className="mt-6 border-t border-zinc-100 pt-5 dark:border-zinc-800">
-                        <p className="mb-2.5 font-mono text-xs uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">
+                      <div className="mt-6 border-t border-line pt-5">
+                        <p className="mb-2.5 font-mono text-micro uppercase text-ink-muted">
                           Your answer
                         </p>
-                        <p className="text-[15px] leading-relaxed text-zinc-800 dark:text-zinc-200">
-                          {phase.submitted}
-                        </p>
+                        <p className="text-ui leading-relaxed text-ink">{phase.submitted}</p>
                       </div>
-                      <div className="mt-5 border-t border-zinc-100 pt-5 dark:border-zinc-800">
-                        <p className="mb-2.5 font-mono text-xs uppercase tracking-[0.06em] text-zinc-500 dark:text-zinc-400">
+                      <div className="mt-5 border-t border-line pt-5">
+                        <p className="mb-2.5 font-mono text-micro uppercase text-ink-muted">
                           Reference answer
                         </p>
-                        <p className="text-[15px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+                        <p className="text-ui leading-relaxed text-ink-muted">
                           {phase.expected}
                         </p>
                       </div>
@@ -344,17 +376,14 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
             </div>
 
             {error && (
-              <p
-                role="alert"
-                className="mt-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-              >
+              <Callout tone="danger" role="alert" className="mt-4">
                 {error}
-              </p>
+              </Callout>
             )}
 
             {phase.kind === "rating" && (
               <>
-                <p className="mb-3 mt-6 text-center text-[13px] text-zinc-500 dark:text-zinc-400">
+                <p className="mb-3 mt-6 text-center text-small text-ink-muted">
                   How well did you recall it?
                 </p>
                 <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
@@ -377,10 +406,10 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
                         aria-label={`${style.title}, next review in ${option.label}${
                           suggested ? ", suggested" : ""
                         }`}
-                        className={`rounded-lg bg-white text-center transition-colors disabled:opacity-60 dark:bg-zinc-900 ${
+                        className={`rounded-control bg-surface text-center transition-colors duration-fast ease-standard disabled:opacity-60 ${
                           suggested
-                            ? "border-2 border-zinc-900 px-2.5 py-[13px] dark:border-zinc-100"
-                            : "border border-zinc-200 px-2.5 py-3.5 hover:border-zinc-400 dark:border-zinc-800 dark:hover:border-zinc-600"
+                            ? "border-2 border-ink px-2.5 py-[13px]"
+                            : "border border-line px-2.5 py-3.5 hover:border-line-hover"
                         }`}
                       >
                         <span className={`block text-sm font-semibold ${style.className}`}>
@@ -389,17 +418,22 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
                         {/* Rendered verbatim: the server computes it from the real
                             scheduler transition with fuzzing off, so two buttons
                             showing the same label are both telling the truth. */}
-                        <span
-                          aria-hidden
-                          className="mt-1 block font-mono text-[11px] text-zinc-500 dark:text-zinc-400"
-                        >
+                        <span aria-hidden className="mt-1 block font-mono text-[11px] text-ink-muted">
                           {option.label}
                         </span>
                       </button>
                     );
                   })}
                 </div>
-                <p className="mt-4.5 text-center text-xs leading-relaxed text-zinc-400 dark:text-zinc-500">
+                {/*
+                  ink-muted, not ink-subtle, even though this is the most de-emphasised text on
+                  the screen. The raw classes were text-zinc-400 dark:text-zinc-500, and the
+                  LIGHT value was the bad one: zinc-400 on white measures 2.62:1, a clear AA
+                  failure at this size (dark's zinc-500 measured 4.10:1, also under the floor).
+                  ink-muted takes them to 7.72:1 light and 7.55:1 dark. Do not "simplify" this
+                  to ink-subtle: it is the lower-contrast of the two ink tokens.
+                */}
+                <p className="mt-4.5 text-center text-xs leading-relaxed text-ink-muted">
                   Intervals come from FSRS using your own history on this concept, and bunch
                   closer together than you might expect.
                   <br />
