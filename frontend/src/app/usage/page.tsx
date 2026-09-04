@@ -127,7 +127,7 @@ export default async function UsagePage() {
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full min-w-[560px] border-collapse text-left text-ui">
                   <thead>
-                    <tr className="border-b border-line text-micro uppercase text-ink-subtle">
+                    <tr className="border-b border-line-strong text-micro uppercase text-ink-subtle">
                       <th scope="col" className="py-2 pr-4 font-medium">
                         Attributed to
                       </th>
@@ -199,7 +199,7 @@ export default async function UsagePage() {
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full min-w-[720px] border-collapse text-left text-ui">
                   <thead>
-                    <tr className="border-b border-line text-micro uppercase text-ink-subtle">
+                    <tr className="border-b border-line-strong text-micro uppercase text-ink-subtle">
                       <th scope="col" className="py-2 pr-4 font-medium">
                         Time
                       </th>

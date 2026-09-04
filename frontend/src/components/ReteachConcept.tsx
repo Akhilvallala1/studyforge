@@ -349,7 +349,7 @@ export function ReteachConcept({
               a panel saying the learner is past it. Nothing replaces them, because
               nothing here knows the new ones. */}
           {!recovered && (
-            <div className="mt-0.5 text-[13px] text-ink-subtle">
+            <div className="mt-0.5 text-small text-ink-subtle">
               Missed {entry.missed} of {entry.of} times
               {entry.is_due && " · due now"}
             </div>

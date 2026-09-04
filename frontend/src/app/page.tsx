@@ -253,9 +253,17 @@ export default async function TodayPage() {
                 Next unfinished lesson &middot; {nextUp.course.title}
               </div>
             </div>
+            {/* Deliberately not Button's `secondary` variant: `secondary` rests on
+                `border-line`, which is 1.33:1 against the #0a0a0a page, below what
+                the sibling outline control on this page (ReteachConcept's re-teach
+                button, border-line-strong) uses. This link keeps border-line-strong
+                at rest instead (1.90:1 dark) so the two same-size outline controls
+                on the Today page match. The app-wide `secondary` border token is an
+                open follow-up; fixing it there affects every secondary control in
+                the app and needs its own QA pass. */}
             <Link
               href={`/courses/${nextUp.course.id}/lessons/${nextUp.lesson.id}`}
-              className="shrink-0 rounded-control border border-line px-4 py-1.5 text-small font-medium text-ink transition-colors duration-fast ease-standard hover:border-line-hover hover:bg-surface-sunken"
+              className="shrink-0 rounded-control border border-line-strong px-4 py-1.5 text-small font-medium text-ink transition-colors duration-fast ease-standard hover:border-line-hover"
             >
               Continue
             </Link>

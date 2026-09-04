@@ -283,8 +283,8 @@
       #0a0a0a page (zinc-500 here measured only 4.10:1, under the 4.5 floor
       text-small/text-micro need). Not a Tailwind palette step: no zinc step sits
       between 400 and 500. Lightness sits 0.095 below --sf-ink-muted's 0.705, close
-      to light mode's 0.11 step between the same pair, so the three-step scale
-      (ink / muted / subtle) stays roughly even in both modes. */
+      to light mode's 0.11 step between the same pair, so the muted-to-subtle step
+      stays consistent across both modes. */
 
     --sf-accent: oklch(70.7% 0.165 254.624); /* blue-400 */
 
