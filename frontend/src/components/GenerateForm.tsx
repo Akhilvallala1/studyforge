@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import { Button } from "@/components/ui/Button";
+import { Callout } from "@/components/ui/Callout";
+import { Card } from "@/components/ui/Card";
 import {
   ApiError,
   SourceGenerationError,
@@ -107,8 +110,22 @@ function newRowId(prefix: string): string {
   return `${prefix}-${nextRowId}`;
 }
 
+/*
+ * No `focus:outline-none` here (the raw version had one): globals.css's app-wide
+ * `:focus-visible` rule is unlayered and always beats Tailwind's own layered utilities,
+ * the same reasoning DaysOffControl's and DeadlineForm's FIELD_CLASS already state.
+ * Dropping the utility changes no rendered pixel.
+ */
 const inputClasses =
-  "mt-2 w-full rounded-md border border-zinc-300 bg-transparent p-2.5 text-sm outline-none focus:border-zinc-500 disabled:opacity-60 dark:border-zinc-700";
+  "mt-2 w-full rounded-control border border-line-strong bg-transparent p-2.5 text-ui text-ink " +
+  "placeholder:text-ink-subtle transition-colors duration-fast ease-standard " +
+  "hover:border-line-hover focus:border-line-hover disabled:opacity-60";
+
+/** The smaller "Label (optional)" field nested inside each source row. */
+const labelInputClasses =
+  "mt-1 w-full rounded-control border border-line-strong bg-transparent px-2.5 py-1.5 text-small text-ink " +
+  "placeholder:text-ink-subtle transition-colors duration-fast ease-standard " +
+  "hover:border-line-hover focus:border-line-hover disabled:opacity-60";
 
 export function GenerateForm() {
   const router = useRouter();
@@ -482,7 +499,7 @@ export function GenerateForm() {
         <>
           <div className="flex flex-col gap-3">
             {rows.length === 0 && fileRows.length === 0 && (
-              <p className="rounded-lg border border-dashed border-zinc-300 px-4 py-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
+              <p className="rounded-surface border border-dashed border-line-strong px-4 py-6 text-center text-ui text-ink-muted">
                 Add pasted text, web pages, or PDFs below, in any mix.
               </p>
             )}
@@ -509,39 +526,43 @@ export function GenerateForm() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
+            <Button
               ref={addTextButtonRef}
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={() => addRow("text")}
               disabled={locked || atSourceCap}
-              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:border-zinc-500"
             >
               + Add text
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={() => addRow("url")}
               disabled={locked || atSourceCap}
-              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:border-zinc-500"
             >
               + Add URL
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={() => fileInputRef.current?.click()}
               disabled={locked || atSourceCap}
-              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:border-zinc-500"
             >
               + Add PDF(s)
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="secondary"
+              size="sm"
               onClick={() => folderInputRef.current?.click()}
               disabled={locked || atSourceCap}
-              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium transition-colors hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:border-zinc-500"
             >
               + Add folder of PDFs
-            </button>
+            </Button>
             <input
               ref={fileInputRef}
               type="file"
@@ -560,7 +581,7 @@ export function GenerateForm() {
             />
           </div>
 
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          <p className="text-xs text-ink-muted">
             {limits
               ? `${totalSources}/${limits.max_sources} sources · ${pastedChars.toLocaleString("en-US")} characters pasted, plus whatever the links and PDFs contain · ${formatBytes(uploadedBytes)}/${formatBytes(limits.max_upload_bytes)} uploaded`
               : plural(totalSources, "source", "sources")}
@@ -569,7 +590,7 @@ export function GenerateForm() {
           {intakeNote && (
             <div
               role="status"
-              className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+              className="rounded-surface border border-line bg-surface-sunken px-3 py-2 text-xs text-ink-muted"
             >
               <p>
                 {intakeNote.added === 0 && intakeNote.skipped.length === 0
@@ -582,7 +603,9 @@ export function GenerateForm() {
               </p>
               {intakeNote.skipped.length > 0 && (
                 <details className="mt-1">
-                  <summary className="cursor-pointer">Why files were skipped</summary>
+                  <summary className="cursor-pointer text-ink-muted hover:text-ink">
+                    Why files were skipped
+                  </summary>
                   <ul className="mt-1 list-disc pl-4">
                     {intakeNote.skipped.map((entry, index) => (
                       <li key={`${entry.name}-${index}`}>
@@ -598,21 +621,13 @@ export function GenerateForm() {
       )}
 
       {summaryError && (
-        <div
-          ref={summaryRef}
-          tabIndex={-1}
-          role="alert"
-          className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950 dark:text-red-300"
-        >
+        <Callout ref={summaryRef} tabIndex={-1} role="alert" tone="danger">
           {summaryError}
-        </div>
+        </Callout>
       )}
 
       {success ? (
-        <div
-          role="status"
-          className="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
-        >
+        <Callout tone="success" role="status">
           <p className="font-medium">Course generated: {success.title}</p>
           <p className="mt-1">
             This run cost an estimated {formatUsd(success.usage.run_cost_usd)}. Total API spend so
@@ -620,44 +635,29 @@ export function GenerateForm() {
             {success.usage.alert_active && ", which has crossed the cost alert threshold"}.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => router.push(`/courses/${success.id}`)}
-              className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-500"
-            >
+            <Button type="button" onClick={() => router.push(`/courses/${success.id}`)}>
               Open course
-            </button>
-            <button
-              type="button"
-              onClick={resetForm}
-              className="rounded-lg border border-emerald-700 px-4 py-2 text-sm font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-600 dark:text-emerald-200 dark:hover:bg-emerald-900"
-            >
+            </Button>
+            <Button type="button" variant="secondary" onClick={resetForm}>
               Generate another
-            </button>
+            </Button>
           </div>
-        </div>
+        </Callout>
       ) : submitting ? (
-        <div className="flex items-center gap-3 rounded-lg border border-zinc-200 px-4 py-3 dark:border-zinc-800">
+        <div className="flex items-center gap-3 rounded-surface border border-line px-4 py-3">
           <span
             aria-hidden
-            className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-700 dark:border-t-zinc-100"
+            className="h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-line-strong border-t-ink"
           />
-          <div className="text-sm">
+          <div className="text-ui">
             <p className="font-medium">
               Generating your course, this usually takes 1 to 3 minutes. Keep this tab open.
             </p>
-            <p className="mt-0.5 tabular-nums text-zinc-600 dark:text-zinc-400">
-              Elapsed: {formatElapsed(elapsed)}
-            </p>
+            <p className="mt-0.5 tabular-nums text-ink-muted">Elapsed: {formatElapsed(elapsed)}</p>
           </div>
         </div>
       ) : (
-        <button
-          type="submit"
-          className="rounded-lg bg-zinc-900 px-5 py-2.5 font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
-        >
-          Generate course
-        </button>
+        <Button type="submit">Generate course</Button>
       )}
     </form>
   );
@@ -687,17 +687,15 @@ function SourceRowField({
   const label = row.kind === "text" ? "Pasted text" : "URL";
 
   return (
-    <div className="rounded-lg border border-zinc-300 p-3 dark:border-zinc-700">
+    <Card padding={4}>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-          {label}
-        </span>
+        <span className="text-micro uppercase text-ink-muted">{label}</span>
         <button
           ref={removeButtonRef}
           type="button"
           onClick={onRemove}
           disabled={disabled}
-          className="text-xs text-zinc-500 transition-colors hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-400 dark:hover:text-red-400"
+          className="text-xs text-ink-muted transition-colors duration-fast ease-standard hover:text-danger disabled:pointer-events-none disabled:opacity-60"
         >
           Remove
         </button>
@@ -729,7 +727,7 @@ function SourceRowField({
         />
       )}
 
-      <label className="mt-2 block text-xs text-zinc-500 dark:text-zinc-400">
+      <label className="mt-2 block text-xs text-ink-muted">
         Label (optional)
         <input
           type="text"
@@ -737,16 +735,16 @@ function SourceRowField({
           onChange={(event) => onChange({ ref: event.target.value })}
           disabled={disabled}
           placeholder={row.kind === "url" ? "Defaults to the URL" : "Defaults to a numbered label"}
-          className="mt-1 w-full rounded-md border border-zinc-300 bg-transparent p-1.5 text-xs outline-none focus:border-zinc-500 disabled:opacity-60 dark:border-zinc-700"
+          className={labelInputClasses}
         />
       </label>
 
       {row.error && (
-        <p id={errorId} className="mt-1.5 text-xs text-red-700 dark:text-red-400">
+        <p id={errorId} className="mt-1.5 text-xs text-danger">
           {row.error}
         </p>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -762,43 +760,41 @@ function FileRowField({ row, disabled, onRemove, removeButtonRef }: FileRowField
   const errorId = `source-${row.id}-error`;
 
   return (
-    <div
+    <Card
       // `role="group"` names the row for a screen reader; `aria-invalid` is deliberately
       // omitted here, since it is not a supported attribute on this role and this row has
       // no single form control to put it on instead. `aria-describedby` is a global
       // attribute and carries the error either way.
+      padding={4}
       role="group"
       aria-label={`PDF: ${row.file.name}`}
       aria-describedby={row.error ? errorId : undefined}
-      className="rounded-lg border border-zinc-300 p-3 dark:border-zinc-700"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <span className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            PDF
-          </span>
+          <span className="text-micro uppercase text-ink-muted">PDF</span>
           {/* The filename came off the user's own file system and is rendered as plain
               text, never as markup, the same as every other untrusted string in this form. */}
-          <p className="truncate text-sm" title={row.file.name}>
+          <p className="truncate text-ui text-ink" title={row.file.name}>
             {row.file.name}
           </p>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">{formatBytes(row.file.size)}</p>
+          <p className="text-xs text-ink-muted">{formatBytes(row.file.size)}</p>
         </div>
         <button
           ref={removeButtonRef}
           type="button"
           onClick={onRemove}
           disabled={disabled}
-          className="shrink-0 text-xs text-zinc-500 transition-colors hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-50 dark:text-zinc-400 dark:hover:text-red-400"
+          className="shrink-0 text-xs text-ink-muted transition-colors duration-fast ease-standard hover:text-danger disabled:pointer-events-none disabled:opacity-60"
         >
           Remove
         </button>
       </div>
       {row.error && (
-        <p id={errorId} className="mt-1.5 text-xs text-red-700 dark:text-red-400">
+        <p id={errorId} className="mt-1.5 text-xs text-danger">
           {row.error}
         </p>
       )}
-    </div>
+    </Card>
   );
 }
