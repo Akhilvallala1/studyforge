@@ -18,6 +18,13 @@ interface ItemState {
   error: string | null;
 }
 
+/**
+ * Where focus goes once a submission that disabled controls finishes and they are
+ * re-enabled or gone: back to the answer control for an item still open to a retry,
+ * or to the "Correct" message once that is the only thing solving the item left behind.
+ */
+type PendingFocus = "answer" | "correct";
+
 /** The item as the server last saw it, so a reload redraws the learner's last attempt. */
 function restored(item: QuizItem): ItemState {
   const latest = item.attempt_state.latest_quiz_attempt;
@@ -48,13 +55,59 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
   /** When each item became answerable, for the elapsed_ms timing signal. */
   const shownAt = useRef<Map<number, number>>(new Map());
 
-  useEffect(() => {
-    for (const item of quiz) markShown(shownAt.current, item.id);
-  }, [quiz]);
+  /**
+   * Per-item refs to the controls a submission's focus restoration might land on.
+   * The radios and the text input are never unmounted (their options and their kind
+   * are fixed once a lesson loads), so a plain ref per item is enough for either;
+   * `mcqRefs` is keyed a second time by option because a submission's target is
+   * whichever radio is CURRENTLY checked, not a fixed one. `correctRefs` is the
+   * "Correct" message, the only thing left to land on once solving an item unmounts
+   * its button and leaves its inputs disabled.
+   */
+  const inputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
+  const mcqRefs = useRef<Map<number, Map<string, HTMLInputElement>>>(new Map());
+  const correctRefs = useRef<Map<number, HTMLParagraphElement>>(new Map());
+  /**
+   * Set right before `submit` starts disabling controls, consumed by the effect below
+   * once the response it belongs to has rendered. A later commit for the same item
+   * (an error message from the empty-answer guard, say) finds nothing armed and does
+   * not touch focus, because the guard below only ever runs for a commit it set.
+   */
+  const pendingFocus = useRef<Map<number, PendingFocus>>(new Map());
 
   const stateOf = (item: QuizItem) => answers[item.id] ?? restored(item);
   const patch = (item: QuizItem, update: Partial<ItemState>) =>
     setAnswers((prev) => ({ ...prev, [item.id]: { ...(prev[item.id] ?? restored(item)), ...update } }));
+
+  useEffect(() => {
+    for (const item of quiz) markShown(shownAt.current, item.id);
+  }, [quiz]);
+
+  /**
+   * Restore focus once a submission's disabling clears, the same house pattern as
+   * ConceptPractice, ReteachConcept, DaysOffControl, DeadlineForm and DeleteCourseButton:
+   * every path here that reaches this effect got here by disabling the control the
+   * learner used to submit, which blurs it to the body, so the guard only has to ask
+   * whether the learner is still there. A learner who tabbed away mid-request is where
+   * they want to be, and pulling them back is worse than the problem being fixed.
+   */
+  useEffect(() => {
+    for (const item of quiz) {
+      const wanted = pendingFocus.current.get(item.id);
+      if (!wanted) continue;
+      pendingFocus.current.delete(item.id);
+      if (document.activeElement !== document.body) continue;
+      if (wanted === "correct") {
+        correctRefs.current.get(item.id)?.focus();
+        continue;
+      }
+      const answer = stateOf(item).answer;
+      const target =
+        item.kind === "mcq" ? mcqRefs.current.get(item.id)?.get(answer) : inputRefs.current.get(item.id);
+      target?.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answers, quiz]);
 
   // quiz_progress is the tally at load; items answered for the first time here move it.
   const newlyAnswered = quiz.filter(
@@ -74,6 +127,10 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
       const result = await answerQuiz(item.id, answer, elapsedSince(shownAt.current, item.id));
       // Time a retry from this attempt, not from the first time the item appeared.
       markShown(shownAt.current, item.id, true);
+      // `ever_correct`, not `result.correct`: an item solved earlier that takes another
+      // wrong attempt still unmounts its button, so it is solved-ness, not this
+      // attempt's own verdict, that decides which control survives to land focus on.
+      pendingFocus.current.set(item.id, result.attempt_state.ever_correct ? "correct" : "answer");
       patch(item, {
         feedback: { correct: result.correct, expected: result.expected },
         attemptState: result.attempt_state,
@@ -130,6 +187,17 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                         checked={state.answer === option}
                         disabled={state.submitting || solved}
                         onChange={() => patch(item, { answer: option })}
+                        ref={(el) => {
+                          // Only the checked option's node is worth keeping: it is the
+                          // one the focus effect looks up by the current answer, and an
+                          // unchecked sibling holding a stale entry would never be read.
+                          const options = mcqRefs.current.get(item.id) ?? new Map();
+                          if (state.answer === option) {
+                            if (el) options.set(option, el);
+                            else options.delete(option);
+                            mcqRefs.current.set(item.id, options);
+                          }
+                        }}
                       />
                       {option}
                     </label>
@@ -141,6 +209,10 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                   value={state.answer}
                   disabled={state.submitting || solved}
                   onChange={(e) => patch(item, { answer: e.target.value })}
+                  ref={(el) => {
+                    if (el) inputRefs.current.set(item.id, el);
+                    else inputRefs.current.delete(item.id);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
@@ -156,14 +228,25 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                 <p className="mt-3 text-sm text-red-700 dark:text-red-400">{state.error}</p>
               )}
 
-              {/* aria-live so the result is announced: focus stays on the submit
-                  button while the feedback renders elsewhere in the DOM. */}
+              {/* aria-live so the result is announced regardless of where focus lands.
+                  Focus does NOT stay on the submit button: checking an answer disables
+                  the control that made the request, which blurs it to the body, and the
+                  effect above returns focus deliberately, to the answer control while the
+                  item is still open to a retry, or to the message below once solving it
+                  has taken the button and left the inputs disabled. */}
               <div aria-live="polite">
                 {/* `solved` covers an item answered correctly at some point, including
                     from a source whose latest attempt was wrong (possible once review
                     sessions exist), so a solved item always reads as solved. */}
                 {solved && (
-                  <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                  <p
+                    ref={(el) => {
+                      if (el) correctRefs.current.set(item.id, el);
+                      else correctRefs.current.delete(item.id);
+                    }}
+                    tabIndex={-1}
+                    className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 outline-none dark:bg-emerald-950 dark:text-emerald-300"
+                  >
                     Correct
                   </p>
                 )}
