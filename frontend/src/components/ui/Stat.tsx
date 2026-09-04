@@ -18,6 +18,13 @@ export interface StatProps extends HTMLAttributes<HTMLDivElement> {
  * nearby but not identical colour. page.tsx keeps its own copy for now and is
  * unaffected either way; the task that migrates it onto this import should expect
  * those two differences rather than a drop-in swap.
+ *
+ * MUST BE RENDERED INSIDE A `<dl>`. The `<dt>`/`<dd>` pair below is only valid HTML,
+ * and only maps to the description-list roles that make the label and value read as
+ * one term-definition unit, when an ancestor supplies the list. This component does
+ * not supply its own, because a `<dl>` per stat would make each one a separate list
+ * and defeat the grouping. The wrapper `<div>` is permitted between `<dl>` and its
+ * pairs. Every caller owns that `<dl>`; app/page.tsx does supply one.
  */
 export const Stat = forwardRef<HTMLDivElement, StatProps>(function Stat(
   { value, label, emphasis, title, note, className, ...props },
