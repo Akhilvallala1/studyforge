@@ -3,6 +3,65 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /*
+   * Design tokens, phase 1 of the redesign. Raw values live here, in plain :root
+   * custom properties, and are only mapped into Tailwind's `--color-*` namespace
+   * below, inside `@theme inline`. That indirection is what lets the dark-mode
+   * media query further down override a handful of plain variables and have every
+   * `bg-surface` / `text-text-muted` / etc. utility pick the new value up: `@theme`
+   * (without `inline`) bakes the literal value into the generated CSS, but `inline`
+   * makes the utility reference the variable instead, so it keeps resolving live.
+   * Same trick `--background` and `--foreground` already used above.
+   */
+
+  /* Surfaces. Cards are border-defined, not fill-defined, so surface and
+     surface-raised are deliberately identical: elevation comes from
+     --shadow-raise/--color-border-strong, never from a lighter fill. */
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #fafafa;
+
+  /* Borders */
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --border-hover: #a1a1aa;
+
+  /* Text */
+  --text: #171717;
+  --text-muted: #52525b;
+  --text-subtle: #71717a;
+
+  /* The one accent. Reserved for focus rings, inline text links, and the active
+     nav/tab indicator, never a large fill: emerald, amber and red already carry
+     meaning (correct/completed, cost alert, destructive/incorrect) and blue must
+     stay clearly not one of those. */
+  --accent: #2563eb;
+  --focus: var(--accent);
+
+  /* Status tones, at the emerald/amber/red steps already used across the app for
+     inline status text (e.g. the review rating colours and form error text):
+     700 for light text, 400 for dark text, with a 50/950 fill and a 300/800
+     border for the boxed alerts (Callout and friends) built on top of them. */
+  --success: #047857;
+  --success-surface: #ecfdf5;
+  --success-border: #6ee7b7;
+  --warning: #b45309;
+  --warning-surface: #fffbeb;
+  --warning-border: #fcd34d;
+  --danger: #b91c1c;
+  --danger-surface: #fef2f2;
+  --danger-border: #fca5a5;
+
+  /* Elevation. The app is entirely 1px borders with no shadows today, and that
+     stays the base: these two levels are additive, not a replacement. In dark
+     mode both resolve to `none` below, for the same reason the concept map's
+     scroll edge below inverts itself rather than darkening: a shadow needs a
+     lighter surface to fall onto, and darkening is invisible on a near-black
+     page. Dark elevation is expressed with --color-border-strong and
+     --color-surface-sunken instead, at the call site. */
+  --raise-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 2px 8px rgb(0 0 0 / 0.04);
+  --overlay-shadow: 0 8px 24px rgb(0 0 0 / 0.12);
 }
 
 @theme inline {
@@ -10,6 +69,88 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-border-hover: var(--border-hover);
+
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-text-subtle: var(--text-subtle);
+
+  --color-accent: var(--accent);
+  --color-focus: var(--focus);
+
+  --color-success: var(--success);
+  --color-success-surface: var(--success-surface);
+  --color-success-border: var(--success-border);
+  --color-warning: var(--warning);
+  --color-warning-surface: var(--warning-surface);
+  --color-warning-border: var(--warning-border);
+  --color-danger: var(--danger);
+  --color-danger-surface: var(--danger-surface);
+  --color-danger-border: var(--danger-border);
+
+  --shadow-raise: var(--raise-shadow);
+  --shadow-overlay: var(--overlay-shadow);
+}
+
+@theme {
+  /*
+   * Named type scale, replacing the text-[22px]/text-[17px]/text-[15px]/text-[13px]
+   * arbitrary sizes scattered through the codebase. Static (not `inline`): none of
+   * these change with colour scheme, so the literal value baked into each utility
+   * is exactly what's wanted.
+   *
+   * --text-micro is uppercase with tracked-out letters by convention wherever it's
+   * used, but text-transform has no companion theme variable, so callers add
+   * `uppercase` alongside the `text-micro` class.
+   */
+  --text-display: 1.875rem; /* 30px */
+  --text-display--line-height: 2.25rem; /* 36px */
+  --text-display--font-weight: 600;
+  --text-display--letter-spacing: -0.02em;
+
+  --text-title: 1.25rem; /* 20px */
+  --text-title--line-height: 1.75rem; /* 28px */
+  --text-title--font-weight: 600;
+
+  --text-subtitle: 1.0625rem; /* 17px */
+  --text-subtitle--line-height: 1.5rem; /* 24px */
+  --text-subtitle--font-weight: 600;
+
+  /* Lesson markdown body only. */
+  --text-prose: 1rem; /* 16px */
+  --text-prose--line-height: 1.625rem; /* 26px */
+  --text-prose--font-weight: 400;
+
+  /* Default app body. */
+  --text-ui: 0.9375rem; /* 15px */
+  --text-ui--line-height: 1.375rem; /* 22px */
+  --text-ui--font-weight: 400;
+
+  --text-small: 0.8125rem; /* 13px */
+  --text-small--line-height: 1.25rem; /* 20px */
+
+  --text-micro: 0.75rem; /* 12px */
+  --text-micro--line-height: 1rem; /* 16px */
+  --text-micro--font-weight: 500;
+  --text-micro--letter-spacing: 0.04em;
+
+  /* Radius. Controls (buttons, inputs, chips with text) get the smaller step;
+     surfaces (cards, panels, alert boxes) get the larger one. Badges and status
+     dots stay on rounded-full, outside this scale. */
+  --radius-control: 8px;
+  --radius-surface: 12px;
+
+  /* Motion. Only colour, border-colour, opacity and transform are ever animated. */
+  --duration-fast: 120ms;
+  --duration-slow: 240ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
 
 /*
@@ -65,6 +206,36 @@
     --concept-column-sublabel: #a1a1aa;
     --concept-surface: #101011;
     --concept-scroll-edge: rgba(255, 255, 255, 0.16);
+
+    --surface: #0a0a0a;
+    --surface-raised: #0a0a0a;
+    --surface-sunken: #18181b;
+
+    --border: #27272a;
+    --border-strong: #3f3f46;
+    --border-hover: #52525b;
+
+    --text: #ededed;
+    --text-muted: #a1a1aa;
+    --text-subtle: #a1a1aa;
+
+    --accent: #60a5fa;
+
+    --success: #34d399;
+    --success-surface: #022c22;
+    --success-border: #065f46;
+    --warning: #fbbf24;
+    --warning-surface: #451a03;
+    --warning-border: #92400e;
+    --danger: #f87171;
+    --danger-surface: #450a0a;
+    --danger-border: #991b1b;
+
+    /* Darkening a shadow is invisible on a near-black page (see the comment on
+       --raise-shadow above); elevation is expressed with borders and
+       --color-surface-sunken instead once this is `none`. */
+    --raise-shadow: none;
+    --overlay-shadow: none;
   }
 }
 
@@ -113,8 +284,33 @@
   background-attachment: local, local, scroll, scroll;
 }
 
+/*
+ * The one focus convention for the whole app. Unscoped on purpose: it must also reach
+ * the programmatic focus targets elsewhere in the app (elements with tabIndex={-1} that
+ * receive .focus() after a mutation lands), not just <button>/<a>/<input>, or a keyboard
+ * user moved there has no visible sign of where they landed. `border-radius: inherit`
+ * keeps the ring following whatever shape the focused element already has instead of
+ * squaring off a pill or a card corner.
+ */
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
 }
