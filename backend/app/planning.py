@@ -14,9 +14,9 @@ is about the five lessons; nothing here is about the cards.
 WHY NOTHING HERE READS A CARD, STATED AS A PROOF RATHER THAN A PREFERENCE.
 
 The tempting next feature is "pull reviews forward so nothing is shaky on exam day", and
-it is unnecessary. fsrs.interval_days (fsrs.py:91-94) returns the number of days until
-recall probability decays to DESIRED_RETENTION, which is 0.90, and a card's due date is
-set to now + that interval. So retrievability at a card's own due date is about 0.90 BY
+it is unnecessary. fsrs.interval_days returns the number of days until recall
+probability decays to DESIRED_RETENTION, which is 0.90, and a card's due date is set to
+now + that interval. So retrievability at a card's own due date is about 0.90 BY
 CONSTRUCTION, and strictly higher at every moment before it. Take any card whose due
 date falls after the deadline: on the deadline day it has not yet reached its due date,
 so its predicted recall is at least ~0.90. It is not at risk. The set of cards that
@@ -61,7 +61,7 @@ PACE_WINDOW_DAYS = 30
 # number's clothes: two lessons finished on the same evening reads as 0.47/week and
 # would swing by a third every time one more landed. Callers get None and the sample
 # size, and the UI shows a dash. Exactly the discipline review.retention applies with
-# RETENTION_MIN_SAMPLE (review.py:578-601), for exactly the same reason.
+# review.RETENTION_MIN_SAMPLE, for exactly the same reason.
 #
 # The sample counted against this is every course's completions, not one course's.
 # Scoped to a single course the threshold was not merely slow to reach, it was
@@ -250,11 +250,10 @@ def observed_pace(
     thing than this one number is worth.
 
     THE WINDOW IS UNCHANGED: a fixed 720 HOURS, and still the one piece of day arithmetic
-    in this module NOT built out of days.py. It copies review.retention
-    (review.py:587-596) exactly, one cutoff at moment - 30 days and a single >=
-    comparison. Because it never decomposes the span into local days there is no DST
-    transition for it to get wrong, and a rate over a month does not care whether that
-    month contained an hour more or less.
+    in this module NOT built out of days.py. It copies review.retention exactly, one
+    cutoff at moment - 30 days and a single >= comparison. Because it never decomposes
+    the span into local days there is no DST transition for it to get wrong, and a rate
+    over a month does not care whether that month contained an hour more or less.
 
     Counted in SQL rather than in Python, which is the other half of the widening. The
     caller only ever holds one course's lessons, and loading every lesson of every course
