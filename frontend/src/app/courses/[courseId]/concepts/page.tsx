@@ -115,10 +115,11 @@ export default async function CourseConceptsPage(
           )}
 
           {/*
-            ink-muted, not ink-subtle: --sf-ink-subtle is zinc-500 in both modes (globals.css),
-            which fails AA for text this size on the dark #0a0a0a page (see the PR description
-            for the measured ratio). The original raw classes were text-zinc-500 in both modes
-            too, so this is a contrast improvement in dark mode, not merely a token swap.
+            ink-muted, not ink-subtle. The raw classes here were text-zinc-500 in both modes,
+            measuring 4.83:1 light and 4.10:1 dark, so the dark value was under the 4.5 floor
+            this text size needs. ink-muted takes both to 7.72:1 and 7.55:1, an improvement in
+            BOTH modes rather than only dark. Do not "simplify" this to ink-subtle: it is the
+            lower-contrast of the two ink tokens, and globals.css carries its measured figures.
           */}
           <p className="mt-4 text-xs text-ink-muted">
             {studied} of {concepts.length} concepts have been studied at least once.

@@ -405,10 +405,11 @@ export function ReviewSession({ queue }: { queue: ReviewQueue }) {
                 </div>
                 {/*
                   ink-muted, not ink-subtle, even though this is the most de-emphasised text on
-                  the screen: --sf-ink-subtle is zinc-500 in both modes, which fails AA for small
-                  text on the dark #0a0a0a page. The original raw classes (zinc-400/zinc-500) were
-                  already lighter than ink-muted in both modes, so this is a visible, deliberate
-                  contrast increase, not an incidental one.
+                  the screen. The raw classes were text-zinc-400 dark:text-zinc-500, and the
+                  LIGHT value was the bad one: zinc-400 on white measures 2.62:1, a clear AA
+                  failure at this size (dark's zinc-500 measured 4.10:1, also under the floor).
+                  ink-muted takes them to 7.72:1 light and 7.55:1 dark. Do not "simplify" this
+                  to ink-subtle: it is the lower-contrast of the two ink tokens.
                 */}
                 <p className="mt-4.5 text-center text-xs leading-relaxed text-ink-muted">
                   Intervals come from FSRS using your own history on this concept, and bunch
