@@ -336,4 +336,59 @@ describe("delete confirmation before the preview lands", () => {
     await act(async () => second.resolve(preview));
     await waitFor(() => expect(confirm).toBeEnabled());
   });
+
+  /*
+   * Cancel bumps `generationRef` so the preview it abandoned cannot land afterwards.
+   * The reopen path alone does NOT prove this: `openConfirm` increments the generation
+   * too, so a learner who reopens is already covered by that. What is pinned here is
+   * cancel-and-do-not-reopen-yet, where `generationRef` would otherwise still hold the
+   * value the in-flight fetch captured, that fetch's guard would pass, and `setPreview`
+   * would store counts for a panel the learner has closed. Reopening then paints those
+   * stale counts before the fresh request lands, and on a destructive confirmation that
+   * means showing how much will be destroyed using numbers from an earlier request.
+   *
+   * Mutation-verified, and this is a DIFFERENT mutation from the `finally`-guard one
+   * documented on the test above: replacing Cancel's own `generationRef.current++`
+   * with a no-op reds the first assertion below, as
+   * `AssertionError: the abandoned preview must not be painted into the reopened
+   * panel: expected <p class="mt-1 first:mt-0"></p> to be null`, and reds nothing
+   * else. Removing the `finally` guard instead leaves THIS test green and reds only
+   * the test above, so the two mutations kill two different tests and the guards are
+   * genuinely covering separate properties.
+   */
+  test("a preview abandoned by Cancel cannot repaint the panel when it is reopened", async () => {
+    const first = deferred<CourseDeletion>();
+    const second = deferred<CourseDeletion>();
+    vi.mocked(getDeletionPreview)
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+
+    render(
+      <CourseDeletionProvider>
+        <DeleteCourseButton courseId={1} title="Organic Chemistry" />
+      </CourseDeletionProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await screen.findByRole("button", { name: "Delete permanently" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    // The abandoned request lands while the panel is closed, which is the only window
+    // in which Cancel's bump is the guard doing the work.
+    await act(async () => first.resolve(preview));
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await screen.findByRole("button", { name: "Delete permanently" });
+
+    expect(
+      screen.queryByText(/8 of them completed/),
+      "the abandoned preview must not be painted into the reopened panel",
+    ).toBeNull();
+    expect(screen.getByText(/Checking what this would delete/)).toBeInTheDocument();
+
+    await act(async () => second.resolve(preview));
+    await waitFor(() =>
+      expect(screen.getByText(/8 of them completed/)).toBeInTheDocument(),
+    );
+  });
 });
