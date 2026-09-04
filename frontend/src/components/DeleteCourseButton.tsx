@@ -157,6 +157,16 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
    */
   const [loadingPreview, setLoadingPreview] = useState(false);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  /*
+   * Set only by Cancel, and read once by the effect below.
+   *
+   * `open` going false is not by itself a reason to take focus: it is also the
+   * initial state of every card on the page, and focusing on that would have each
+   * row in the list grab focus as it mounts. Only the cancel path has somewhere the
+   * learner actually came from.
+   */
+  const wantsTriggerFocus = useRef(false);
 
   if (!ctx) throw new Error("DeleteCourseButton must be rendered inside CourseDeletionProvider");
   const { onDeleted, refreshing } = ctx;
@@ -185,6 +195,15 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
   useEffect(() => {
     if (open && preview) confirmRef.current?.focus();
   }, [open, preview]);
+
+  // Cancel unmounts the panel that holds the focused Cancel button, so without this
+  // focus falls to the body and a keyboard learner loses their place in the list.
+  // The trigger is where they pressed Enter, so it is where they get put back.
+  useEffect(() => {
+    if (open || !wantsTriggerFocus.current) return;
+    wantsTriggerFocus.current = false;
+    triggerRef.current?.focus();
+  }, [open]);
 
   async function confirmDelete() {
     // The re-entry guard, which is why the confirming button below is NOT disabled while
@@ -215,6 +234,7 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
       <div className="mt-3 flex justify-end">
         <button
           type="button"
+          ref={triggerRef}
           onClick={() => void openConfirm()}
           className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-500 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:text-zinc-100"
         >
@@ -248,6 +268,7 @@ export function DeleteCourseButton({ courseId, title }: { courseId: number; titl
         <button
           type="button"
           onClick={() => {
+            wantsTriggerFocus.current = true;
             setOpen(false);
             setPreview(null);
             setError(null);

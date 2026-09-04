@@ -123,4 +123,58 @@ describe("delete confirmation before the preview lands", () => {
       expect(screen.getByRole("status")).toHaveTextContent("Organic Chemistry deleted."),
     );
   });
+
+  /*
+   * Cancel unmounts the panel it is rendered in, so it destroys the focused element.
+   * Nothing then claimed focus and it fell to the body, which is a keyboard learner
+   * losing their place in a list they may have tabbed a long way down. Found in a
+   * browser by QA, not by this suite: the confirm path was covered and the cancel path
+   * was not.
+   *
+   * Mutation-verified: dropping `wantsTriggerFocus.current = true` from the Cancel
+   * handler, and separately dropping the effect that reads it, each make this red with
+   * activeElement as body.
+   */
+  test("puts focus back on the trigger when the confirmation is cancelled", async () => {
+    vi.mocked(getDeletionPreview).mockResolvedValue(preview);
+
+    render(
+      <CourseDeletionProvider>
+        <DeleteCourseButton courseId={1} title="Organic Chemistry" />
+      </CourseDeletionProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    // Wait for the preview, since that is when the panel moves focus to the confirming
+    // button. Cancelling before it lands would not be testing the same situation.
+    const confirm = await screen.findByRole("button", { name: "Delete permanently" });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    expect(confirm).toHaveFocus();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    const trigger = await screen.findByRole("button", { name: "Delete" });
+    await waitFor(() => expect(trigger).toHaveFocus());
+    expect(
+      document.activeElement,
+      "focus on the body means the learner has to tab from the top of the page again",
+    ).not.toBe(document.body);
+    expect(deleteCourse).not.toHaveBeenCalled();
+  });
+
+  // The other rows must not fight for focus as they mount. `open` is false on every card
+  // in a fresh list, so an effect keyed on that alone would have the last one win.
+  test("does not steal focus when a card simply mounts", async () => {
+    vi.mocked(getDeletionPreview).mockResolvedValue(preview);
+
+    render(
+      <CourseDeletionProvider>
+        <DeleteCourseButton courseId={1} title="Organic Chemistry" />
+        <DeleteCourseButton courseId={2} title="Linear Algebra" />
+      </CourseDeletionProvider>,
+    );
+
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(2));
+    expect(document.activeElement).toBe(document.body);
+  });
 });
