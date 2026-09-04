@@ -202,13 +202,11 @@ def test_six_combined_sources_refuses_before_any_provider_call(client, monkeypat
     extract_pdf is never called from either arm - it is a constant, not a discriminator.
 
     What the early guard actually buys, and the only thing distinguishing it, is that
-    generate_multipart's spec-building loop (`value=upload.file.read()` at main.py:815) runs
-    BEFORE ingest.load_sources is ever called (main.py:605) - so without the early guard,
+    generate_multipart's own spec-building loop (`value=upload.file.read()`)
+    runs BEFORE ingest.load_sources is ever called - so without the early guard,
     every uploaded file is still read fully into memory before the deep guard gets a chance
     to refuse. Spying on load_sources itself is what proves that: with the early guard in
-    place, load_sources is never invoked at all for an over-cap request. Line numbers are as
-    of this test's own commit; if a later change moves either call, re-check the ordering
-    rather than trusting these numbers.
+    place, load_sources is never invoked at all for an over-cap request.
     """
     monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
     load_sources_calls: list[int] = []
@@ -496,8 +494,9 @@ def test_the_route_is_not_a_coroutine_so_it_runs_in_the_threadpool():
     loop. Every meaningful thing this route does blocks: `upload.file.read()`, the
     synchronous httpx fetches and pypdf parsing inside `ingest.load_sources`, provider SDK
     calls that take minutes for a real course, and synchronous SQLAlchemy writes. As a
-    coroutine it therefore held the loop for the entire generation. Measured on this route
-    with 2.0s of blocking work and a concurrent GET fired 0.4s in: as `async def` the GET
+    coroutine it therefore held the loop for the entire generation. Measured once by hand in
+    a throwaway two-arm run, which this suite does not reproduce: with 2.0s of blocking
+    work on this route and a concurrent GET fired 0.4s in, as `async def` the GET
     could not even be ISSUED until 2.016s, because the client's own `asyncio.sleep(0.4)`
     never got scheduled; as `def` it was answered at 0.415s while generation ran on.
 
