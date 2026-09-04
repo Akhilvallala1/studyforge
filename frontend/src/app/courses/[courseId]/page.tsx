@@ -55,10 +55,21 @@ export default async function CoursePage(props: PageProps<"/courses/[courseId]">
                   >
                     <span
                       aria-hidden
+                      /*
+                        line-HOVER, not line-strong, for the empty marker. The name is
+                        about hover but the value is what matters here: line-strong is
+                        zinc-300 light / zinc-700 dark, and that dark step takes this 1px
+                        ring from 2.56:1 down to 1.90:1 on the #0a0a0a page, which is
+                        close enough to invisible that the list reads as "green dot" or
+                        "nothing there" instead of filled or empty. line-hover is
+                        zinc-400 / zinc-600: it restores the dark value the raw classes
+                        had exactly, and is more visible than they were in light (2.62
+                        against 1.48), so it is not worse in either mode.
+                      */
                       className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-micro ${
                         lesson.completed
                           ? "bg-success-fill text-success-on-fill"
-                          : "border border-line-strong"
+                          : "border border-line-hover"
                       }`}
                     >
                       {lesson.completed ? "✓" : ""}
@@ -74,7 +85,7 @@ export default async function CoursePage(props: PageProps<"/courses/[courseId]">
                       lose contrast. ink-muted is zinc-600 light / zinc-400 dark: 7.72
                       and 7.55, never worse than the zinc-500/zinc-400 pair it replaces.
                     */}
-                    <span className={lesson.completed ? "text-ink-muted" : ""}>
+                    <span className={lesson.completed ? "text-ui text-ink-muted" : "text-ui"}>
                       {lesson.title}
                     </span>
                     {lesson.completed && <span className="sr-only">(completed)</span>}

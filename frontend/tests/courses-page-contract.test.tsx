@@ -101,10 +101,13 @@ describe("courses page primary link styling stays level with Button", () => {
   beforeEach(() => vi.clearAllMocks());
 
   /**
-   * The two omissions are deliberate and cannot apply to an anchor, so they are
-   * subtracted rather than asserted absent: an <a> is never :disabled.
+   * Button's disabled: utilities are subtracted rather than asserted absent, because an
+   * <a> is never :disabled. Matched on the PREFIX rather than by name: listing them
+   * literally means a later PR adding a third one to Button turns this test red,
+   * demanding that a link carry a disabled: class, and the repair is to edit the
+   * exclusion list of a test that has nothing to do with that change.
    */
-  const BUTTON_ONLY = new Set(["disabled:opacity-60", "disabled:pointer-events-none"]);
+  const isButtonOnly = (className: string) => className.startsWith("disabled:");
 
   test.each([
     ["#new-course", [course]],
@@ -119,7 +122,7 @@ describe("courses page primary link styling stays level with Button", () => {
     const { container } = render(<Button variant="primary" size="md" />);
     const button = container.querySelector("button") as HTMLButtonElement;
 
-    const expected = new Set([...classSet(button)].filter((c) => !BUTTON_ONLY.has(c)));
+    const expected = new Set([...classSet(button)].filter((c) => !isButtonOnly(c)));
     expect(
       classSet(link as Element),
       "PRIMARY_LINK_CLASSES is a hand-copy of Button's primary/md classes; when Button moves, this is what goes stale",
