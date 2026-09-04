@@ -26,7 +26,7 @@ export interface StatProps extends HTMLAttributes<HTMLDivElement> {
  *    from zinc-400 (`#9f9fa9`, 7.55:1 on the `#0a0a0a` page) to ink-subtle's
  *    dark value (`#82828d`, 5.21:1), which still clears the 4.5:1 AA floor at
  *    this size;
- *   - `emphasis` moves from a raw `text-emerald-600 dark:text-emerald-500` to the
+ *   - `emphasis` moves from a raw emerald-600 light / emerald-500 dark to the
  *     token-driven `text-success`, which resolves to a nearby but not identical
  *     colour.
  *

@@ -134,16 +134,33 @@ describe("Button type default", () => {
  * Be honest about what this test is: it reads a class STRING. jsdom loads no
  * stylesheet, so nothing here can prove a rendered colour, and the contrast figures
  * behind the variant live in its comment in Button.tsx where they were measured off
- * the built bundle. What this catches is only the edit described above, which is
- * enough to be worth the four lines.
+ * the built bundle. What this catches is only the edit described above.
+ *
+ * It pins an exact SET rather than asserting that `border-current` is present and a
+ * text colour is absent. Ran both ways, not assumed: those two weaker checks catch the
+ * `text-ink` edit above but sail straight past a tone-specific border colour written
+ * next to `border-current`, and past a resting background added alongside the hover
+ * one. Those are the two shapes the severing edit actually takes, because nobody
+ * deletes `border-current`, they add a colour beside it and it wins on source order.
+ *
+ * Note the colours above and below are named in prose, not as literal utility strings.
+ * Tailwind v4 scans this file too, and an earlier draft of this very comment shipped a
+ * dead border rule into the bundle by spelling one out. See Button.tsx's variant block.
  */
 describe("Button tinted variant", () => {
   test("sets no colour of its own, so the enclosing tone shows through", () => {
     render(<Button variant="tinted">Generate another</Button>);
-    const className = screen.getByRole("button", { name: "Generate another" }).className;
+    const tokens = screen
+      .getByRole("button", { name: "Generate another" })
+      .className.split(/\s+/)
+      .filter(Boolean);
 
-    expect(className).toContain("border-current");
-    // `text-ui` is the SIZE token and is expected; a text COLOUR is not.
-    expect(className).not.toMatch(/text-(ink|on-fill|danger|success|warning|accent)\b/);
+    // Variant prefixes are stripped before matching so a colour cannot hide behind a
+    // `hover:` or a `dark:`. `text-ui` is the SIZE token, not a colour, and is expected.
+    const colour = tokens.filter((token) =>
+      /^(bg|text|border|ring|fill|stroke|outline)-/.test(token.replace(/^.*:/, "")),
+    );
+
+    expect(colour.sort()).toEqual(["border-current", "hover:bg-surface", "text-ui"]);
   });
 });
