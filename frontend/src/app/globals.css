@@ -1,15 +1,220 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /*
+   * Design tokens, phase 1 of the redesign, round 2.
+   *
+   * The raw layer below is prefixed `--sf-*` on purpose. `--surface`, `--border`,
+   * `--text` and `--accent` are exactly the names a subtree is most likely to
+   * declare for its own unrelated reasons, and every token utility resolves
+   * `var(--sf-whatever)` at its USE site, not where it's declared: an unprefixed
+   * name is one collision away from silently retinting every token utility inside
+   * whatever subtree redefines it.
+   *
+   * Text colour also gets its own word, "ink", rather than "text": Tailwind
+   * reserves the `--text-*` namespace for font sizes (that's where the type scale
+   * two blocks down lives), and a colour token also named `--text-*` collided with
+   * it, which is what produced the doubled `text-text-muted` utility and made the
+   * natural `text-muted` a silent no-op.
+   *
+   * Raw values live in plain custom properties here, dark overrides sit in the
+   * existing @media (prefers-color-scheme: dark) block below, and only the mapping
+   * into Tailwind's `--color-*` namespace happens inside `@theme inline`. That
+   * indirection is what lets the dark-mode media query override a handful of plain
+   * variables and have every `bg-surface` / `text-ink-muted` / etc. utility pick
+   * the new value up live: `@theme` (without `inline`) bakes the literal value into
+   * the generated CSS, but `inline` makes the utility reference the variable
+   * instead. Same trick the very first version of this file used for
+   * `--background`/`--foreground`, which this round retires: they duplicated
+   * `--sf-surface`/`--sf-ink` exactly in both modes, so keeping both around would
+   * only have handed downstream authors two undocumented synonyms.
+   */
+
+  /* Surfaces. Cards are border-defined, not fill-defined: there is no separate
+     "raised" surface, only a sunken one for recessed strips and panels. */
+  --sf-surface: #ffffff;
+  --sf-surface-sunken: oklch(98.5% 0 none); /* zinc-50 */
+
+  /* Borders ("line", not "border": see the note above on Tailwind's own
+     `border-*` utility prefix, which "border-line" reads better against than
+     "border-border" does). */
+  --sf-line: oklch(92% 0.004 286.32); /* zinc-200 */
+  --sf-line-strong: oklch(87.1% 0.006 286.286); /* zinc-300 */
+  --sf-line-hover: oklch(70.5% 0.015 286.067); /* zinc-400 */
+
+  /* Text ("ink"). */
+  --sf-ink: #171717;
+  --sf-ink-muted: oklch(44.2% 0.017 285.786); /* zinc-600 */
+  --sf-ink-subtle: oklch(55.2% 0.016 285.938); /* zinc-500: distinct from muted in
+    both modes, not just in light, unlike round 1's --text-subtle. */
+
+  /* The one accent. Reserved for focus rings, inline text links, and the active
+     nav/tab indicator, never a large fill: emerald, amber and red already carry
+     meaning (correct/completed, cost alert, destructive/incorrect) and blue must
+     stay clearly not one of those. */
+  --sf-accent: oklch(54.6% 0.245 262.881); /* blue-600 */
+  --sf-focus: var(--sf-accent);
+
+  /* Solid fills, for buttons and anything else that needs a saturated block of
+     colour rather than text-on-a-tint. Distinct from the status tones below by
+     design, not by accident: a button needs more saturation at rest than an
+     alert box's body text needs sitting on its own light tint. `fill` with no
+     tone prefix is the neutral one Button's primary variant uses; it is the
+     existing inverse-ink pairing (dark ink in light mode, light ink in dark
+     mode), not the accent, for the same reason the accent stays out of large
+     fills everywhere else. `fill-hover` is a genuine second colour, not a filter:
+     the motion policy below only ever animates colour, border-colour, opacity and
+     transform, so a solid button's hover state has to be a token, the same as
+     everything else it sits next to, rather than a `brightness()` filter transition. */
+  --sf-fill: oklch(21% 0.006 285.885); /* zinc-900 */
+  --sf-fill-hover: oklch(37% 0.013 285.805); /* zinc-700 */
+  --sf-on-fill: #ffffff;
+
+  /* Status tones, at the emerald/amber/red family and step already used across
+     the app for inline status text (e.g. the review rating colours and form
+     error text): the *-surface/-border pair is for boxed alerts (Callout and
+     friends), the *-fill/-on-fill pair is for solid buttons and filled badges.
+     Values are this build's actual Tailwind v4 OKLCH palette, not the v3 hex
+     approximations round 1 shipped, so `bg-danger-fill` and a raw `bg-red-700`
+     used side by side are guaranteed to match rather than merely look close. */
+  --sf-success: oklch(50.8% 0.118 165.612); /* emerald-700 */
+  --sf-success-surface: oklch(97.9% 0.021 166.113); /* emerald-50 */
+  --sf-success-border: oklch(84.5% 0.143 164.978); /* emerald-300 */
+  --sf-success-fill: oklch(50.8% 0.118 165.612); /* emerald-700 */
+  --sf-success-on-fill: #ffffff;
+
+  --sf-warning: oklch(55.5% 0.163 48.998); /* amber-700 */
+  --sf-warning-surface: oklch(98.7% 0.022 95.277); /* amber-50 */
+  --sf-warning-border: oklch(87.9% 0.169 91.605); /* amber-300 */
+  --sf-warning-fill: oklch(55.5% 0.163 48.998); /* amber-700 */
+  /* Dark ink, not white: amber is a light hue at every step saturated enough to
+     read as a fill, and white text on it is the classic low-contrast pairing. */
+  --sf-warning-on-fill: oklch(21% 0.006 285.885); /* zinc-900 */
+
+  --sf-danger: oklch(50.5% 0.213 27.518); /* red-700 */
+  --sf-danger-surface: oklch(97.1% 0.013 17.38); /* red-50 */
+  --sf-danger-border: oklch(80.8% 0.114 19.571); /* red-300 */
+  --sf-danger-fill: oklch(50.5% 0.213 27.518); /* red-700 */
+  --sf-danger-fill-hover: oklch(57.7% 0.245 27.325); /* red-600 */
+  --sf-danger-on-fill: #ffffff;
+
+  /* Elevation. The app is entirely 1px borders with no shadows today, and that
+     stays the base: these two levels are additive, not a replacement. In dark
+     mode both resolve to `none` below, for the same reason the concept map's
+     scroll edge below inverts itself rather than darkening: a shadow needs a
+     lighter surface to fall onto, and darkening is invisible on a near-black
+     page. Dark elevation is expressed with --color-line-strong and
+     --color-surface-sunken instead, at the call site. */
+  --sf-shadow-raise: 0 1px 2px rgb(0 0 0 / 0.04), 0 2px 8px rgb(0 0 0 / 0.04);
+  --sf-shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.12);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-surface: var(--sf-surface);
+  --color-surface-sunken: var(--sf-surface-sunken);
+
+  --color-line: var(--sf-line);
+  --color-line-strong: var(--sf-line-strong);
+  --color-line-hover: var(--sf-line-hover);
+
+  --color-ink: var(--sf-ink);
+  --color-ink-muted: var(--sf-ink-muted);
+  --color-ink-subtle: var(--sf-ink-subtle);
+
+  --color-accent: var(--sf-accent);
+  --color-focus: var(--sf-focus);
+
+  --color-fill: var(--sf-fill);
+  --color-fill-hover: var(--sf-fill-hover);
+  --color-on-fill: var(--sf-on-fill);
+
+  --color-success: var(--sf-success);
+  --color-success-surface: var(--sf-success-surface);
+  --color-success-border: var(--sf-success-border);
+  --color-success-fill: var(--sf-success-fill);
+  --color-success-on-fill: var(--sf-success-on-fill);
+
+  --color-warning: var(--sf-warning);
+  --color-warning-surface: var(--sf-warning-surface);
+  --color-warning-border: var(--sf-warning-border);
+  --color-warning-fill: var(--sf-warning-fill);
+  --color-warning-on-fill: var(--sf-warning-on-fill);
+
+  --color-danger: var(--sf-danger);
+  --color-danger-surface: var(--sf-danger-surface);
+  --color-danger-border: var(--sf-danger-border);
+  --color-danger-fill: var(--sf-danger-fill);
+  --color-danger-fill-hover: var(--sf-danger-fill-hover);
+  --color-danger-on-fill: var(--sf-danger-on-fill);
+
+  --shadow-raise: var(--sf-shadow-raise);
+  --shadow-overlay: var(--sf-shadow-overlay);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+@theme {
+  /*
+   * Named type scale, replacing the text-[22px]/text-[17px]/text-[15px]/text-[13px]
+   * arbitrary sizes scattered through the codebase. Static (not `inline`): none of
+   * these change with colour scheme, so the literal value baked into each utility
+   * is exactly what's wanted.
+   *
+   * --text-micro is uppercase with tracked-out letters by convention wherever it's
+   * used, but text-transform has no companion theme variable, so callers add
+   * `uppercase` alongside the `text-micro` class.
+   */
+  --text-display: 1.875rem; /* 30px */
+  --text-display--line-height: 2.25rem; /* 36px */
+  --text-display--font-weight: 600;
+  --text-display--letter-spacing: -0.02em;
+
+  --text-title: 1.25rem; /* 20px */
+  --text-title--line-height: 1.75rem; /* 28px */
+  --text-title--font-weight: 600;
+
+  --text-subtitle: 1.0625rem; /* 17px */
+  --text-subtitle--line-height: 1.5rem; /* 24px */
+  --text-subtitle--font-weight: 600;
+
+  /* Lesson markdown body only. */
+  --text-prose: 1rem; /* 16px */
+  --text-prose--line-height: 1.625rem; /* 26px */
+  --text-prose--font-weight: 400;
+
+  /* Default app body. */
+  --text-ui: 0.9375rem; /* 15px */
+  --text-ui--line-height: 1.375rem; /* 22px */
+  --text-ui--font-weight: 400;
+
+  --text-small: 0.8125rem; /* 13px */
+  --text-small--line-height: 1.25rem; /* 20px */
+
+  --text-micro: 0.75rem; /* 12px */
+  --text-micro--line-height: 1rem; /* 16px */
+  --text-micro--font-weight: 500;
+  --text-micro--letter-spacing: 0.04em;
+
+  /* Radius. Controls (buttons, inputs, chips with text) get the smaller step;
+     surfaces (cards, panels, alert boxes) get the larger one. Badges and status
+     dots stay on rounded-full, outside this scale. */
+  --radius-control: 8px;
+  --radius-surface: 12px;
+
+  /*
+   * Motion. Only colour, border-colour, opacity and transform are ever animated.
+   *
+   * The theme key for a duration utility is `--transition-duration-*`, not
+   * `--duration-*`: Tailwind v4 reads `duration-fast` against
+   * `--transition-duration-fast` specifically, and a `--duration-fast` variable
+   * of the same value is simply a variable Tailwind never looks at. The class
+   * names stay `duration-fast`/`duration-slow` either way, only the theme key
+   * they resolve against changes.
+   */
+  --transition-duration-fast: 120ms;
+  --transition-duration-slow: 240ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
 
 /*
@@ -53,9 +258,6 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-
     --concept-not-started: #27272a;
     --concept-not-started-border: #3f3f46;
     --concept-rule: #27272a;
@@ -65,6 +267,49 @@
     --concept-column-sublabel: #a1a1aa;
     --concept-surface: #101011;
     --concept-scroll-edge: rgba(255, 255, 255, 0.16);
+
+    --sf-surface: #0a0a0a;
+    --sf-surface-sunken: oklch(21% 0.006 285.885); /* zinc-900 */
+
+    --sf-line: oklch(27.4% 0.006 286.033); /* zinc-800 */
+    --sf-line-strong: oklch(37% 0.013 285.805); /* zinc-700 */
+    --sf-line-hover: oklch(44.2% 0.017 285.786); /* zinc-600 */
+
+    --sf-ink: #ededed;
+    --sf-ink-muted: oklch(70.5% 0.015 286.067); /* zinc-400 */
+    --sf-ink-subtle: oklch(55.2% 0.016 285.938); /* zinc-500, same step as light:
+      distinct from --sf-ink-muted's zinc-400 here too. */
+
+    --sf-accent: oklch(70.7% 0.165 254.624); /* blue-400 */
+
+    --sf-fill: oklch(96.7% 0.001 286.375); /* zinc-100 */
+    --sf-fill-hover: oklch(87.1% 0.006 286.286); /* zinc-300 */
+    --sf-on-fill: oklch(21% 0.006 285.885); /* zinc-900 */
+
+    --sf-success: oklch(76.5% 0.177 163.223); /* emerald-400 */
+    --sf-success-surface: oklch(26.2% 0.051 172.552); /* emerald-950 */
+    --sf-success-border: oklch(43.2% 0.095 166.913); /* emerald-800 */
+    --sf-success-fill: oklch(59.6% 0.145 163.225); /* emerald-600 */
+    --sf-success-on-fill: #ffffff;
+
+    --sf-warning: oklch(82.8% 0.189 84.429); /* amber-400 */
+    --sf-warning-surface: oklch(27.9% 0.077 45.635); /* amber-950 */
+    --sf-warning-border: oklch(47.3% 0.137 46.201); /* amber-800 */
+    --sf-warning-fill: oklch(66.6% 0.179 58.318); /* amber-600 */
+    --sf-warning-on-fill: oklch(21% 0.006 285.885); /* zinc-900 */
+
+    --sf-danger: oklch(70.4% 0.191 22.216); /* red-400 */
+    --sf-danger-surface: oklch(25.8% 0.092 26.042); /* red-950 */
+    --sf-danger-border: oklch(44.4% 0.177 26.899); /* red-800 */
+    --sf-danger-fill: oklch(57.7% 0.245 27.325); /* red-600 */
+    --sf-danger-fill-hover: oklch(50.5% 0.213 27.518); /* red-700 */
+    --sf-danger-on-fill: #ffffff;
+
+    /* Darkening a shadow is invisible on a near-black page (see the comment on
+       --sf-shadow-raise above); elevation is expressed with borders and
+       --color-surface-sunken instead once this is `none`. */
+    --sf-shadow-raise: none;
+    --sf-shadow-overlay: none;
   }
 }
 
@@ -113,8 +358,41 @@
   background-attachment: local, local, scroll, scroll;
 }
 
+/*
+ * The one focus convention for the whole app. Unscoped on purpose: it must also reach
+ * the programmatic focus targets elsewhere in the app (elements with tabIndex={-1} that
+ * receive .focus() after a mutation lands), not just <button>/<a>/<input>, or a keyboard
+ * user moved there has no visible sign of where they landed. It is also why this rule
+ * stays unlayered rather than moving into `@layer utilities`: an unlayered declaration
+ * outranks per-component focus rings regardless of their specificity, which is what
+ * makes "one focus convention" actually true instead of "one focus convention, plus
+ * whatever four other components still carry".
+ *
+ * Deliberately no `border-radius` here. Browsers already draw the outline following the
+ * focused element's own corners, so the ring needs no help; and because border-radius is
+ * not an inherited property, `border-radius: inherit` would not mean "keep your shape",
+ * it would replace the element's radius with its PARENT's. On a rounded button inside a
+ * square container that squares the button off at the moment it takes focus, which is
+ * the opposite of the intent.
+ */
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--sf-surface);
+  color: var(--sf-ink);
+  font-family: var(--font-sans);
 }

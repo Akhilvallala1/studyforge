@@ -628,7 +628,7 @@ function ActivePanel({
         <div
           ref={questionRef}
           tabIndex={-1}
-          className="mt-3 rounded-lg border border-amber-200 bg-white/70 px-4 py-3 outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-900 dark:bg-zinc-900/40"
+          className="mt-3 rounded-lg border border-amber-200 bg-white/70 px-4 py-3 dark:border-amber-900 dark:bg-zinc-900/40"
         >
           <p className="text-[14px] font-medium leading-[1.45]">{item.question}</p>
 
@@ -720,7 +720,7 @@ function TerminalPanel({
     <div
       ref={panelRef}
       tabIndex={-1}
-      className="rounded-lg border border-amber-200 bg-white/70 px-4 py-3.5 outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-900 dark:bg-zinc-900/40"
+      className="rounded-lg border border-amber-200 bg-white/70 px-4 py-3.5 dark:border-amber-900 dark:bg-zinc-900/40"
     >
       <h4 id={`${baseId}-heading`} className="text-[14px] font-semibold">
         {headline}

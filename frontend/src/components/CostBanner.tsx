@@ -57,7 +57,7 @@ export function CostBanner() {
       {alert.active && (
         <div
           role="status"
-          className="flex flex-wrap items-center justify-between gap-3 border-b border-amber-300 bg-amber-100 px-6 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200"
+          className="flex flex-wrap items-center justify-between gap-3 border-b border-warning-border bg-warning-surface px-6 py-3 text-ui text-warning"
         >
           <p className="font-medium">
             You have spent {formatUsd(alert.total_usd)} on API calls (estimated), past the{" "}
@@ -71,7 +71,7 @@ export function CostBanner() {
               type="button"
               onClick={() => void handleAcknowledge()}
               disabled={acking}
-              className="rounded-md border border-amber-400 bg-white px-3 py-1 font-medium text-amber-900 transition-colors hover:bg-amber-50 disabled:opacity-60 dark:border-amber-700 dark:bg-amber-900 dark:text-amber-100 dark:hover:bg-amber-800"
+              className="rounded-control border border-warning-border bg-surface px-3 py-1 font-medium text-warning transition-colors duration-fast ease-standard hover:bg-surface-sunken disabled:opacity-60"
             >
               {acking ? "Acknowledging..." : "Acknowledge"}
             </button>
@@ -80,7 +80,7 @@ export function CostBanner() {
       )}
       <Link
         href="/usage"
-        className="border-b border-zinc-200 bg-zinc-50 px-6 py-1.5 text-right text-xs text-zinc-600 transition-colors hover:text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-200"
+        className="border-b border-line bg-surface-sunken px-6 py-1.5 text-right text-small text-ink-muted transition-colors duration-fast ease-standard hover:text-ink"
       >
         Total API spend (estimated): {formatUsd(totals.estimated_cost_usd)}
       </Link>
