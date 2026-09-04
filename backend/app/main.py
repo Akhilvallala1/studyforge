@@ -516,9 +516,15 @@ def _legacy_refusal(failure: ingest.SourceFailure, stage: str) -> HTTPException:
     distinction matters enough to write down rather than leave implied.
 
     THE JSON HALF is keyed purely on spelling: a request using `text` or `url` keeps the
-    bare-string body it always had, and anything using `sources` gets the one shape however
-    many sources it carries. That half DIES WITH THE ALIASES IN 0.4.0, because removing the
-    fields removes the only way to reach it.
+    bare-string body, and anything using `sources` gets the one shape however many sources
+    it carries. That half DIES WITH THE ALIASES IN 0.4.0, because removing the fields
+    removes the only way to reach it.
+
+    ONE REFUSAL IS GENUINELY NEW rather than preserved, so "the body it always had" would
+    be false as a blanket claim: MAX_TOTAL_CHARS did not exist before multi-source, and a
+    single `text` or `url` body was uncapped. _ingest_or_refuse routes that one through
+    this seam's shape as well, so the SHAPE is unchanged for legacy callers even though
+    the REFUSAL is new. See the note at the size check.
 
     THE PDF HALF IS KEYED ON COUNT, `len(specs) <= 1`, and HAS NO END DATE. There is no
     spelling signal available: the upload field is deliberately still `file` so that every
@@ -581,7 +587,15 @@ def _ingest_or_refuse(
 
     total = ingest.total_chars(sources)
     if total > ingest.MAX_TOTAL_CHARS:
-        raise _unprocessable("source_too_large", source_too_large_message(total))
+        # THE SIZE CAP GOES THROUGH THE LEGACY SEAM TOO. This is a NEW refusal on a path
+        # that never had one: a single `text` or `url` body has been uncapped since the
+        # project started. The cap stays, because the alternative is an unbounded prompt,
+        # but a legacy caller gets it in the body shape it parses today rather than the
+        # dict shape introduced with `sources`.
+        message = source_too_large_message(total)
+        if legacy:
+            raise HTTPException(422, message)
+        raise _unprocessable("source_too_large", message)
     return ingest.chunk_sources(sources)
 
 

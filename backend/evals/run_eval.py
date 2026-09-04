@@ -225,8 +225,10 @@ def load_sources(keys: list[str]) -> list:
         # concatenated count told the operator the run was unrouted while generation
         # routed it, and routing is the one thing this eval is about.
         if key in MULTI_SOURCE_KEYS:
-            chunks, _owners = generation.chunk_sources(MULTI_SOURCE_KEYS[key]())
             documents = MULTI_SOURCE_KEYS[key]()
+            chunks, _owners = ingest.chunk_sources(
+                [ingest.from_text("", label, text) for label, text in documents]
+            )
             print(
                 f"  {len(source.text):,} chars over {len(documents)} documents "
                 f"-> {len(chunks)} chunks "

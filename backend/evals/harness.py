@@ -257,7 +257,9 @@ def run_course_eval(
     that wording, which is the thing that drifts.
     """
     if documents is not None:
-        chunks, owners = generation.chunk_sources(documents)
+        chunks, owners = ingest.chunk_sources(
+            [ingest.from_text("", label, text) for label, text in documents]
+        )
     else:
         chunks, owners = ingest.chunk_text(text), None
     if not tag_sources:

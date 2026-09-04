@@ -260,6 +260,26 @@ def test_sources_over_the_size_cap_are_refused_before_any_spend(client, monkeypa
     assert str(ingest.MAX_TOTAL_CHARS) in detail["message"].replace(",", "")
 
 
+def test_a_legacy_over_size_request_keeps_the_legacy_body_shape(client, monkeypatch):
+    """The one refusal on the alias path that is NEW rather than preserved.
+
+    MAX_TOTAL_CHARS did not exist before multi-source, and a single `text` body was
+    uncapped, so a request this size used to generate a course and now refuses. The cap
+    stays; what is preserved is the SHAPE. _legacy_refusal promises a caller spelling it
+    `text` a bare-string body, and a size check that answered with the new dict would
+    break that promise on the path the branch says is unchanged. Route the size check
+    around the `legacy` flag and this goes red.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
+
+    response = _generate(client, {"text": "x" * (ingest.MAX_TOTAL_CHARS + 1)})
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert isinstance(detail, str), f"legacy caller got the new dict shape: {detail!r}"
+    assert str(ingest.MAX_TOTAL_CHARS) in detail.replace(",", "")
+
+
 # --------------------------------------------------------------------------
 # Per-source failure, which is the only genuinely new shape
 # --------------------------------------------------------------------------
@@ -562,7 +582,7 @@ def test_the_owners_mapping_reaches_the_prompt(client, monkeypatch):
     Both branches of this feature were green and correct alone, and merging them without
     wiring this argument produced single-source wording on multi-source material with
     nothing failing anywhere. That is not a hypothetical cost: the untagged arm of a
-    measured A/B scored 48.5% answerable and 46.7% grounded against 60.3% and 59.1%
+    measured A/B scored 50.4% answerable and 44.2% grounded against 61.3% and 55.6%
     tagged, complete separation at n=4, exact permutation p = 0.014 on both.
 
     So this asserts on the PROMPT rather than on the response. A course comes back either
@@ -596,6 +616,18 @@ def test_the_owners_mapping_reaches_the_prompt(client, monkeypatch):
             f"doc-{n} reached the outline untagged, so the material is multi-source and "
             f"the model was not told so"
         )
+
+    # THE SECOND CALL SITE. generate_course threads `owners` into generate_lesson as
+    # well as generate_outline, and asserting only on seen[0] left that one unpinned:
+    # deleting the argument there kept the whole suite green. Lessons are written from
+    # the tagged material too, so they need the same attribution the outline gets.
+    lesson_prompts = seen[1:]
+    assert lesson_prompts, "no lesson prompt was recorded, so this pins nothing"
+    assert any("[document: doc-0]" in p for p in lesson_prompts), (
+        "the outline was tagged but no lesson prompt was, so generate_lesson is "
+        "writing from material it cannot attribute. Dropping `owners` from the "
+        "generate_lesson call in generate_course must red here."
+    )
 
 
 def test_a_single_source_is_not_tagged_at_all(client, monkeypatch):

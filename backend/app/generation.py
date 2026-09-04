@@ -260,10 +260,13 @@ NEUTRALIZED_LABEL = "[segment marker]"
 # WHAT IT DOES NOT CATCH. This is the boundary as designed rather than as hoped, and it
 # is a real gap rather than a theoretical one, so do not read this function as complete.
 #
-# LEADING WHITESPACE ONLY. Spaces and tabs in front of the label are stripped before
-# matching, and nothing else is. A markdown list marker ("- [segment 3]"), a quote marker
-# ("> [segment 3]"), a table cell ("| [segment 3]") or an invisible code point all defeat
-# it, and all of them still render to a reader as a label at what looks like column zero.
+# VISIBLE PREFIXES ONLY. Spaces, tabs and the common markdown line openers are skipped
+# before matching, and the prefix is put back afterwards so only the label is rewritten:
+# list markers, quote markers, table pipes, heading hashes, emphasis characters and
+# ordered-list digits. That closes "- [segment 3]" and "> [document: X]", neither of
+# which is exotic in an uploaded document. The class is tutor.py's visible set plus the
+# table pipe. An INVISIBLE code point in front of the label still defeats it, and that
+# gap is real rather than theoretical.
 #
 # tutor.py carries a 13-range enumeration of exactly those invisible code points, built
 # for the register-label forgery, which is the same class of attack. It is NOT copied
@@ -275,7 +278,7 @@ NEUTRALIZED_LABEL = "[segment marker]"
 # What IS closed is the accidental and the casual case, which is what a document
 # containing the literal text "[segment 3]" actually is.
 _SEGMENT_LABEL_FORGERY = re.compile(
-    r"^[ \t]*\[\s*(?:segment\b[^\]\n]*|document\s*:[^\]\n]*)\]",
+    r"^(?P<prefix>[ \t>*_#.)|\-0-9]*)\[\s*(?:segment\b[^\]\n]*|document\s*:[^\]\n]*)\]",
     re.MULTILINE | re.IGNORECASE,
 )
 
@@ -345,13 +348,15 @@ def defuse_segment_labels(text: str) -> str:
     readable: the material is still what the course has to be written from, and a
     document that happens to discuss segments in square brackets should still teach.
 
-    PARTIAL, AND KNOWN TO BE. It matches a label preceded by spaces or tabs and by
-    nothing else, so a list marker, a quote marker or an invisible code point in front of
-    one gets through while still rendering as a label to a reader. See the note on
-    _SEGMENT_LABEL_FORGERY above for the full boundary and for why the fix is a lift into
-    untrusted.py rather than another copy of tutor.py's prefix table.
+    PARTIAL, AND KNOWN TO BE. The match skips spaces, tabs and the visible markdown line
+    openers, so a list or quote marker no longer gets a forged label through. An invisible
+    code point in front of one still does, while still rendering as a label to a reader.
+    See the note on _SEGMENT_LABEL_FORGERY above for the full boundary, and why closing it
+    means lifting tutor.py's prefix table into untrusted.py rather than copying it.
     """
-    return _SEGMENT_LABEL_FORGERY.sub(NEUTRALIZED_LABEL, text or "")
+    return _SEGMENT_LABEL_FORGERY.sub(
+        lambda m: m.group("prefix") + NEUTRALIZED_LABEL, text or ""
+    )
 
 
 def label_segments(
@@ -384,27 +389,6 @@ def label_segments(
             label = f"{label} [document: {safe}]"
         parts.append(f"{label}\n{defuse_segment_labels(chunks[i])}")
     return "\n\n".join(parts)
-
-
-def chunk_sources(documents: list[tuple[str, str]]) -> tuple[list[str], list[str]]:
-    """Several documents into one corpus, remembering which document each chunk is from.
-
-    Returns (chunks, owners), two parallel lists, which is the pair label_segments and
-    generate_outline both take. Chunking each document separately rather than
-    concatenating first is the whole point: a chunk that straddled two documents would
-    have no single owner to tag it with, and the seam would be inside a segment where
-    nothing can point at it.
-    """
-    from app import ingest
-
-    chunks: list[str] = []
-    owners: list[str] = []
-    for label, text in documents:
-        for chunk in ingest.chunk_text(text):
-            chunks.append(chunk)
-            owners.append(label)
-    return chunks, owners
-
 
 def generate_outline(meter: Meter, chunks: list[str], owners: list[str] | None = None) -> dict:
     """The outline call. `owners` names the document each chunk came from, if several.

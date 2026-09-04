@@ -1319,7 +1319,7 @@ def test_the_multi_source_corpus_is_exactly_three_chunks_and_routed():
     Fetches nothing: the PEP 8 half is replaced with a stand-in of the same size, so the
     arithmetic is tested without the network.
     """
-    from app import generation
+    from app import generation, ingest
     from evals import run_eval
 
     darwin = (run_eval.DATA_DIR / "prose-darwin.txt").read_text(encoding="utf-8")
@@ -1330,8 +1330,15 @@ def test_the_multi_source_corpus_is_exactly_three_chunks_and_routed():
     # character slice, and this assertion is what caught it.
     assert len(stand_in) >= run_eval.MULTI_PEP8_CHARS
 
-    chunks, owners = generation.chunk_sources(
-        [("darwin-origin", darwin), ("pep8-style-guide", stand_in[: run_eval.MULTI_PEP8_CHARS])]
+    documents = [
+        ("darwin-origin", darwin),
+        ("pep8-style-guide", stand_in[: run_eval.MULTI_PEP8_CHARS]),
+    ]
+    # Through from_text, which is how run_eval._multi_documents builds this corpus, so
+    # the arithmetic under test is the arithmetic that runs rather than one clean_text
+    # pass away from it.
+    chunks, owners = ingest.chunk_sources(
+        [ingest.from_text("", label, text) for label, text in documents]
     )
     assert len(chunks) == 3, f"corpus drifted to {len(chunks)} chunks"
     assert len(chunks) >= generation.SEGMENT_ROUTING_MIN_CHUNKS
