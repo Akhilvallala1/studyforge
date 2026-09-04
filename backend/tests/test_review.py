@@ -324,16 +324,26 @@ class TestDashboard:
         body = client.get("/review/today").json()
         assert body["due_this_week"] >= body["due_today"] >= body["due_now"] >= 1
 
-    def test_a_card_in_its_ten_minute_step_counts_today_but_not_now(self, client):
+    def test_a_card_in_its_ten_minute_step_counts_today_but_not_now(self, client, monkeypatch):
         """due_now and due_today must be allowed to disagree, and the Today screen
         depends on it. A card just rated Again is due in ten minutes: it belongs to
         the day's workload, but a session started this second cannot serve it. Gating
         the Start review button on the day figure offered a session with nothing in
         it, which is the bug this separation fixes."""
+        # The premise here, that a ten-minute learning step still falls inside "today",
+        # is only true as long as `now` is not itself within ten minutes of the 04:00
+        # local boundary in app/days.py. Read from the wall clock, this test fails for
+        # ten minutes out of every day, wherever that window happens to land. Pinning
+        # models.utcnow() (the clock both review.now_utc() and the /review/today route
+        # read) to a fixed mid-day moment removes that dependency without loosening
+        # what the test actually checks. Do not swap this back for datetime.now(UTC).
+        fixed_now = datetime(2024, 6, 15, 12, 0, tzinfo=UTC)
+        monkeypatch.setattr(models, "utcnow", lambda: fixed_now)
+
         # _seed_card advances a day per rating, so start two days back to land the
         # Again on now: the ten-minute step has to still be running for this to test
         # anything.
-        start = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=2)
+        start = fixed_now.replace(tzinfo=None) - timedelta(days=2)
         _seed_card("lapsed", ratings=(fsrs.GOOD, fsrs.GOOD, fsrs.AGAIN), start=start)
 
         body = client.get("/review/today").json()
