@@ -56,11 +56,11 @@ function skipReasonLabel(reason: SkipReason): string {
   }
 }
 
-/** A count-prefixed reason clause for the aggregate announcement, e.g. "2 not a PDF". */
+/** A count-prefixed reason clause for the aggregate announcement, e.g. "2 not PDFs". */
 function skipReasonSummaryLabel(reason: SkipReason, count: number): string {
   switch (reason) {
     case "not-pdf":
-      return `${count} not a PDF`;
+      return `${count} ${count === 1 ? "not a PDF" : "not PDFs"}`;
     case "empty":
       return `${count} ${count === 1 ? "empty file" : "empty files"}`;
     case "over-source-cap":

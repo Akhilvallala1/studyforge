@@ -553,4 +553,61 @@ describe("GenerateForm focus restoration", () => {
       ).toHaveFocus(),
     );
   });
+
+  test("a second submit failing with the same message still moves focus back to the alert", async () => {
+    await renderGenerateForm();
+    const submit = screen.getByRole("button", { name: "Generate course" });
+
+    fireEvent.click(submit);
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveFocus());
+
+    // The learner moves on before trying again. Nothing about the message is going to
+    // change on a second, identical failure, which is exactly the case a plain
+    // setSummaryError state update bails out of as a no-op: this must not silently fail
+    // to re-announce, or to re-focus, just because the text is byte-identical.
+    act(() => screen.getByRole("alert").blur());
+    expect(document.body).toHaveFocus();
+
+    fireEvent.click(submit);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("alert"),
+        "a byte-identical second failure is still a fresh announcement and must reclaim focus, not leave it wherever the learner moved it since the first",
+      ).toHaveFocus(),
+    );
+  });
+
+  test("the skip announcement pluralises its reason clause", async () => {
+    const { container } = await renderGenerateForm();
+    const fileInput = container.querySelectorAll('input[type="file"]')[0] as HTMLInputElement;
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [
+          new File(["notes"], "notes.txt", { type: "text/plain" }),
+          new File(["slides"], "slides.pptx", { type: "application/vnd.ms-powerpoint" }),
+        ],
+      },
+    });
+
+    expect(
+      (await screen.findByRole("status")).textContent,
+      "the reason clause counts two files, so it must agree in number rather than read '2 not a PDF'",
+    ).toContain("2 skipped: 2 not PDFs.");
+  });
+
+  test("the skip announcement keeps the singular reason clause for one file", async () => {
+    const { container } = await renderGenerateForm();
+    const fileInput = container.querySelectorAll('input[type="file"]')[0] as HTMLInputElement;
+
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["notes"], "notes.txt", { type: "text/plain" })] },
+    });
+
+    expect(
+      (await screen.findByRole("status")).textContent,
+      "one file must stay singular, so the plural fix cannot be a blanket 's'",
+    ).toContain("1 skipped: 1 not a PDF.");
+  });
 });
