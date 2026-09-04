@@ -66,8 +66,10 @@ describe("courses page load failure", () => {
     // renders ErrorState (not EmptyState) whenever loadError is set, and
     // courses-page-contract.test.tsx is what confirms this id shows up once the list is
     // genuinely empty instead. That file is named alone on purpose: THIS file has no
-    // success-path test to lean on (no mockResolvedValue anywhere in it), so an earlier
-    // version of this sentence credited siblings that do not exist.
+    // success-path test to lean on (no test in it calls mockResolvedValue), so an earlier
+    // version of this sentence credited siblings that do not exist. Phrased as "no test
+    // in it calls" rather than "not anywhere in it" because this very line contains the
+    // token, so the stricter wording would have been falsified by its own grep.
     expect(document.querySelector("#new-course")).toBeNull();
     expect(document.querySelector("#create-first-course")).toBeNull();
   });

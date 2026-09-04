@@ -52,9 +52,9 @@ export default async function CourseConceptsPage(
   try {
     data = await getCourseConcepts(id);
   } catch (err) {
-    // This is the last of the three pages this PR converts, and the order matters for
-    // reading the sentence: on main, /courses/1, its lesson pages and this page ALL
-    // re-threw and all served a blank Next 500, so the contrast being fixed is not
+    // This is the last of the three re-throwing pages this PR converts, and the order
+    // matters for reading the sentence: on main, /courses/1, its lesson pages and this
+    // page ALL re-threw and all served a blank Next 500, so the contrast being fixed is not
     // "the course page was friendly and this one was not". It is that CourseTabs links
     // here as a sibling tab, so converting the course page without this one would have
     // created that split one click wide. A genuine 404 still 404s; everything else
@@ -74,9 +74,12 @@ export default async function CourseConceptsPage(
           their heading text and in nothing else.
 
           That last part is specific to this page, so do not generalise it. Every error
-          branch in this batch uses PageHeader with a generic title, but the LESSON page's
-          success branch still hand-rolls its own h1 next to MarkCompleteButton, and its
-          own comment says so: there, the two branches differ in their primitive as well as
+          branch on the three id-taking pages uses PageHeader with a generic title (the
+          courses LIST page is not one of them: its PageHeader sits outside the ternary
+          and carries the real title "StudyForge", with ErrorState alone inside). But the
+          LESSON page's success branch still hand-rolls its own h1 next to
+          MarkCompleteButton, and its own comment says so: there, the two branches
+          differ in their primitive as well as
           their text.
         */}
         <PageHeader className="mt-4" title="Concept map" />
