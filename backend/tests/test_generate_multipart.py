@@ -138,11 +138,13 @@ def test_urls_and_pdfs_combine_into_one_course(client, monkeypatch):
     assert response.status_code == 200, response.text
     outline_prompt = seen[0]
     for index in range(4):
-        assert f"UNIQUEMARK{index}" in outline_prompt, f"UNIQUEMARK{index} never reached the outline"
+        assert (
+            f"UNIQUEMARK{index}" in outline_prompt
+        ), f"UNIQUEMARK{index} never reached the outline"
 
 
 def test_files_only_matches_the_pdf_only_route_shape(client, monkeypatch):
-    """Acceptance 2: files-only multipart produces the same course shape as /courses/generate/pdf."""
+    """Acceptance 2: files-only multipart matches the shape of /courses/generate/pdf."""
     monkeypatch.setattr(main, "get_provider", lambda: FakeProvider())
     pdf_bytes = f"Shared PDF content. {GOOD_TEXT}".encode()
 
@@ -200,11 +202,13 @@ def test_six_combined_sources_refuses_before_any_provider_call(client, monkeypat
     extract_pdf is never called from either arm - it is a constant, not a discriminator.
 
     What the early guard actually buys, and the only thing distinguishing it, is that
-    generate_multipart's spec-building loop below (`value=upload.file.read()`) runs BEFORE
-    ingest.load_sources is ever called - so without the early guard, every uploaded file is
-    still read fully into memory before the deep guard gets a chance to refuse. Spying on
-    load_sources itself is what proves that: with the early guard in place, load_sources is
-    never invoked at all for an over-cap request.
+    generate_multipart's spec-building loop (`value=upload.file.read()` at main.py:815) runs
+    BEFORE ingest.load_sources is ever called (main.py:605) - so without the early guard,
+    every uploaded file is still read fully into memory before the deep guard gets a chance
+    to refuse. Spying on load_sources itself is what proves that: with the early guard in
+    place, load_sources is never invoked at all for an over-cap request. Line numbers are as
+    of this test's own commit; if a later change moves either call, re-check the ordering
+    rather than trusting these numbers.
     """
     monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
     load_sources_calls: list[int] = []
@@ -288,7 +292,9 @@ def test_a_single_file_request_gets_the_dict_shape_not_a_bare_string(client, mon
 
     assert response.status_code == 422, response.text
     detail = response.json()["detail"]
-    assert isinstance(detail, dict), "a single-file multipart request must not get the legacy string"
+    assert isinstance(
+        detail, dict
+    ), "a single-file multipart request must not get the legacy string"
     assert detail["error"] == "source_failed"
     assert detail["sources"][0]["index"] == 0
 
