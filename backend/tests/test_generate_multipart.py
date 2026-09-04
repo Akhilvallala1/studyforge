@@ -26,7 +26,7 @@ this file is about what happens to several sources of different kinds once each 
 read.
 """
 
-import asyncio
+import inspect
 import io
 import json
 
@@ -351,18 +351,6 @@ def test_over_cap_uploads_are_refused_without_reading_any_file(client, monkeypat
     assert pdf_reads == [], "the byte cap must refuse before any uploaded PDF is read"
 
 
-class _NoSourcesRequest:
-    """A minimal stand-in for fastapi.Request.
-
-    generate_multipart only calls `request.form()`, and only to read `sources`, before the
-    size guard this test targets ever runs. What this test pins does not depend on `sources`
-    at all, so this returns an empty mapping (`sources` absent) rather than a real Request.
-    """
-
-    async def form(self):
-        return {}
-
-
 def test_unknown_upload_size_is_refused_as_over_cap_not_under():
     """Reviewer finding 1: an UploadFile whose size is unknown must be refused, not summed as 0.
 
@@ -375,19 +363,16 @@ def test_unknown_upload_size_is_refused_as_over_cap_not_under():
     The payload is 10 bytes, nowhere near MAX_UPLOAD_BYTES, so the only thing that can cause
     a source_too_large refusal here is the None-size rule itself, not the byte count.
 
-    session=None is deliberate, not a shortcut: generate_multipart never touches `session`
-    until after both size checks, so passing None and still getting the refusal is itself
-    part of what this test pins - the refusal happens before any database access.
+    `raw_sources=None` stands in for what the `_raw_sources_field` dependency would supply
+    for a request with no `sources` part. session=None is deliberate, not a shortcut:
+    generate_multipart never touches `session` until after both size checks, so passing None
+    and still getting the refusal is itself part of what this test pins - the refusal happens
+    before any database access.
     """
     upload = UploadFile(file=io.BytesIO(b"x" * 10), size=None, filename="huge.pdf")
 
-    async def _call():
-        return await main.generate_multipart(
-            request=_NoSourcesRequest(), sources=None, file=[upload], session=None
-        )
-
     with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(_call())
+        main.generate_multipart(raw_sources=None, sources=None, file=[upload], session=None)
 
     assert exc_info.value.status_code == 422
     assert exc_info.value.detail["error"] == "source_too_large"
@@ -476,3 +461,62 @@ def test_limits_are_read_from_the_ingest_constants(client):
         "max_total_chars": ingest.MAX_TOTAL_CHARS,
         "max_upload_bytes": ingest.MAX_UPLOAD_BYTES,
     }
+
+
+def test_sources_sent_as_a_file_part_is_refused_by_the_form_declaration(client, monkeypatch):
+    """The route carries no non-str guard of its own, because it cannot reach one.
+
+    Reading `sources` from the raw form data rather than from the `Form()` parameter means
+    the route sees whatever arrived, including an UploadFile if a client sends `sources` as
+    a file part instead of a text field. That looks like it needs a type check in the route
+    body. It does not: the `sources: str | None = Form(default=None)` declaration is still
+    on the signature, so FastAPI validates it and raises RequestValidationError BEFORE the
+    body runs. A hand-written isinstance branch there would be dead code whose error message
+    no request could ever produce.
+
+    This pins the refusal that actually happens, so that removing the `Form()` declaration
+    (the one thing that would make such a guard necessary) fails here rather than silently
+    letting an UploadFile through to `_parse_multipart_sources`.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
+    part = ("sources.json", b'[{"kind": "text", "value": "hi"}]', "application/json")
+
+    response = client.post("/courses/generate/multipart", files={"sources": part})
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["error"] == "invalid_request"
+    assert "sources" in detail["message"], detail["message"]
+
+
+def test_the_route_is_not_a_coroutine_so_it_runs_in_the_threadpool():
+    """Reviewer blocker: `async def` here freezes the whole API for the length of a generation.
+
+    FastAPI runs a `def` endpoint in its threadpool but an `async def` endpoint ON the event
+    loop. Every meaningful thing this route does blocks: `upload.file.read()`, the
+    synchronous httpx fetches and pypdf parsing inside `ingest.load_sources`, provider SDK
+    calls that take minutes for a real course, and synchronous SQLAlchemy writes. As a
+    coroutine it therefore held the loop for the entire generation. Measured on this route
+    with 2.0s of blocking work and a concurrent GET fired 0.4s in: as `async def` the GET
+    could not even be ISSUED until 2.016s, because the client's own `asyncio.sleep(0.4)`
+    never got scheduled; as `def` it was answered at 0.415s while generation ran on.
+
+    The route still needs the raw `sources` value from the parsed form, which is why it
+    arrives through the async `_raw_sources_field` dependency: FastAPI resolves dependencies
+    on the loop and then hands a sync endpoint to the threadpool, so the cached-form read and
+    the threadpool are not in tension.
+
+    Asserted structurally rather than by timing, because a timing test would be flaky. The
+    two sibling generate routes are pinned alongside it: whatever this route does about
+    concurrency, it should not diverge from them by accident.
+    """
+    assert not inspect.iscoroutinefunction(main.generate_multipart), (
+        "generate_multipart must stay a sync `def` so FastAPI runs its blocking body in the "
+        "threadpool; as `async def` it blocks the event loop and serialises the whole API"
+    )
+    assert not inspect.iscoroutinefunction(main.generate_from_pdf)
+    assert not inspect.iscoroutinefunction(main.generate_from_text)
+    assert inspect.iscoroutinefunction(main._raw_sources_field), (
+        "the dependency must stay async: it is what lets the route read the cached form "
+        "without the route itself having to be a coroutine"
+    )

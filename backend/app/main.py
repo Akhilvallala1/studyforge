@@ -719,9 +719,22 @@ def generate_from_pdf(file: list[UploadFile], session: Session = Depends(get_ses
     return _run_generation_from(session, ingested)
 
 
+async def _raw_sources_field(request: Request) -> Any:
+    """The authoritative `sources` value, read from FastAPI's own cached form parse.
+
+    Async so the route itself need not be. FastAPI resolves dependencies on the event loop
+    but runs a `def` endpoint in the threadpool, and this route's body blocks throughout:
+    upload reads, synchronous httpx fetches and pypdf parsing inside `load_sources`, and
+    provider calls that take minutes for a real course. An `async def` endpoint would run
+    all of that ON the loop, serialising generation server-wide and stalling every other
+    request until it finished.
+    """
+    return (await request.form()).get("sources")
+
+
 @app.post("/courses/generate/multipart")
-async def generate_multipart(
-    request: Request,
+def generate_multipart(
+    raw_sources: Any = Depends(_raw_sources_field),
     sources: str | None = Form(default=None),
     file: list[UploadFile] = File(default=[]),
     session: Session = Depends(get_session),
@@ -750,18 +763,10 @@ async def generate_multipart(
     ever runs, which would make "" indistinguishable from an omitted field if this were the
     only source of truth (see fastapi/dependencies/utils.py::_get_multidict_value, pinned
     against FastAPI 0.141.1 by test_form_field_collapses_empty_string_to_none below). The
-    route needs that distinction, so it re-reads the raw value from `request.form()` instead,
-    which is cached from FastAPI's own earlier parse (nothing is read from the body twice).
+    route needs that distinction, so the authoritative value arrives instead through the
+    `_raw_sources_field` dependency above, which reads it from the SAME cached FormData
+    FastAPI already parsed (nothing is read from the body twice).
     """
-    raw_sources = (await request.form()).get("sources")
-    if raw_sources is not None and not isinstance(raw_sources, str):
-        # Someone sent a `sources` part as a file rather than text. request.form() hands
-        # back whatever arrived, unlike the Form()-declared parameter above, which would
-        # have rejected this itself through ordinary type validation.
-        raise _unprocessable(
-            INVALID_REQUEST_ERROR, f"{INVALID_REQUEST_MESSAGE} 'sources' must be a string."
-        )
-
     # `is not None`, not truthiness. Defensively correct on its own terms, and required for
     # a future FastAPI that stops collapsing "" to None (the case the framework test below
     # exists to catch), but it is not what makes "" and "   " agree today: request.form()
