@@ -59,10 +59,14 @@
  *     contradicted the failure list one line above it.
  *
  *     Three earlier versions of this entry were wrong. The plural-arrival phrasing just
- *     described was the third, and it survived a round precisely because the failure
- *     COUNT beside it was right, which is worth noticing: a correct measurement does not
- *     make the prose around it correct. The second is the one most worth a record.
- *     It claimed four failures and struck
+ *     described was the third. It got past its AUTHOR, not past review: both reviewers
+ *     who read that commit caught it, independently of each other and in the first round
+ *     that saw it, so do not read this as a case of review missing something. What it
+ *     survived was the verification pass, and it survived that precisely because the
+ *     failure COUNT beside it was right. That is the part worth noticing: a correct
+ *     measurement does not make the prose around it correct, and checking the number is
+ *     not checking the sentence. The second version is the one most worth a record. It
+ *     claimed four failures and struck
  *     out the "settles on the same final text" clause as false. The clause was true. What
  *     was false was the mutation it had been measured against: the snapshot rendered with
  *     no state fallback at all, which is not the shape this replaced, is strictly
