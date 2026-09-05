@@ -312,9 +312,14 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                       It is unadopted code, so it is not the app's recipe for anything. The
                       NEUTRAL text controls that actually render all draw this boundary at
                       that colour, through the `border-line-strong` token: DaysOffControl,
-                      DeadlineForm's FIELD_CLASS, ReviewSession:322, and GenerateForm's two
-                      field constants, which PR #36 migrated off the raw zinc pair the token
-                      resolves to. "Neutral" is load-bearing rather than a hedge: two other
+                      DeadlineForm's FIELD_CLASS, ReviewSession's answer input, and
+                      GenerateForm's two field constants, `inputClasses` and `labelInputClasses`,
+                      which PR #36 introduced and migrated off the raw zinc pair the token
+                      resolves to. That last clause describes main, where PR #36 landed at
+                      49038be. On this branch alone GenerateForm still has ONE constant and a
+                      raw-zinc inline field beside it, so the sentence is true of the tree this
+                      comment will live in and false of the one you may be reading it in.
+                      "Neutral" is load-bearing rather than a hedge: two other
                       text controls render with an amber boundary instead, ConceptPractice's
                       answer input and ConceptTutor's composer textarea, because they sit
                       inside amber concept callouts and follow their container off the
@@ -339,9 +344,22 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                       own utilities in `@layer utilities`, so an unlayered rule always wins
                       over a layered one regardless of either side's specificity (same
                       reasoning, and the same removal, as ReviewSession's answer input).
-                      Dropping it changes no rendered pixel. It does not stop the rule
-                      shipping either, since six other components still use that utility;
-                      it only stops THIS element carrying a class that could never win.
+                      Dropping it changes no rendered pixel, and it does not stop the rule
+                      shipping either, though not for the reason an earlier version of this
+                      sentence gave. That version said "six other components still use that
+                      utility". Six is the count of other FILES containing the string, and four
+                      of the six only name it in comments saying they do NOT use it,
+                      DaysOffControl and DeadlineForm among them. Two components actually apply
+                      it, ConceptPractice's and ConceptTutor's amber-bordered controls, and they
+                      are not what keeps the rule alive: the prose is, because Tailwind's
+                      scanner reads comments, this one included. Measured on the merge with
+                      main, stripping the utility from both live usages left the emitted
+                      selector set unchanged with `.outline-none` still in the bundle, while
+                      scrubbing the comment mentions as well removed exactly two selectors,
+                      `.outline-none` and `.focus\:outline-none:focus`. The second of those has
+                      no live usage anywhere and ships from prose alone, which is a separate
+                      pre-existing wart, not something this element can fix. Removing the class
+                      here only stops THIS element carrying one that could never win.
                     */
                     className="mt-3 w-full rounded-control border border-line-strong bg-transparent px-3 py-2 text-ui text-ink placeholder:text-ink-subtle transition-colors duration-fast ease-standard hover:border-line-hover focus:border-line-hover disabled:opacity-60"
                   />
