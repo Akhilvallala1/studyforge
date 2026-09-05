@@ -314,11 +314,14 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                       that colour, through the `border-line-strong` token: DaysOffControl,
                       DeadlineForm's FIELD_CLASS, ReviewSession's answer input, and
                       GenerateForm's two field constants, `inputClasses` and `labelInputClasses`,
-                      which PR #36 introduced and migrated off the raw zinc pair the token
-                      resolves to. That last clause describes main, where PR #36 landed at
-                      49038be. On this branch alone GenerateForm still has ONE constant and a
-                      raw-zinc inline field beside it, so the sentence is true of the tree this
-                      comment will live in and false of the one you may be reading it in.
+                      which PR #36 consolidated: it added `labelInputClasses` and moved both onto
+                      the token, off the raw zinc pair the token resolves to. Only the second is
+                      new. `inputClasses` predates that merge and carried raw zinc at 49038be^1,
+                      so do not read "introduced" into the pair. That clause describes main, where
+                      PR #36 landed at 49038be. On this branch alone GenerateForm still has ONE
+                      raw-zinc constant and a raw-zinc inline field beside it, so the sentence is
+                      true of the tree this comment will live in and false of the one you may be
+                      reading it in.
                       "Neutral" is load-bearing rather than a hedge: two other
                       text controls render with an amber boundary instead, ConceptPractice's
                       answer input and ConceptTutor's composer textarea, because they sit
@@ -347,10 +350,13 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                       Dropping it changes no rendered pixel, and it does not stop the rule
                       shipping either, though not for the reason an earlier version of this
                       sentence gave. That version said "six other components still use that
-                      utility". Six is the count of other FILES containing the string, and four
-                      of the six only name it in comments saying they do NOT use it,
-                      DaysOffControl and DeadlineForm among them. Two components actually apply
-                      it, ConceptPractice's and ConceptTutor's amber-bordered controls, and they
+                      utility". On the merge with main, six is the count of other FILES containing
+                      the string, and four of the six only name it in comments saying they do NOT
+                      use it, DaysOffControl and DeadlineForm among them. Two components actually
+                      apply it, ConceptPractice's and ConceptTutor's amber-bordered controls. On
+                      this branch alone the split is three and three, because GenerateForm's two
+                      raw-zinc fields still carry the bare utility that PR #36 removes on main.
+                      Either way they
                       are not what keeps the rule alive: the prose is, because Tailwind's
                       scanner reads comments, this one included. Measured on the merge with
                       main, stripping the utility from both live usages left the emitted
