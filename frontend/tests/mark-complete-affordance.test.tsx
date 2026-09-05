@@ -15,11 +15,19 @@
  * one token for another, and it is worth nothing against a change to what the token
  * itself resolves to. A contrast change made in globals.css will not redden these.
  *
- * Both were verified by mutation rather than assumed. Pointing the hover fill back at
- * the boundary token reddens the first test; putting the hint back to 80% reddens the
- * second. Colours are described in prose below rather than written as class names,
- * because Tailwind v4's scanner reads test files too and a utility spelled out in a
- * comment emits a real rule into the shipped CSS.
+ * Every assertion here was run against its mutation rather than assumed, and the record
+ * is four for four: pointing the hover fill back at the boundary token reddens the first
+ * test, putting the hint back to 80% reddens the second, and dropping either of the two
+ * structural classes reddens exactly one test each. Those last two were added late,
+ * because the colour assertions alone passed under both structural mutations: the fill
+ * still swaps without the group class, and the reveal classes are still present when the
+ * hint has no resting opacity to be revealed from. A test that survives the change it
+ * exists to catch is worth as little as no test.
+ *
+ * Colours are described in prose below rather than written as class names, because
+ * Tailwind v4's scanner reads test files too and a utility spelled out in a comment emits
+ * a real rule into the shipped CSS. The two class names that do appear in comments here
+ * are ones the component genuinely uses, which costs nothing.
  */
 import { render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
@@ -39,6 +47,9 @@ describe("MarkCompleteButton completed state", () => {
       .filter((token) => token.startsWith("hover:bg-"));
 
     expect(hoverFills).toEqual(["hover:bg-success-surface-hover"]);
+    // `group` is what makes the hint's group-hover reveal fire at all. Without it the
+    // hover fill still changes and the test above still passes, so it is pinned here.
+    expect(button.className.split(/\s+/)).toContain("group");
   });
 
   test("reveals the Undo hint at full opacity, since hover is the only state it is read in", () => {
@@ -53,5 +64,8 @@ describe("MarkCompleteButton completed state", () => {
       "group-focus-visible:opacity-100",
       "group-hover:opacity-100",
     ]);
+    // Without `opacity-0` the hint is permanently visible and the reveal means nothing,
+    // which neither assertion above would notice.
+    expect(hint.className.split(/\s+/)).toContain("opacity-0");
   });
 });

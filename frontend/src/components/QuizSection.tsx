@@ -217,7 +217,7 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                 nothing renders differently.
               */}
               <Card>
-                <p className="text-ui font-medium">
+                <p id={`quiz-question-${item.id}`} className="text-ui font-medium">
                   <span className="mr-2 text-ink-subtle">{index + 1}.</span>
                   {item.question}
                 </p>
@@ -298,20 +298,44 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                       }
                     }}
                     placeholder="Your answer"
+                    aria-labelledby={`quiz-question-${item.id}`}
                     /*
-                      Field's own input recipe, restated by hand: Field always renders its
-                      own <label>, and the question above already serves that role, so
-                      wrapping this input in a second one would give it two accessible
-                      names. No `outline-none` here, where the raw version had one:
-                      globals.css's app-wide `:focus-visible` rule is unlayered, and
-                      Tailwind wraps its own utilities in `@layer utilities`, so an
-                      unlayered rule always wins over a layered one regardless of either
-                      side's specificity (same reasoning, and the same removal, as
-                      ReviewSession's answer input). Removing this utility changes no
-                      rendered pixel; it only stops shipping a rule that could never have
-                      won.
+                      `border-line-strong`, which is the colour this input already had:
+                      origin/main drew it in zinc-300 / zinc-700, and the bundle emits
+                      --sf-line-strong as #d4d4d8 / #3f3f46, exactly those two. So this is
+                      the pixel-identical migration, not a choice.
+
+                      An earlier draft used `border-line` here, reasoning that it restated
+                      ui/Field.tsx's recipe. It does restate it, token for token apart from
+                      mt-3 against mt-1, but that is not an argument, because Field has no
+                      consumers: `grep -rn "ui/Field\|<Field" src tests` returns nothing.
+                      It is unadopted code, so it is not the app's recipe for anything. The
+                      inputs that actually render (DaysOffControl and DeadlineForm's
+                      FIELD_CLASS, ReviewSession:322) all use `border-line-strong`. Using
+                      `border-line` would have dropped this one input alone to 1.27:1 light
+                      and 1.33:1 dark, from 1.48 and 1.90. That is a different question
+                      from whether line-strong itself clears WCAG 1.4.11's 3:1, which it
+                      does not, and which is filed separately as one token change across
+                      every form.
+
+                      `aria-labelledby` rather than a wrapping <label>: the question above
+                      IS this input's name, but sitting next to it does not make it one.
+                      Until now the element had no labelling relationship at all and fell
+                      back to its placeholder, which stops being readable the moment the
+                      learner types. An earlier version of this comment defended that by
+                      saying a second <label> would give the input "two accessible names";
+                      an element has exactly one, and this one had none worth having.
+
+                      No `outline-none` here, where the raw version had one: globals.css's
+                      app-wide `:focus-visible` rule is unlayered, and Tailwind wraps its
+                      own utilities in `@layer utilities`, so an unlayered rule always wins
+                      over a layered one regardless of either side's specificity (same
+                      reasoning, and the same removal, as ReviewSession's answer input).
+                      Dropping it changes no rendered pixel. It does not stop the rule
+                      shipping either, since six other components still use that utility;
+                      it only stops THIS element carrying a class that could never win.
                     */
-                    className="mt-3 w-full rounded-control border border-line bg-transparent px-3 py-2 text-ui text-ink placeholder:text-ink-subtle transition-colors duration-fast ease-standard hover:border-line-hover focus:border-line-hover disabled:opacity-60"
+                    className="mt-3 w-full rounded-control border border-line-strong bg-transparent px-3 py-2 text-ui text-ink placeholder:text-ink-subtle transition-colors duration-fast ease-standard hover:border-line-hover focus:border-line-hover disabled:opacity-60"
                   />
                 )}
 

@@ -51,7 +51,10 @@ export function stripDuplicateTitle(content: string, title: string): string {
  *
  * text-prose, not text-ui: globals.css's type scale calls it out by name as "Lesson
  * markdown body only", so this is the one place in the app it belongs. It replaces
- * the raw `leading-7`; its font-size (1rem) is what the old class left implicit.
+ * the raw line-height utility the article carried before (the 1.75rem step); its
+ * font-size (1rem) is what that class left implicit. Named in prose rather than
+ * spelled out, because Tailwind v4's scanner reads comments and would emit a real
+ * rule for a class this file no longer uses.
  *
  * Headings map onto the app's named scale rather than the raw text-2xl/xl/lg the prior
  * version used: [&_h1]:text-title and [&_h2]:text-subtitle both bake their own
@@ -77,7 +80,10 @@ export function stripDuplicateTitle(content: string, title: string): string {
  * [&_td]/[&_th] move to border-line rather than border-line-strong: a table gridline is
  * a divider, not a control boundary (see Button.tsx's comment on why its own secondary
  * variant needs the stronger step), and border-line is what every other divider in the
- * app already uses for that role.
+ * app already uses for that role. This is not colour-neutral in both modes, so it is
+ * worth saying plainly: light is unchanged (#e4e4e7 either way), but dark moves from
+ * 1.90:1 to 1.33:1 against the surface. Deliberate, on the divider argument above, and
+ * the same value every other divider in the app already sits at.
  */
 export function LessonMarkdown({ content, title }: { content: string; title: string }) {
   return (
