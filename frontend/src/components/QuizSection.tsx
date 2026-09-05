@@ -308,9 +308,12 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                       An earlier draft used `border-line` here, reasoning that it restated
                       ui/Field.tsx's recipe. It does restate it, token for token apart from
                       mt-3 against mt-1, but that is not an argument, because Field has no
-                      consumers: no file under src or tests mentions Field at all, other
-                      than this comment. Stated as a result rather than as a command,
-                      because the obvious grep for it now matches these very lines.
+                      consumers: nothing under src or tests imports ui/Field or renders a
+                      Field element, so the only places that exact identifier appears are
+                      its own definition and this comment. A plain grep for the substring
+                      also returns DeadlineForm's activeField and GenerateForm's
+                      SourceRowField and FileRowField, which are unrelated names that
+                      merely contain it.
                       It is unadopted code, so it is not the app's recipe for anything. The
                       NEUTRAL text controls that actually render all draw this boundary at
                       that colour, through the `border-line-strong` token: DaysOffControl,
