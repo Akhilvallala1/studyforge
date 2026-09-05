@@ -82,6 +82,7 @@
   --sf-success: oklch(50.8% 0.118 165.612); /* emerald-700 */
   --sf-success-surface: oklch(97.9% 0.021 166.113); /* emerald-50 */
   --sf-success-border: oklch(84.5% 0.143 164.978); /* emerald-300 */
+  --sf-success-surface-hover: oklch(95% 0.052 163.051); /* emerald-100 */
   --sf-success-fill: oklch(50.8% 0.118 165.612); /* emerald-700 */
   --sf-success-on-fill: #ffffff;
 
@@ -132,6 +133,7 @@
 
   --color-success: var(--sf-success);
   --color-success-surface: var(--sf-success-surface);
+  --color-success-surface-hover: var(--sf-success-surface-hover);
   --color-success-border: var(--sf-success-border);
   --color-success-fill: var(--sf-success-fill);
   --color-success-on-fill: var(--sf-success-on-fill);
@@ -295,6 +297,7 @@
     --sf-success: oklch(76.5% 0.177 163.223); /* emerald-400 */
     --sf-success-surface: oklch(26.2% 0.051 172.552); /* emerald-950 */
     --sf-success-border: oklch(43.2% 0.095 166.913); /* emerald-800 */
+    --sf-success-surface-hover: oklch(37.8% 0.077 168.94); /* emerald-900 */
     --sf-success-fill: oklch(59.6% 0.145 163.225); /* emerald-600 */
     --sf-success-on-fill: #ffffff;
 

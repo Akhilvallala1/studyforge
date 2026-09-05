@@ -21,7 +21,7 @@ function backToCourseLink(courseId: string) {
   return (
     <Link
       href={`/courses/${courseId}`}
-      className="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+      className="text-small text-ink-muted transition-colors duration-fast ease-standard hover:text-ink"
     >
       &larr; Back to course
     </Link>
@@ -53,9 +53,11 @@ export default async function LessonPage(
         {backToCourseLink(courseId)}
         {/*
           The failed fetch means we never learned the real lesson title, so PageHeader
-          gets the generic "Lesson" rather than leaving the page with no h1 at all. The
-          success path below keeps its own hand-rolled <h1>{lesson.title}</h1>; that is
-          unchanged, since it has a real title to show and this branch does not.
+          gets the generic "Lesson" and no `actions`. The success path below renders the
+          same primitive with the real title and MarkCompleteButton passed as `actions`;
+          that is the only difference between the two branches now. (It used to hand-roll
+          its own <h1> next to the button instead of using PageHeader at all; see the
+          restyle comment on the success branch below for why that changed.)
         */}
         <PageHeader className="mt-4" title="Lesson" />
         <ErrorState className="mt-8" message={message} />
@@ -90,17 +92,36 @@ export default async function LessonPage(
     <main className="mx-auto w-full max-w-3xl flex-1 px-6 py-12">
       {backToCourseLink(courseId)}
 
-      <div className="mt-4 flex items-start justify-between gap-4">
-        <h1 className="text-3xl font-semibold tracking-tight">{lesson.title}</h1>
-        <MarkCompleteButton lessonId={lesson.id} completed={lesson.completed} />
-      </div>
+      {/*
+        Previously a hand-rolled <h1 className="text-3xl ...">, kept separate from
+        PageHeader specifically so the error branch above (with no real title to show)
+        would not have to change alongside it. PageHeader has an `actions` slot,
+        already used by courses/page.tsx's "New course" link, and this is exactly that
+        shape: a title with one button beside it. Moving onto it removes the duplicated
+        title styling and puts this page's success and error branches on the same
+        primitive, differing only in the title text and in `actions`. Update the
+        comment on the error branch above (and
+        concepts/page.tsx's comment on this page's old exception) if this changes again.
+      */}
+      <PageHeader
+        className="mt-4"
+        title={lesson.title}
+        actions={<MarkCompleteButton lessonId={lesson.id} completed={lesson.completed} />}
+      />
 
       {lesson.concepts.length > 0 && (
         <ul className="mt-4 flex flex-wrap gap-2">
           {lesson.concepts.map((concept) => (
             <li
               key={concept}
-              className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+              /*
+                text-small, not text-micro: a concept name is a proper noun or ordinary
+                sentence-case phrase, and text-micro is uppercase and tracked-out by
+                convention (see globals.css's type scale comment), which would silently
+                shout every concept in caps. Same reasoning ReviewSession's "Missed last
+                time" pill uses, on the same size step.
+              */
+              className="rounded-full border border-line bg-surface-sunken px-3 py-1 text-small font-medium text-ink-muted"
             >
               {concept}
             </li>

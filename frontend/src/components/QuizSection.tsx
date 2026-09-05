@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
 import { ApiError, answerQuiz } from "@/lib/api";
 import type { AttemptState, QuizItem, QuizProgress } from "@/lib/types";
 
@@ -194,8 +196,8 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
   return (
     <section>
       <div className="flex items-baseline justify-between">
-        <h2 className="text-xl font-semibold">Check your understanding</h2>
-        <p className="text-sm tabular-nums text-zinc-600 dark:text-zinc-400">
+        <h2 className="text-subtitle">Check your understanding</h2>
+        <p className="text-small tabular-nums text-ink-muted">
           {answeredCount} of {progress.items} answered
         </p>
       </div>
@@ -206,148 +208,245 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
           // ever_correct spans every attempt, so an item solved earlier stays solved.
           const solved = state.attemptState.ever_correct;
           return (
-            <li
-              key={item.id}
-              className="rounded-xl border border-zinc-200 p-5 dark:border-zinc-800"
-            >
-              <p className="font-medium">
-                <span className="mr-2 text-zinc-500 dark:text-zinc-400">{index + 1}.</span>
-                {item.question}
-              </p>
-              {item.concept && (
-                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                  Concept: {item.concept}
+            <li key={item.id}>
+              {/*
+                Card, not a hand-rolled border: this is the app's one card shape (see
+                Card.tsx), the same primitive courses/page.tsx already nests inside its
+                own <li>. `bg-surface` is new (the raw version had no fill, only the
+                page's own background showing through); the two are the same colour, so
+                nothing renders differently.
+              */}
+              <Card>
+                <p id={`quiz-question-${item.id}`} className="text-ui font-medium">
+                  <span className="mr-2 text-ink-subtle">{index + 1}.</span>
+                  {item.question}
                 </p>
-              )}
+                {item.concept && (
+                  /*
+                    text-small, not text-micro: "Concept: X" is a sentence-case caption
+                    and text-micro is uppercase and tracked-out by convention (see
+                    globals.css's type scale comment, and LessonMarkdown's heading
+                    comment for the same reasoning applied to this same page).
+                  */
+                  <p className="mt-1 text-small text-ink-subtle">Concept: {item.concept}</p>
+                )}
 
-              {item.kind === "mcq" ? (
-                <div className="mt-3 flex flex-col gap-2">
-                  {item.options.map((option) => (
-                    <label
-                      key={option}
-                      className="flex cursor-pointer items-center gap-2 text-sm"
-                    >
-                      <input
-                        type="radio"
-                        name={`quiz-${item.id}`}
-                        value={option}
-                        checked={state.answer === option}
-                        disabled={state.submitting || solved}
-                        onChange={() =>
-                          // A stale "Enter an answer first." no longer applies the moment
-                          // an option is picked; a server error is left alone (see
-                          // ErrorKind above) since picking an option doesn't undo the
-                          // last request having failed.
-                          patch(item, (prev) =>
-                            prev.errorKind === "validation"
-                              ? { answer: option, error: null, errorKind: null }
-                              : { answer: option },
-                          )
-                        }
-                        ref={(el) => {
-                          // Only the checked option's node is worth keeping: it is the
-                          // one the focus effect looks up by the current answer, and an
-                          // unchecked sibling holding a stale entry would never be read.
-                          const options = mcqRefs.current.get(item.id) ?? new Map();
-                          if (state.answer === option) {
-                            if (el) options.set(option, el);
-                            else options.delete(option);
-                            mcqRefs.current.set(item.id, options);
+                {item.kind === "mcq" ? (
+                  <div className="mt-3 flex flex-col gap-2">
+                    {item.options.map((option) => (
+                      <label
+                        key={option}
+                        className="flex cursor-pointer items-center gap-2 text-ui"
+                      >
+                        <input
+                          type="radio"
+                          name={`quiz-${item.id}`}
+                          value={option}
+                          checked={state.answer === option}
+                          disabled={state.submitting || solved}
+                          onChange={() =>
+                            // A stale "Enter an answer first." no longer applies the
+                            // moment an option is picked; a server error is left alone
+                            // (see ErrorKind above) since picking an option doesn't undo
+                            // the last request having failed.
+                            patch(item, (prev) =>
+                              prev.errorKind === "validation"
+                                ? { answer: option, error: null, errorKind: null }
+                                : { answer: option },
+                            )
                           }
-                        }}
-                      />
-                      {option}
-                    </label>
-                  ))}
-                </div>
-              ) : (
-                <input
-                  type="text"
-                  value={state.answer}
-                  disabled={state.submitting || solved}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    // Same reasoning as the mcq onChange just above: a validation
-                    // complaint about the answer goes stale the moment the answer
-                    // changes, a server error does not.
-                    patch(item, (prev) =>
-                      prev.errorKind === "validation"
-                        ? { answer: value, error: null, errorKind: null }
-                        : { answer: value },
-                    );
-                  }}
-                  ref={(el) => {
-                    if (el) inputRefs.current.set(item.id, el);
-                    else inputRefs.current.delete(item.id);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      void submit(item);
-                    }
-                  }}
-                  placeholder="Your answer"
-                  className="mt-3 w-full rounded-lg border border-zinc-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-500 disabled:opacity-60 dark:border-zinc-700"
-                />
-              )}
-
-              {/* role="alert" (implicitly assertive) rather than sitting inside the
-                  polite region below, for two reasons. This is a response to something
-                  the learner just did, so it should interrupt rather than queue behind
-                  the result announcement; and the region below is documented as
-                  carrying the RESULT, so folding a validation error into it would make
-                  that comment false. Same shape as DeleteCourseButton's error. */}
-              {state.error && (
-                <p
-                  key={state.errorNonce}
-                  role="alert"
-                  className="mt-3 text-sm text-red-700 dark:text-red-400"
-                >
-                  {state.error}
-                </p>
-              )}
-
-              {/* aria-live so the result is announced regardless of where focus lands.
-                  Focus does NOT stay on the submit button: checking an answer disables
-                  the control that made the request, which blurs it to the body, and the
-                  effect above returns focus deliberately, to the answer control while the
-                  item is still open to a retry, or to the message below once solving it
-                  has taken the button and left the inputs disabled. */}
-              <div aria-live="polite">
-                {/* `solved` covers an item answered correctly at some point, including
-                    from a source whose latest attempt was wrong (possible once review
-                    sessions exist), so a solved item always reads as solved. */}
-                {solved && (
-                  <p
-                    ref={(el) => {
-                      if (el) correctRefs.current.set(item.id, el);
-                      else correctRefs.current.delete(item.id);
+                          ref={(el) => {
+                            // Only the checked option's node is worth keeping: it is the
+                            // one the focus effect looks up by the current answer, and an
+                            // unchecked sibling holding a stale entry would never be read.
+                            const options = mcqRefs.current.get(item.id) ?? new Map();
+                            if (state.answer === option) {
+                              if (el) options.set(option, el);
+                              else options.delete(option);
+                              mcqRefs.current.set(item.id, options);
+                            }
+                          }}
+                        />
+                        {option}
+                      </label>
+                    ))}
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={state.answer}
+                    disabled={state.submitting || solved}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      // Same reasoning as the mcq onChange just above: a validation
+                      // complaint about the answer goes stale the moment the answer
+                      // changes, a server error does not.
+                      patch(item, (prev) =>
+                        prev.errorKind === "validation"
+                          ? { answer: value, error: null, errorKind: null }
+                          : { answer: value },
+                      );
                     }}
-                    tabIndex={-1}
-                    className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 outline-none dark:bg-emerald-950 dark:text-emerald-300"
+                    ref={(el) => {
+                      if (el) inputRefs.current.set(item.id, el);
+                      else inputRefs.current.delete(item.id);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void submit(item);
+                      }
+                    }}
+                    placeholder="Your answer"
+                    aria-labelledby={`quiz-question-${item.id}`}
+                    /*
+                      `border-line-strong`, which is the colour this input already had:
+                      origin/main drew it in zinc-300 / zinc-700, and the bundle emits
+                      --sf-line-strong as #d4d4d8 / #3f3f46, exactly those two. So this is
+                      the pixel-identical migration, not a choice.
+
+                      An earlier draft used `border-line` here, reasoning that it restated
+                      ui/Field.tsx's recipe. It does restate it, token for token apart from
+                      mt-3 against mt-1, but that is not an argument, because Field has no
+                      consumers: nothing under src or tests imports ui/Field or renders a
+                      Field element, so the only places that exact identifier appears are
+                      its own definition and this comment. A plain grep for the substring
+                      also returns DeadlineForm's activeField and GenerateForm's
+                      SourceRowField and FileRowField, which are unrelated names that
+                      merely contain it.
+                      It is unadopted code, so it is not the app's recipe for anything. The
+                      NEUTRAL text controls that actually render all draw this boundary at
+                      that colour, through the `border-line-strong` token: DaysOffControl,
+                      DeadlineForm's FIELD_CLASS, ReviewSession's answer input, and
+                      GenerateForm's two field constants, `inputClasses` and `labelInputClasses`,
+                      which PR #36 consolidated: it added `labelInputClasses` and moved both onto
+                      the token, off the raw zinc pair the token resolves to. Only the second is
+                      new. `inputClasses` predates that merge and carried raw zinc at 49038be^1,
+                      so do not read "introduced" into the pair. That clause describes main, where
+                      PR #36 landed at 49038be. On this branch alone GenerateForm still has ONE
+                      raw-zinc constant and a raw-zinc inline field beside it, so the sentence is
+                      true of the tree this comment will live in and false of the one you may be
+                      reading it in.
+                      "Neutral" is load-bearing rather than a hedge: two other
+                      text controls render with an amber boundary instead, ConceptPractice's
+                      answer input and ConceptTutor's composer textarea, because they sit
+                      inside amber concept callouts and follow their container off the
+                      neutral scale on purpose. This input has no such container, so the
+                      neutral scale is the one it belongs to. Using
+                      `border-line` would have dropped this one input alone to 1.27:1 light
+                      and 1.33:1 dark, from 1.48 and 1.90. That is a different question
+                      from whether line-strong itself clears WCAG 1.4.11's 3:1, which it
+                      does not, and which is filed separately as one token change across
+                      every form.
+
+                      `aria-labelledby` rather than a wrapping <label>: the question above
+                      IS this input's name, but sitting next to it does not make it one.
+                      Until now the element had no labelling relationship at all and fell
+                      back to its placeholder, which stops being readable the moment the
+                      learner types. An earlier version of this comment defended that by
+                      saying a second <label> would give the input "two accessible names";
+                      an element has exactly one, and this one had none worth having.
+
+                      No `outline-none` here, where the raw version had one: globals.css's
+                      app-wide `:focus-visible` rule is unlayered, and Tailwind wraps its
+                      own utilities in `@layer utilities`, so an unlayered rule always wins
+                      over a layered one regardless of either side's specificity (same
+                      reasoning, and the same removal, as ReviewSession's answer input).
+                      Dropping it changes no rendered pixel, and it does not stop the rule
+                      shipping either, though not for the reason an earlier version of this
+                      sentence gave. That version said "six other components still use that
+                      utility". On the merge with main, six is the count of other FILES containing
+                      the string, and four of the six only name it in comments saying they do NOT
+                      use it, DaysOffControl and DeadlineForm among them. Two components actually
+                      apply it, ConceptPractice's and ConceptTutor's amber-bordered controls. On
+                      this branch alone the split is three and three, because GenerateForm's two
+                      raw-zinc fields still carry the bare utility that PR #36 removes on main.
+                      Either way they
+                      are not what keeps the rule alive: the prose is, because Tailwind's
+                      scanner reads comments, this one included. Measured on the merge with
+                      main, stripping the utility from both live usages left the emitted
+                      selector set unchanged with `.outline-none` still in the bundle, while
+                      scrubbing the comment mentions as well removed exactly two selectors,
+                      `.outline-none` and `.focus\:outline-none:focus`. The second of those has
+                      no live usage anywhere and ships from prose alone, which is a separate
+                      pre-existing wart, not something this element can fix. Removing the class
+                      here only stops THIS element carrying one that could never win.
+                    */
+                    className="mt-3 w-full rounded-control border border-line-strong bg-transparent px-3 py-2 text-ui text-ink placeholder:text-ink-subtle transition-colors duration-fast ease-standard hover:border-line-hover focus:border-line-hover disabled:opacity-60"
+                  />
+                )}
+
+                {/* role="alert" (implicitly assertive) rather than sitting inside the
+                    polite region below, for two reasons. This is a response to something
+                    the learner just did, so it should interrupt rather than queue behind
+                    the result announcement; and the region below is documented as
+                    carrying the RESULT, so folding a validation error into it would make
+                    that comment false. Same shape as DeleteCourseButton's error. */}
+                {state.error && (
+                  <p
+                    key={state.errorNonce}
+                    role="alert"
+                    className="mt-3 text-small text-danger"
                   >
-                    Correct
+                    {state.error}
                   </p>
                 )}
 
-                {state.feedback && !state.feedback.correct && (
-                  <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950 dark:text-red-300">
-                    {solved ? "Last answer was incorrect, expected: " : "Incorrect, expected: "}
-                    <span className="font-medium">{state.feedback.expected}</span>
-                  </p>
-                )}
-              </div>
+                {/* aria-live so the result is announced regardless of where focus lands.
+                    Focus does NOT stay on the submit button: checking an answer disables
+                    the control that made the request, which blurs it to the body, and the
+                    effect above returns focus deliberately, to the answer control while the
+                    item is still open to a retry, or to the message below once solving it
+                    has taken the button and left the inputs disabled. */}
+                <div aria-live="polite">
+                  {/* `solved` covers an item answered correctly at some point, including
+                      from a source whose latest attempt was wrong (possible once review
+                      sessions exist), so a solved item always reads as solved. */}
+                  {solved && (
+                    <p
+                      ref={(el) => {
+                        if (el) correctRefs.current.set(item.id, el);
+                        else correctRefs.current.delete(item.id);
+                      }}
+                      tabIndex={-1}
+                      /*
+                        No `outline-none` here either, for the same reason as the text
+                        input above, with one addition worth spelling out: this is exactly
+                        the case globals.css's own comment on the app-wide focus rule
+                        calls out by name, a `tabIndex={-1}` node that receives `.focus()`
+                        after a mutation rather than a native focusable element, which is
+                        why that rule is unscoped instead of targeting only
+                        button/a/input. The ring still has to show up here, and it does,
+                        for the same unlayered-beats-layered reason.
+                      */
+                      className="mt-3 rounded-control bg-success-surface px-3 py-2 text-small font-medium text-success"
+                    >
+                      Correct
+                    </p>
+                  )}
 
-              {!solved && (
-                <button
-                  type="button"
-                  onClick={() => void submit(item)}
-                  disabled={state.submitting}
-                  className="mt-3 rounded-lg border border-zinc-300 px-4 py-1.5 text-sm font-medium transition-colors hover:border-zinc-500 disabled:opacity-60 dark:border-zinc-700 dark:hover:border-zinc-500"
-                >
-                  {state.submitting ? "Checking…" : state.feedback ? "Try again" : "Check answer"}
-                </button>
-              )}
+                  {state.feedback && !state.feedback.correct && (
+                    <p className="mt-3 rounded-control bg-danger-surface px-3 py-2 text-small text-danger">
+                      {solved
+                        ? "Last answer was incorrect, expected: "
+                        : "Incorrect, expected: "}
+                      <span className="font-medium">{state.feedback.expected}</span>
+                    </p>
+                  )}
+                </div>
+
+                {!solved && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void submit(item)}
+                    disabled={state.submitting}
+                    className="mt-3"
+                  >
+                    {state.submitting ? "Checking…" : state.feedback ? "Try again" : "Check answer"}
+                  </Button>
+                )}
+              </Card>
             </li>
           );
         })}
