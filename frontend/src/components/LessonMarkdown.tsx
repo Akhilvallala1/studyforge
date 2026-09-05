@@ -97,11 +97,24 @@ export function stripDuplicateTitle(content: string, title: string): string {
  *
  * [&_td]/[&_th] move to border-line rather than border-line-strong: a table gridline is
  * a divider, not a control boundary (see Button.tsx's comment on why its own secondary
- * variant needs the stronger step), and border-line is what every other divider in the
- * app already uses for that role. This is not colour-neutral in both modes, so it is
- * worth saying plainly: light is unchanged (#e4e4e7 either way), but dark moves from
- * 1.90:1 to 1.33:1 against the surface. Deliberate, on the divider argument above, and
- * the same value every other divider in the app already sits at.
+ * variant needs the stronger step), and border-line is where MOST dividers in the app
+ * already sit: the plan and courses section rules, CostBanner, CourseTabs, SiteHeader,
+ * DaysOffControl, ReviewSession, and the body rows of both tables on the usage page.
+ *
+ * Most, not every, and the exception is the nearest analogue there is. Those two usage
+ * tables draw their HEADER rule at border-line-strong, on the tr inside each thead,
+ * while their body rows take border-line, so that table splits the two steps on
+ * purpose. Two things make the split wrong to copy here. Those tables draw horizontal
+ * row rules only, where [&_td]:border boxes every cell on all four sides, so the same
+ * token lands several times more often per row and the heavier one would read as chrome
+ * around the content rather than as structure within it. And their header rule separates
+ * an uppercase text-micro label row from the data below it, where a lesson table's
+ * header cells are content in the same voice as its body. Anyone who does want a header
+ * rule back should take the usage page's split rather than raise every cell.
+ *
+ * This is not colour-neutral in both modes, so it is worth saying plainly: light is
+ * unchanged (#e4e4e7 either way), but dark moves from 1.90:1 to 1.33:1 against the
+ * surface. Deliberate, on the divider argument above.
  */
 export function LessonMarkdown({ content, title }: { content: string; title: string }) {
   return (

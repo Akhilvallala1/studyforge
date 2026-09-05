@@ -74,14 +74,17 @@ export default async function CourseConceptsPage(
           their heading text and in nothing else.
 
           That last part is specific to this page, so do not generalise it. Every error
-          branch on the three id-taking pages uses PageHeader with a generic title (the
-          courses LIST page is not one of them: its PageHeader sits outside the ternary
-          and carries the real title "StudyForge", with ErrorState alone inside). The
-          LESSON page's success branch also moved onto PageHeader in the T5 restyle,
-          passing MarkCompleteButton as `actions`, the same title-plus-one-button slot
-          courses/page.tsx's "New course" link uses. So every success branch on these
-          three pages now shares its error branch's primitive; only the title text and,
-          on the lesson page, the action differ.
+          branch on the id-taking pages uses PageHeader with a generic title. Those pages
+          are the four under courses/[courseId]: the course page, this one, the lesson
+          page and the plan page, which an earlier draft of this comment counted as three
+          by leaving the plan page out. (The courses LIST page is not one of them: its
+          PageHeader sits outside the ternary and carries the real title "StudyForge",
+          with ErrorState alone inside.) The LESSON page's success branch also moved onto
+          PageHeader in the T5 restyle, passing MarkCompleteButton as `actions`, the same
+          title-plus-one-button slot courses/page.tsx's "New course" link uses. So every
+          success branch on those four pages now shares its error branch's primitive;
+          only the title text and, on the lesson page, the action differ. The plan page's
+          error branch is the one that does not also share the mt-4.
         */}
         <PageHeader className="mt-4" title="Concept map" />
         <ErrorState className="mt-8" message={message} />

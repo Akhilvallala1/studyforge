@@ -119,7 +119,7 @@ export default async function LessonPage(
                 sentence-case phrase, and text-micro is uppercase and tracked-out by
                 convention (see globals.css's type scale comment), which would silently
                 shout every concept in caps. Same reasoning ReviewSession's "Missed last
-                time" pill uses for the same reason, on the same size step.
+                time" pill uses, on the same size step.
               */
               className="rounded-full border border-line bg-surface-sunken px-3 py-1 text-small font-medium text-ink-muted"
             >
