@@ -102,9 +102,10 @@ export function stripDuplicateTitle(content: string, title: string): string {
  * session heading, CostBanner, CourseTabs, SiteHeader, DaysOffControl, the ReviewSession
  * component's own four, and the body rows of both tables on the usage page. An earlier
  * draft of this list said "the plan and courses section rules". The courses page draws no
- * rule of its own: the one border class in that file is the Card hover tint at
- * courses/page.tsx:107, recolouring a border Card itself supplies. The rule that entry was
- * reaching for is the Today page's, at app/page.tsx:196.
+ * rule of its own: the one border class in courses/page.tsx is a Card hover tint, which
+ * recolours a border Card itself supplies rather than adding one. The rule that entry was
+ * reaching for is the Today page's, in app/page.tsx, on the div that holds the "Review
+ * session" heading.
  *
  * Most, not every, and the exception is the nearest analogue there is. Those two usage
  * tables draw their HEADER rule at border-line-strong, on the tr inside each thead,
