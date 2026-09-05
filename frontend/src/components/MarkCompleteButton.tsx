@@ -56,23 +56,49 @@ export function MarkCompleteButton({
           disabled={pending}
           aria-label="Mark this lesson as not complete"
           /*
-            Hand-rolled rather than Button: none of its four variants are a success-
-            tinted fill (primary's `fill` token is deliberately neutral, not accent or
-            a status colour; see Button.tsx and globals.css's --sf-accent comment), and
-            this is the one control in the app that needs one. `success-border`, one
-            step past `success-surface` in the same family, stands in for the fill-hover
-            token neither this tone nor Badge's has: the same "next step in the same
-            family" relationship `surface`/`surface-sunken` and `line`/`line-hover` use
-            elsewhere for exactly this purpose.
+            Hand-rolled rather than Button: none of its variants is a success-tinted
+            fill (primary's `fill` token is deliberately neutral, not accent and not a
+            status colour; see Button.tsx and globals.css's --sf-accent comment), and
+            this is the one control in the app that needs one.
+
+            Hover uses --sf-success-surface-hover, a token added for it, rather than the
+            tone's existing boundary colour. An earlier draft used that boundary colour
+            as a fill, on the theory that it is just the next step in the same family,
+            the way surface/surface-sunken and line/line-hover are. The analogy does not
+            hold: each of those pairs stays inside one role, two fills or two borders,
+            where this would have been a boundary colour used as a fill, which nothing
+            else in the codebase does. It also measured badly. Emerald-300 is darker
+            than the emerald-200 the raw version hovered to, so `text-success` on it
+            came out at 3.57:1 light and 3.91:1 dark, under the 4.5:1 this label needs
+            as normal-size text and down from 5.99 and 6.38 before the migration. The
+            new token is emerald-100 light and emerald-900 dark and measures 4.78 and
+            4.95. --sf-danger-fill-hover already existed for the same reason, so this
+            follows the family's own pattern rather than inventing one.
+
+            The Undo hint reveals to full opacity rather than to 80%. It is invisible
+            until hover, so its hover value is the only value it is ever read at, and
+            80% over this fill composites to 3.35:1 light and 3.80:1 dark. Full opacity
+            puts it at the label's own 4.78 and 4.95, which also closes a 3.91:1
+            light-mode failure that predates this PR.
+
+            What that trades away is hover strength: the fill step from resting to hover
+            is 1.08:1 light and 1.56:1 dark, against 1.44 and 1.97 for the boundary
+            colour it rejected. That is the band every other hover in the app sits in
+            (Button.tsx carries the measurements), and the raw version this replaced
+            stepped 1.13 and 1.56, so it is not something this change introduced.
+
+            All figures are from the built bundle, not from globals.css: the tokens are
+            authored in OKLCH and the emitted light fill is #d0fae5, not the v3 hex the
+            palette name suggests.
           */
-          className="group rounded-control bg-success-surface px-4 py-2 text-ui font-medium text-success transition-colors duration-fast ease-standard hover:bg-success-border disabled:opacity-60"
+          className="group rounded-control bg-success-surface px-4 py-2 text-ui font-medium text-success transition-colors duration-fast ease-standard hover:bg-success-surface-hover disabled:opacity-60"
         >
           {pending ? (
             "Reopening…"
           ) : (
             <>
               ✓ Completed
-              <span className="ml-2 text-small font-normal opacity-0 transition-opacity group-hover:opacity-80 group-focus-visible:opacity-80">
+              <span className="ml-2 text-small font-normal opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                 Undo
               </span>
             </>
