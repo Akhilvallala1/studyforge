@@ -952,20 +952,34 @@ describe("QuizSection focus restoration", () => {
  * keyed by the answer, which is no more settled at author time than this file's per-row
  * maps are.
  *
- * What is different is WHOSE control the target is. Everywhere above, focus goes back to
- * the thing the learner acted on, or to a named fallback for when that thing is gone.
- * The remove effect here cannot do that: the row acted on has been deleted, so it goes
- * to a NEIGHBOUR chosen by position in the list as it now stands, the row that slid into
- * the gap or the previous row if the removed one was last. That is why these tests spend
- * most of their length on list shape rather than on the guard.
+ * What is different is that the target is computed RELATIVE to the row that is going
+ * away. armFocusAfterRemoval indexes off that row's position in the list as it stood a
+ * moment earlier, `combined[index + 1] ?? combined[index - 1]`, and it runs before
+ * setRows so the index is still findable. When neither neighbour exists, because the
+ * removed row was the only one, it arms the text-adding button instead. That third
+ * outcome is not a missing list item: it is the case where there is no neighbour to go
+ * to at all, and it has its own test below. Nothing above computes an offset from where
+ * something else sat. ConceptTutor's latestReplyRef comes closest, bound in the render
+ * at `index === messages.length - 1`, but that is a standing rule, always the newest
+ * reply, rather than an offset, and the markup decides it rather than the effect.
+ *
+ * Do not read the five above as all restoring focus to the sender, either. ConceptTutor
+ * deliberately moves focus AWAY from the control the learner used, onto the reply
+ * region, which is not a control at all: the test named "takes a Ctrl+Enter sender from
+ * the composer to the reply, though focus never touched the body" is that case on
+ * purpose, and the composer it moves off is never disabled. DeadlineForm and
+ * DaysOffControl take their target from the call site, while DeleteCourseButton and
+ * QuizSection fall back onto something that outlives what vanished. What this suite does
+ * share with them is the house decline guard, which GenerateForm carries on the submit
+ * path in the same two-condition form ConceptTutor uses, `active === document.body ||
+ * active === focusAtSend.current`, and which is pinned here alongside the list-shape
+ * tests.
  *
  * DeleteCourseButton is worth reading next to that for the opposite reason. Its two
  * candidates ARE written into its source, and it still resolves them with
  * getElementById inside the effect on every run rather than holding a node: a candidate
  * set small enough to enumerate is not a licence to decide the target once and cache it,
  * which is the regression these suites exist to prevent.
- *
- * The house decline guard is here too, on the submit path, and is pinned alongside them.
  */
 describe("GenerateForm focus restoration", () => {
   const SOURCE_LIMITS: SourceLimits = {
