@@ -969,11 +969,25 @@ describe("QuizSection focus restoration", () => {
  * the composer to the reply, though focus never touched the body" is that case on
  * purpose, and the composer it moves off is never disabled. DeadlineForm and
  * DaysOffControl take their target from the call site, while DeleteCourseButton and
- * QuizSection fall back onto something that outlives what vanished. What this suite does
- * share with them is the house decline guard, which GenerateForm carries on the submit
- * path in the same two-condition form ConceptTutor uses, `active === document.body ||
- * active === focusAtSend.current`, and which is pinned here alongside the list-shape
- * tests.
+ * QuizSection land on whatever the new render leaves standing. Not on a survivor: in both,
+ * the node they land on and the node that went away are mutually exclusive, so the target
+ * is one the same commit created. #new-course renders only when courses.length > 0 and
+ * #create-first-course only when it is 0, so deleting the last course destroys one and
+ * builds the other in a single commit; the "Correct" message renders under `solved` and
+ * the Check button under `!solved`, so those two never coexist either. An earlier draft
+ * of this sentence said they "fall back onto something that outlives what vanished",
+ * which is the premise the paragraph below exists to deny: nothing pre-exists to be
+ * captured, which is why neither component may hold a node and both resolve the target
+ * after the change.
+ *
+ * What this suite shares with them is a decline guard, but not one guard: GenerateForm
+ * carries the two-condition form ConceptTutor uses, `active === document.body || active
+ * === focusAtSend.current`, where DeadlineForm, DaysOffControl, DeleteCourseButton and
+ * QuizSection all take the body-only form. Worth keeping apart, because ConceptTutor's
+ * own comment records why it needed the second condition: the body-only test is a proxy
+ * for "the learner has not moved since they sent", true only when a control happened to
+ * blur itself, and testing just that is what made its two send paths disagree. The
+ * two-condition form is the one pinned alongside the list-shape tests.
  *
  * DeleteCourseButton is worth reading next to that for the opposite reason. Its two
  * candidates ARE written into its source, and it still resolves them with
