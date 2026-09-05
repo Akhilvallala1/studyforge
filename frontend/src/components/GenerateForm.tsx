@@ -703,8 +703,12 @@ function SourceRowField({
      where this row previously drew its own line-strong boundary, so the border goes from
      #d4d4d8 / #3f3f46 (1.48:1 light, 1.90:1 dark) to #e4e4e7 / #27272a (1.27:1, 1.33:1).
      Accepted rather than overridden, because a source row is a grouping container and not
-     a control boundary, which is the same distinction the lesson table's gridlines are
-     argued on. No WCAG floor applies to either: 1.4.11 covers control boundaries. */
+     a control boundary. LessonMarkdown's comment draws the same distinction for the
+     gridlines of a table inside a lesson: a divider, not a control boundary. That note
+     arrives with PR #37 (04fe554), so it is absent from any tree older than that merge,
+     which is why this names the file instead of describing it. No WCAG floor applies to
+     either case: 1.4.11 covers what is needed to identify a control or its state, and
+     every control inside this row already draws its own line-strong boundary. */
   return (
     <Card padding={4}>
       <div className="flex items-center justify-between gap-2">

@@ -62,14 +62,14 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
    *
    * `border-current`, not a success-specific token, because the tone is already on the
    * container: `Callout` puts `text-success` / `text-danger` / `text-warning` on its
-   * wrapper, so `currentColor` here IS whichever tone encloses this button, and one
-   * variant covers those THREE without a variant per tone. Callout's fourth tone is not
-   * covered, it is excluded: `info` sets `text-ink`, so a `tinted` button inside an info
-   * Callout inherits near-black and draws a 17.18:1 light / 15.13:1 dark hairline. That
-   * is legible, not a contrast bug, but it is `secondary` in all but name and carries
-   * none of the reason this variant exists, so use `secondary` there. Same for a
-   * `tinted` button outside a Callout altogether: nothing tinted sets `currentColor` for
-   * it to pick up and it inherits whatever ink surrounds it.
+   * wrapper, so `currentColor` here IS whichever tone encloses this button, and one variant
+   * covers those THREE without a variant per tone. Callout's fourth tone is not covered, it
+   * is excluded: `info` sets `text-ink`, so a `tinted` button inside an info Callout
+   * inherits the page ink, near-black in light and near-WHITE in dark, and draws a 17.18:1
+   * light / 15.13:1 dark hairline. That is legible, not a contrast bug, but it is
+   * `secondary` in all but name and carries none of the reason this variant exists, so use
+   * `secondary` there. Same for a `tinted` button outside a Callout altogether: nothing
+   * tinted sets `currentColor` for it to pick up and it inherits whatever ink surrounds it.
    *
    * In the success case `currentColor` resolves to #007956 light and #00d294 dark,
    * 5.15:1 and 7.70:1 against the surface behind it. In light mode that is not merely
@@ -80,23 +80,22 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
    * measures 5.43:1 and 10.04:1, so the boundary stays past 3:1 in both states and both
    * modes.
    *
-   * Hover goes to the plain page `surface` rather than a deeper tint. A deeper tint
-   * would have to be a per-tone hover surface, and this variant does not know its tone:
-   * not knowing is the entire point of inheriting through `currentColor`, and a hard-coded
-   * class list cannot branch on what encloses it. So this is not waiting on a token to
-   * be added. Even once a status surface gains a hover value for one tone, this variant
-   * still could not reach for it. The real choice was between this and a 10%-opacity
-   * currentColor fill. That was tried first and rejected on the BUILT output, not on taste:
-   * Tailwind can pre-multiply an opacity into a NAMED colour (ConceptTutor's amber-100
-   * at 70% emits #fef3c6b3 directly, and at 60% #fef3c699) but cannot for
-   * `currentColor`, so it emits a
-   * full-opacity currentColor background as the pre-color-mix fallback and only reaches
-   * 10% inside `@supports (color: color-mix(...))`. On a browser missing that @supports,
+   * Hover goes to the plain page `surface` rather than a deeper tint. A deeper tint would
+   * have to be a per-tone hover surface, and this variant does not know its tone: not
+   * knowing is the entire point of inheriting through `currentColor`, and a hard-coded class
+   * list cannot branch on what encloses it. So this is not waiting on a token to be added.
+   * Even once a status surface gains a hover value for one tone, this variant still could
+   * not reach for it. The real choice was between this and a 10%-opacity currentColor fill.
+   * That was tried first and rejected on the BUILT output, not on taste: Tailwind can
+   * pre-multiply an opacity into a NAMED colour (ConceptTutor's amber-100 at 70% emits
+   * #fef3c6b3 directly, and at 60% #fef3c699) but cannot for `currentColor`, so it emits a
+   * full-opacity currentColor background as the pre-color-mix fallback and only reaches 10%
+   * inside `@supports (color: color-mix(...))`. On a browser missing that @supports,
    * hovering would paint the button's background in exactly its own text colour and the
-   * label would vanish. Unlikely, but "text disappears" is a worse failure than "hover
-   * tint goes the other way", and `bg-surface` has no fallback branch to get wrong. It
-   * also animates, since `transition-colors` on BASE covers background-color where an
-   * opacity change would not have been covered at all.
+   * label would vanish. Unlikely, but "text disappears" is a worse failure than "hover tint
+   * goes the other way", and `bg-surface` has no fallback branch to get wrong. It also
+   * animates, since `transition-colors` on BASE covers background-color where an opacity
+   * change would not have been covered at all.
    *
    * What that hover does NOT buy is a strong signal. The fill step measures 1.05:1 light
    * and 1.30:1 dark on the success surface (warning 1.04 and 1.32, danger 1.09 and 1.22),
