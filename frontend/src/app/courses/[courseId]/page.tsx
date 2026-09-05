@@ -130,15 +130,16 @@ export default async function CoursePage(props: PageProps<"/courses/[courseId]">
         </div>
 
         {/*
-          Below the lesson list, not beside the title where the list's own trigger
-          sits. That placement suits a card: the row it belongs to IS the card, so
-          the control has nowhere else to be. Here the row is the whole page, and
-          the same placement would put a destructive, irreversible control ahead of
-          the primary content a learner came here for, as the first interactive
-          thing after the header. A trailing "danger zone", set apart by its own
-          rule rather than butted straight against the list, is deliberate: reaching
-          it takes scrolling past everything the learner might actually want, which
-          is the point for an action this page cannot recover from.
+          A trailing "danger zone" after the modules list, set apart by its own
+          rule, rather than sitting directly under the header the way the list's
+          card puts its trigger directly under the course link. Right-aligned
+          immediately below works there because the card IS the whole of one course,
+          so just under it is still the end of that course's content. Here the
+          equivalent of that card is the entire page, so the same immediate
+          placement would put a destructive, irreversible control ahead of
+          everything the learner came for, as the first interactive thing after the
+          header. Placing it last means reaching it takes scrolling past all of
+          that, which is the point for an action this page cannot recover from.
         */}
         <div className="mt-10 border-t border-line pt-6">
           <DeleteCourseButton

@@ -75,6 +75,7 @@
  */
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -519,6 +520,12 @@ describe("DeleteCourseButton focus restoration", () => {
    * default, the second because it never confirms a delete at all. This test is what
    * would catch the default going the other way, since `replace` would then never be
    * called.
+   *
+   * Scope note, because the count above is easy to misread as a whole-suite figure: it
+   * is about the five `renderList` tests in THIS file. The same flipped default also
+   * reddens two in delete-confirmation.test.tsx, "refuses the press while loading, then
+   * honours it once the preview is there" and "stays pressable while the delete itself
+   * is in flight", so a full run shows five failures, not three.
    */
   test("navigates to the course list instead of restoring focus in place", async () => {
     vi.mocked(getDeletionPreview).mockResolvedValue(preview);
@@ -551,6 +558,71 @@ describe("DeleteCourseButton focus restoration", () => {
     expect(window.sessionStorage.getItem("studyforge:deleted-course-title")).toBe(
       "Organic Chemistry",
     );
+  });
+
+  /*
+   * The deleting page must not consume the handoff it just wrote.
+   *
+   * `subscribeToDeletionHandoff` is a no-op, so nothing NOTIFIES the source provider
+   * that the key appeared, but its snapshot is re-read on any render it happens to do
+   * before unmounting, and one is enough. Without the `handedOff` ref the source
+   * consumes its own handoff: clears the key, announces on a page about to be replaced,
+   * and leaves the list page to mount to an empty region.
+   *
+   * The state that drives the extra render WRAPS the provider deliberately. State held
+   * inside it would not re-render the provider, so the test would pass against broken
+   * code by never moving the thing it is meant to move.
+   *
+   * jsdom cannot say whether App Router really renders the source between `replace` and
+   * unmount, and this does not claim it does. It pins that the component survives it
+   * either way, which is cheaper than depending on the answer.
+   *
+   * Knob pushed the wrong way: dropping `if (handedOff.current) return` from the handoff
+   * effect turns this red on the sessionStorage assertion, received null.
+   */
+  test("the deleting page does not consume the handoff it just wrote", async () => {
+    vi.mocked(getDeletionPreview).mockResolvedValue(preview);
+    const removal = deferred<CourseDeletion>();
+    vi.mocked(deleteCourse).mockReturnValue(removal.promise);
+
+    let rerenderSource = () => {};
+    function SourcePage() {
+      const [, setTick] = useState(0);
+      rerenderSource = () => setTick((value) => value + 1);
+      return (
+        <CourseDeletionProvider>
+          <DeleteCourseButton
+            courseId={1}
+            title="Organic Chemistry"
+            afterDelete="navigate-to-list"
+          />
+        </CourseDeletionProvider>
+      );
+    }
+
+    render(<SourcePage />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const confirm = await screen.findByRole("button", { name: "Delete permanently" });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+
+    await act(async () => removal.resolve(preview));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/courses"));
+
+    // Still mounted, exactly as the source page is between `replace` and the navigation
+    // committing. Put it through one render.
+    await act(async () => {
+      rerenderSource();
+    });
+
+    expect(
+      window.sessionStorage.getItem("studyforge:deleted-course-title"),
+      "the destination provider has not mounted yet, so the title must still be waiting",
+    ).toBe("Organic Chemistry");
+    expect(
+      screen.getByRole("status").textContent,
+      "announcing here would speak on a page that is being replaced",
+    ).toBe("");
   });
 
   /*

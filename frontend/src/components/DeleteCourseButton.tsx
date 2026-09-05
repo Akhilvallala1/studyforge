@@ -89,11 +89,23 @@ export type AfterDelete = "restore-focus" | "navigate-to-list";
 const DELETED_TITLE_KEY = "studyforge:deleted-course-title";
 
 /**
- * No real subscription: nothing else in this tab writes this key while a provider is
- * mounted to read it. The one write that matters (see `onDeleted`'s "navigate-to-list"
- * branch) always happens before this component's first render, since it is followed
- * immediately by the `router.replace` that mounts it, so there is no later change here
- * for a subscriber to react to.
+ * A no-op subscribe, safe for a reason worth stating exactly, because the obvious
+ * reason is wrong. It is NOT that nothing writes this key while a provider is mounted
+ * to read it. `onDeleted`'s "navigate-to-list" branch does precisely that, from inside
+ * a provider that is mounted and whose own snapshot would pick the write up on its very
+ * next render.
+ *
+ * It is safe because the only mounted reader that can observe its own write is the
+ * writer, and the writer excludes itself: `onDeleted` sets `handedOff` before storing
+ * the title, and the handoff effect bails on that ref. Every other instance reads this
+ * key once on mount, after a `router.replace` that happened before it existed, so there
+ * is no mid-life change left for a subscriber to deliver.
+ *
+ * Without that exclusion, one re-render of the deleting page between `replace` and its
+ * unmount would be enough for it to consume its own handoff: clear the key, announce on
+ * a page that is about to disappear, and leave the destination provider to mount to
+ * nothing. Whether App Router actually produces such a render is not something this
+ * component should have to depend on.
  */
 function subscribeToDeletionHandoff(): () => void {
   return () => {};
@@ -138,6 +150,9 @@ export function CourseDeletionProvider({ children }: { children: ReactNode }) {
   const [refreshing, startTransition] = useTransition();
   const [announcement, setAnnouncement] = useState("");
   const wantsFocus = useRef(false);
+  // Marks the instance that hands a deletion off, so it cannot also consume it. See
+  // `subscribeToDeletionHandoff` above for what goes wrong without this.
+  const handedOff = useRef(false);
   const handoffTitle = useSyncExternalStore(
     subscribeToDeletionHandoff,
     getDeletionHandoffSnapshot,
@@ -149,6 +164,7 @@ export function CourseDeletionProvider({ children }: { children: ReactNode }) {
       // This instance is about to unmount with the page it belongs to, so neither the
       // announcement nor the focus intent set here would survive to be read. Stash the
       // title for the list page's own provider to pick up on mount instead.
+      handedOff.current = true;
       window.sessionStorage.setItem(DELETED_TITLE_KEY, title);
       // `replace`, not `push`: the page this instance belongs to is the course that
       // was just deleted, and the server has already confirmed it gone. Pushing would
@@ -183,6 +199,9 @@ export function CourseDeletionProvider({ children }: { children: ReactNode }) {
    * one restore path instead of this needing a duplicated copy of it.
    */
   useEffect(() => {
+    // Not on the instance that stashed the title: it is on its way out, and consuming
+    // here would announce on a dying page and strand the destination with nothing.
+    if (handedOff.current) return;
     if (!handoffTitle) return;
     window.sessionStorage.removeItem(DELETED_TITLE_KEY);
     wantsFocus.current = true;
