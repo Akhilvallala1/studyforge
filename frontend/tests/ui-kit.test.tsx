@@ -21,9 +21,10 @@
  * replacement role would still pass against the broken version; passing `undefined`
  * explicitly is the only case that distinguishes them.
  */
-import { render, screen } from "@testing-library/react";
-import { describe, expect, test } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, test, vi } from "vitest";
 
+import { Button } from "@/components/ui/Button";
 import { ErrorState } from "@/components/ui/ErrorState";
 
 describe("ErrorState role", () => {
@@ -64,5 +65,102 @@ describe("ErrorState title suppression", () => {
 
     expect(container.querySelectorAll("p")).toHaveLength(1);
     expect(screen.getByText("x")).toBeInTheDocument();
+  });
+});
+
+/**
+ * `type = "button"` is a load-bearing default, not a tidiness one. HTML's own default
+ * for a <button> with no type is "submit", so dropping that word from Button's
+ * destructure turns every unadorned Button inside a <form> into a submit control. The
+ * migration this PR performs replaces raw <button> elements with this primitive across
+ * GenerateForm, which is one large form, so the blast radius is that whole page.
+ *
+ * The second test catches the regression, and it leans on a negative assertion, which
+ * is worth nothing on its own: if this primitive silently stopped rendering, or the
+ * click never landed, `not.toHaveBeenCalled()` would pass for the wrong reason. The
+ * first test is its control. Same form, same click, same handler, differing only in the
+ * prop under test, so a broken harness fails both instead of quietly passing one.
+ *
+ * Run, not assumed: rewriting the destructure to a bare `type` fails the second test on
+ * "Number of calls: 1" while the first still passes. The behaviour assertion is checked
+ * before the attribute one deliberately, so that failure lands on the submit that
+ * actually happened rather than on a missing attribute.
+ */
+describe("Button type default", () => {
+  function FormHarness({ onSubmit, type }: { onSubmit: () => void; type?: "submit" }) {
+    return (
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+      >
+        <Button type={type}>Go</Button>
+      </form>
+    );
+  }
+
+  test('type="submit" submits the surrounding form (control for the test below)', () => {
+    const onSubmit = vi.fn();
+    render(<FormHarness onSubmit={onSubmit} type="submit" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Go" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Go" })).toHaveAttribute("type", "submit");
+  });
+
+  test("an unadorned Button does not submit the surrounding form", () => {
+    const onSubmit = vi.fn();
+    render(<FormHarness onSubmit={onSubmit} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Go" }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Go" })).toHaveAttribute("type", "button");
+  });
+});
+
+/**
+ * The `tinted` variant works by INHERITING its colour: it is meant for an outlined
+ * button inside a status-tinted `Callout`, and `border-current` picks up whichever
+ * `text-danger` / `text-success` / `text-warning` the Callout put on its wrapper. So
+ * the one thing that must stay true of it is a negative: it must not set a colour of
+ * its own. Adding `text-ink` to it, which is what every other bordered variant does
+ * and so is the natural edit, silently severs the inheritance and takes the border
+ * back to a neutral grey on a tinted background, which is the exact contrast
+ * regression this variant exists to avoid.
+ *
+ * Be honest about what this test is: it reads a class STRING. jsdom loads no
+ * stylesheet, so nothing here can prove a rendered colour, and the contrast figures
+ * behind the variant live in its comment in Button.tsx where they were measured off
+ * the built bundle. What this catches is only the edit described above.
+ *
+ * It pins an exact SET rather than asserting that `border-current` is present and a
+ * text colour is absent. Ran both ways, not assumed: those two weaker checks catch the
+ * `text-ink` edit above but sail straight past a tone-specific border colour written
+ * next to `border-current`, and past a resting background added alongside the hover
+ * one. Those are the two shapes the severing edit actually takes, because nobody
+ * deletes `border-current`, they add a colour beside it and it wins on source order.
+ *
+ * Note the colours above and below are named in prose, not as literal utility strings.
+ * Tailwind v4 scans this file too, and an earlier draft of this very comment shipped a
+ * dead border rule into the bundle by spelling one out. See Button.tsx's variant block.
+ */
+describe("Button tinted variant", () => {
+  test("sets no colour of its own, so the enclosing tone shows through", () => {
+    render(<Button variant="tinted">Generate another</Button>);
+    const tokens = screen
+      .getByRole("button", { name: "Generate another" })
+      .className.split(/\s+/)
+      .filter(Boolean);
+
+    // Variant prefixes are stripped before matching so a colour cannot hide behind a
+    // `hover:` or a `dark:`. `text-ui` is the SIZE token, not a colour, and is expected.
+    const colour = tokens.filter((token) =>
+      /^(bg|text|border|ring|fill|stroke|outline)-/.test(token.replace(/^.*:/, "")),
+    );
+
+    expect(colour.sort()).toEqual(["border-current", "hover:bg-surface", "text-ui"]);
   });
 });

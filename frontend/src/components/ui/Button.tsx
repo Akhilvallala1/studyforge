@@ -1,7 +1,7 @@
 import { forwardRef } from "react";
 import type { ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "tinted" | "danger";
 export type ButtonSize = "sm" | "md";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -49,6 +49,89 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   // separately; this line only stops the migration from making it worse.
   secondary: "border border-line-strong text-ink hover:border-line-hover",
   ghost: "text-ink-muted hover:bg-surface-sunken hover:text-ink",
+  /*
+   * For an outlined button sitting INSIDE a status-tinted container, which is the one
+   * place `secondary` must not be used. `secondary`'s border was tuned against the
+   * neutral page surface: `line-strong` is #d4d4d8 light and #3f3f46 dark, which
+   * measures 1.48:1 and 1.90:1 there, but drop it onto `success-surface` (#ecfdf5 /
+   * #002c22) and the same colour measures 1.40:1 and 1.45:1. The raw button this
+   * replaced in GenerateForm's success banner drew its border in emerald-700 light and
+   * emerald-600 dark, which measure 5.15:1 and 4.06:1 on those two surfaces, so using
+   * `secondary` there would have taken a control boundary from comfortably past WCAG
+   * 1.4.11's 3:1 to nowhere near it, in both modes.
+   *
+   * `border-current`, not a success-specific token, because the tone is already on the
+   * container: `Callout` puts `text-success` / `text-danger` / `text-warning` on its
+   * wrapper, so `currentColor` here IS whichever tone encloses this button, and one
+   * variant covers those THREE without a variant per tone. Callout's fourth tone is not
+   * covered, it is excluded: `info` sets `text-ink`, so a `tinted` button inside an info
+   * Callout inherits near-black and draws a 17.17:1 light / 15.14:1 dark hairline. That
+   * is legible, not a contrast bug, but it is `secondary` in all but name and carries
+   * none of the reason this variant exists, so use `secondary` there. Same for a
+   * `tinted` button outside a Callout altogether: nothing tinted sets `currentColor` for
+   * it to pick up and it inherits whatever ink surrounds it.
+   *
+   * In the success case `currentColor` resolves to #007956 light and #00d294 dark,
+   * 5.15:1 and 7.70:1 against the surface behind it. In light mode that is not merely
+   * close to the raw version, it is the same colour: emerald-700 IS `--sf-success`
+   * light, so the two are one hex and the 5.15:1 above and here is one measurement.
+   * Dark mode does move, from emerald-600's 4.06:1 to 7.70:1, because the dark token is
+   * emerald-400. Hovering swaps the fill to `bg-surface`, and the border against THAT
+   * measures 5.43:1 and 10.04:1, so the boundary stays past 3:1 in both states and both
+   * modes.
+   *
+   * Hover goes to the plain page `surface` rather than a deeper tint. A deeper tint
+   * would have to be a per-tone hover surface, and this variant does not know its tone:
+   * not knowing is the entire point of inheriting through `currentColor`, and a hard-coded
+   * class list cannot branch on what encloses it. So this is not waiting on a token to
+   * be added. Even once a status surface gains a hover value for one tone, this variant
+   * still could not reach for it. The real choice was between this and a 10%-opacity
+   * currentColor fill. That was tried first and rejected on the BUILT output, not on taste:
+   * Tailwind can pre-multiply an opacity into a NAMED colour (ConceptTutor's amber-100
+   * at 70% emits #fef3c699 directly) but cannot for `currentColor`, so it emits a
+   * full-opacity currentColor background as the pre-color-mix fallback and only reaches
+   * 10% inside `@supports (color: color-mix(...))`. On a browser missing that @supports,
+   * hovering would paint the button's background in exactly its own text colour and the
+   * label would vanish. Unlikely, but "text disappears" is a worse failure than "hover
+   * tint goes the other way", and `bg-surface` has no fallback branch to get wrong. It
+   * also animates, since `transition-colors` on BASE covers background-color where an
+   * opacity change would not have been covered at all.
+   *
+   * What that hover does NOT buy is a strong signal. The fill step measures 1.05:1 light
+   * and 1.30:1 dark on the success surface (warning 1.04 and 1.32, danger 1.09 and 1.22),
+   * and since preflight here leaves buttons on the default arrow cursor, that step is the
+   * whole hover affordance. Recorded because it is easy to mistake for something this
+   * migration broke, and it is not: the raw button this replaced stepped 1.08:1 light and
+   * 1.56:1 dark, the same band, and `ghost` above moves 1.04:1 in light mode too, though
+   * that one at least shifts its text colour as well. Fixing it properly needs a hover
+   * token per status surface, which is the same "new token, not a swap between the ones
+   * that exist" conclusion the `secondary` note above reaches about the 3:1 boundary, and
+   * it is filed with that rather than improvised here for one button.
+   *
+   * Why this comment describes those two rejected classes in prose instead of naming
+   * them: Tailwind v4's scanner is a plain text extractor with no idea what a comment
+   * is, so any complete utility string written here is a candidate and gets a real rule
+   * in the shipped bundle. An earlier draft of this block named both of them the obvious
+   * way and put four dead rules into the CSS, two for the currentColor fill and two for
+   * the emerald border this variant exists to replace. Verified by grepping the built
+   * chunk before and after. Utilities the code actually uses are safe to name, and are
+   * named above; ones it deliberately does not use are not.
+   *
+   * The harder half of that rule is that a utility need not look like one. This block
+   * shipped a fifth dead rule for longer than the other four, from an ordinary English
+   * word in the sentence about not branching on the enclosing tone, because the word it
+   * used is also a positioning utility. Nothing marks it out as a class name to a
+   * reader. When rewording anything here, check the built chunk rather than your eye,
+   * and note the near-synonyms are mostly utilities too: the layout and display words,
+   * the typography ones, and the effect names all have bare-word classes.
+   *
+   * Do not read that as "the bundle should contain none of these". Several are already
+   * there from elsewhere and are not removable at all: an array `.filter()` call and an
+   * HTML tag name are both bare-word candidates to a scanner that only sees text. So
+   * finding one in the chunk is not evidence this file put it there. Compare the
+   * candidate set against the previous commit instead, which is what attributes it.
+   */
+  tinted: "border border-current hover:bg-surface",
   danger: "bg-danger-fill text-danger-on-fill hover:bg-danger-fill-hover",
 };
 
