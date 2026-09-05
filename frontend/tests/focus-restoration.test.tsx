@@ -976,9 +976,11 @@ describe("QuizSection focus restoration", () => {
  * Sometimes it is a node the same commit created: #create-first-course when the last
  * course goes, the "Correct" message once solving unmounts the Check button.
  *
- * The QuizSection suite above pins both halves: its two wrong-answer tests land on an
- * input or a checked radio that was already there, and its two solving tests land on the
- * Correct message, one of them also asserting the Check button has gone. The
+ * The QuizSection suite above pins both halves. Two of its tests land after a wrong
+ * answer, on an input or a checked radio that was already there, and two land after a
+ * right one, on the Correct message, one of those also asserting the Check button has
+ * gone. Its remaining two are decline tests, which assert focus does not move at all, so
+ * a grep for `correct: false` finds four tests where this sentence counts two. The
  * DeleteCourseButton pair pins something narrower. An earlier draft of this paragraph
  * said those two tests pin the split; they cannot, because renderList builds only the
  * anchor whose branch the test asserts and never changes it, so BOTH of their targets
@@ -991,10 +993,10 @@ describe("QuizSection focus restoration", () => {
  * is the rule, and the rule is not about survival at all. It is that neither component
  * may decide WHICH node before the change. Whether it then holds one is a separate
  * question with a different answer in each: QuizSection keeps a ref to every node it
- * might land on, while the post-delete restore keeps none and resolves both ids through
+ * might land on, while the post-delete restore keeps none and resolves the ids through
  * getElementById on every run. That restore lives in CourseDeletionProvider, not in
- * DeleteCourseButton itself, which holds two nodes of its own for the dialog's own focus
- * moves. Holding a node is fine. Choosing it early is not, and that is what the
+ * DeleteCourseButton itself, which holds two nodes of its own, for the focus moves of
+ * opening the panel and of cancelling out of it. Holding a node is fine. Choosing it early is not, and that is what the
  * paragraph below is about.
  *
  * What this suite shares with them is a decline guard, but not one guard: GenerateForm
