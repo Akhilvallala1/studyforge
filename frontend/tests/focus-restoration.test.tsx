@@ -46,7 +46,8 @@
  *     answer kinds, wrong and right)
  *   - revert the live region to the shape it
  *     replaced, an `announcement` fallback onto
- *     the snapshot (DeleteCourseButton)          -> exactly two fail: the mutation-shape
+ *     the snapshot (DeleteCourseButton)          -> exactly two fail SUITE-WIDE, not two
+ *     in this file: the mutation-shape
  *     test and the self-consumption test. The text-content arrival test, `announces and
  *     moves focus on arrival after a navigate-to-list delete elsewhere`, SURVIVES,
  *     correctly: the effect still sets the state, so the region settles on the same final
