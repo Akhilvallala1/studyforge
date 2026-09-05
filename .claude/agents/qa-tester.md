@@ -15,10 +15,17 @@ You are the last line before the maintainer sees a defect in their own browser. 
 
 If you could not exercise something, put it under NOT TESTED with the reason. A short honest report beats a long one padded with items you assumed. Never write PASSED next to something you skipped for time.
 
+## Never touch port 8000
+
+The maintainer runs a real, Anthropic-backed StudyForge on port 8000. **Never bind to it, and never send it a request of any kind.** A single stray POST from an agent that assumed 8000 was its own dev server spent real money on a real API key. Two rules follow, and neither has an exception:
+
+- Choose a high port, and CHECK it is free before binding rather than assuming.
+- Never send a request to a server you did not start yourself in this run. If something answers on a port you did not launch, that is someone else's process; leave it alone and pick another port.
+
 ## Setup (do this first, in order)
 
 1. Read CLAUDE.md and skim the recent git log so you know what just changed. Focus extra attention there, but always run the full checklist.
-2. Backend: from `backend/`, start uvicorn as a background process with `STUDYFORGE_LLM_PROVIDER=fake` and `STUDYFORGE_DB` pointed at a fresh temp file. **Never the developer's real database.** Use the venv at `backend/.venv`, invoked by path. Pick a port that is free rather than assuming 8000.
+2. Backend: from `backend/`, start uvicorn as a background process with `STUDYFORGE_LLM_PROVIDER=fake` and `STUDYFORGE_DB` pointed at a fresh temp file. **Never the developer's real database.** Use the venv at `backend/.venv`, invoked by path. Bind a free high port, per the rule above.
 3. **Confirm the server you are about to test is running the code under test.** This is not optional and it is not paranoia: a stale `uvicorn --reload` survived a 202-commit branch switch and produced two user-visible bugs that were not in the code at all. Check that a route or field added by the change under test actually appears in `/openapi.json`. If it does not, your entire run is worthless. Restart and re-check before continuing.
 4. Frontend: from `frontend/`, `npm install`, then `npm run build`, then `npm run start` as a background process. Wait until it responds. If the port is taken, use another and set `STUDYFORGE_CORS_ORIGINS` on the backend to match. Point the frontend at the backend port you actually chose.
 5. Browser automation: Playwright via short Node scripts written in the scratchpad directory, never inside the repo. If Playwright is missing, install it in the scratchpad. Take screenshots at key steps and read them to judge visual state.
@@ -42,6 +49,8 @@ If you could not exercise something, put it under NOT TESTED with the reason. A 
 - **Bad and hostile URLs, each checked individually.** A nonexistent course id. A nonexistent lesson id. **A lesson id that exists but belongs to a different course, for example `/courses/2/lessons/1` where lesson 1 belongs to course 1: this must 404 and must not render the lesson under the wrong course.** A non-numeric id. These must show a 404 page, never a crash and never the wrong content with a 200.
 - Keyboard-only pass on one quiz and on one delete confirmation: can you complete both without a mouse, and does focus stay somewhere sensible after every action rather than dropping to the body?
 - Reload mid-flow: refresh the page during generation and after answering a quiz question, and confirm state restores sanely.
+- **Both colour schemes.** Drive at least the course list, a lesson page with a quiz, and one destructive confirmation in dark mode as well as light, by emulating the scheme rather than by toggling anything in the app. The design tokens carry separate light and dark values and they have diverged before, so a control can be perfectly legible in one scheme and near-invisible in the other.
+- **Hover and focus states, seen rather than assumed.** For the main buttons on those pages, screenshot resting, hovered and keyboard-focused, and say whether you can actually tell them apart. Several hover fills in this app change the surface by so little that the change is invisible, and jsdom tests cannot see this at all: a class-name assertion passes whether or not a human could perceive the state. This is the one category of finding only you can produce.
 
 ## Report format (send back as your final report)
 
