@@ -974,16 +974,28 @@ describe("QuizSection focus restoration", () => {
  * courses remain, and an attempt that leaves an item unsolved sends focus back to that
  * item's own input or checked radio, neither of which QuizSection ever unmounts.
  * Sometimes it is a node the same commit created: #create-first-course when the last
- * course goes, the "Correct" message once solving unmounts the Check button. Two tests in
- * the DeleteCourseButton suite above pin exactly that split.
+ * course goes, the "Correct" message once solving unmounts the Check button.
  *
- * Two earlier drafts of this sentence each took one of those halves for the whole rule:
- * first that the target outlives what vanished, then that it never does. Neither is the
- * rule, and the rule is not about survival at all. It is that neither component may
- * decide WHICH node before the change. Whether it then holds one is a separate question
- * with a different answer in each: QuizSection keeps three ref maps, while
- * DeleteCourseButton keeps nothing and calls getElementById on every run. Holding a node
- * is fine. Choosing it early is not, and that is what the paragraph below is about.
+ * The QuizSection suite above pins both halves: its two wrong-answer tests land on an
+ * input or a checked radio that was already there, and its two solving tests land on the
+ * Correct message, one of them also asserting the Check button has gone. The
+ * DeleteCourseButton pair pins something narrower. An earlier draft of this paragraph
+ * said those two tests pin the split; they cannot, because renderList builds only the
+ * anchor whose branch the test asserts and never changes it, so BOTH of their targets
+ * are survivors. Reversing the two lookups leaves all 45 tests across this file and
+ * delete-confirmation.test.tsx green. What the pair does pin is that each id is looked
+ * up at all: removing either lookup turns a test red.
+ *
+ * Two earlier drafts of the sentence above each took one of those halves for the whole
+ * rule: first that the target outlives what vanished, then that it never does. Neither
+ * is the rule, and the rule is not about survival at all. It is that neither component
+ * may decide WHICH node before the change. Whether it then holds one is a separate
+ * question with a different answer in each: QuizSection keeps a ref to every node it
+ * might land on, while the post-delete restore keeps none and resolves both ids through
+ * getElementById on every run. That restore lives in CourseDeletionProvider, not in
+ * DeleteCourseButton itself, which holds two nodes of its own for the dialog's own focus
+ * moves. Holding a node is fine. Choosing it early is not, and that is what the
+ * paragraph below is about.
  *
  * What this suite shares with them is a decline guard, but not one guard: GenerateForm
  * carries the two-condition form ConceptTutor uses, `active === document.body || active
