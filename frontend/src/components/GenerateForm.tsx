@@ -698,17 +698,25 @@ function SourceRowField({
   const errorId = `source-${row.id}-error`;
   const label = row.kind === "text" ? "Pasted text" : "URL";
 
-  /* Adopting Card here (and in FileRowField) is not colour-neutral, in the same way the
-     secondary-variant note in Button.tsx records for itself: Card hardcodes border-line,
-     where this row previously drew its own line-strong boundary, so the border goes from
-     #d4d4d8 / #3f3f46 (1.48:1 light, 1.90:1 dark) to #e4e4e7 / #27272a (1.27:1, 1.33:1).
-     Accepted rather than overridden, because a source row is a grouping container and not
-     a control boundary. LessonMarkdown's comment draws the same distinction for the
-     gridlines of a table inside a lesson: a divider, not a control boundary. That note
-     arrives with PR #37 (04fe554), so it is absent from any tree older than that merge,
-     which is why this names the file instead of describing it. No WCAG floor applies to
-     either case: 1.4.11 covers what is needed to identify a control or its state, and
-     every control inside this row already draws its own line-strong boundary. */
+  /* Adopting Card here (and in FileRowField) is not colour-neutral: Card hardcodes
+     border-line, where this row previously drew its own line-strong boundary, so the
+     border goes from #d4d4d8 / #3f3f46 (1.48:1 light, 1.90:1 dark) to #e4e4e7 / #27272a
+     (1.27:1, 1.33:1). Those are the same four figures the secondary-variant note in
+     Button.tsx cites, reaching the opposite decision: that variant's border IS the
+     control's only boundary, so it holds line-strong, where this one encloses a group and
+     takes the step. LessonMarkdown's comment draws the same divider-not-boundary
+     distinction for the gridlines of a table inside a lesson. That note arrives with
+     PR #37, so it is absent from main until that PR lands, which is why this names the
+     file instead of describing it.
+     No WCAG floor applies to either case, and not because 1.4.11 is only about controls.
+     It has two bullets and each is separately satisfied here. User Interface Components:
+     the text inputs draw their own line-strong boundary, and the row's one other control
+     is a text-only Remove button, borderless by design and identified by its label, so
+     the hairline identifies no control and no state. That button is the ONLY control in
+     FileRowField, which is why this is worth spelling out rather than asserting every
+     control draws a boundary. Graphical Objects: what groups a row visually is its
+     PASTED TEXT / URL / PDF caption and the gap between rows in the list container, not
+     the hairline, so nothing needed to understand the content rests on it either. */
   return (
     <Card padding={4}>
       <div className="flex items-center justify-between gap-2">
