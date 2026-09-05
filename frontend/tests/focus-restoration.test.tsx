@@ -980,7 +980,7 @@ describe("QuizSection focus restoration", () => {
  * answer, on an input or a checked radio that was already there, and two land after a
  * right one, on the Correct message, one of those also asserting the Check button has
  * gone. Its remaining two are decline tests, which assert focus does not move at all, so
- * a grep for `correct: false` finds four tests where this sentence counts two. The
+ * four of the six use `correct: false` where this sentence counts two. The
  * DeleteCourseButton pair pins something narrower. An earlier draft of this paragraph
  * said those two tests pin the split; they cannot, because renderList builds only the
  * anchor whose branch the test asserts and never changes it, so BOTH of their targets
@@ -996,8 +996,8 @@ describe("QuizSection focus restoration", () => {
  * might land on, while the post-delete restore keeps none and resolves the ids through
  * getElementById on every run. That restore lives in CourseDeletionProvider, not in
  * DeleteCourseButton itself, which holds two nodes of its own, for the focus moves of
- * opening the panel and of cancelling out of it. Holding a node is fine. Choosing it early is not, and that is what the
- * paragraph below is about.
+ * opening the panel and of cancelling out of it. Holding a node is fine. Choosing it
+ * early is not, and that is what the paragraph below is about.
  *
  * What this suite shares with them is a decline guard, but not one guard: GenerateForm
  * carries the two-condition form ConceptTutor uses, `active === document.body || active
