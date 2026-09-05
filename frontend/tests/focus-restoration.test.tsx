@@ -969,16 +969,21 @@ describe("QuizSection focus restoration", () => {
  * the composer to the reply, though focus never touched the body" is that case on
  * purpose, and the composer it moves off is never disabled. DeadlineForm and
  * DaysOffControl take their target from the call site, while DeleteCourseButton and
- * QuizSection land on whatever the new render leaves standing. Not on a survivor: in both,
- * the node they land on and the node that went away are mutually exclusive, so the target
- * is one the same commit created. #new-course renders only when courses.length > 0 and
- * #create-first-course only when it is 0, so deleting the last course destroys one and
- * builds the other in a single commit; the "Correct" message renders under `solved` and
- * the Check button under `!solved`, so those two never coexist either. An earlier draft
- * of this sentence said they "fall back onto something that outlives what vanished",
- * which is the premise the paragraph below exists to deny: nothing pre-exists to be
- * captured, which is why neither component may hold a node and both resolve the target
- * after the change.
+ * QuizSection resolve theirs only after the change, because WHICH node is right is what
+ * the change decides. Sometimes it is a survivor: #new-course is untouched when other
+ * courses remain, and an attempt that leaves an item unsolved sends focus back to that
+ * item's own input or checked radio, neither of which QuizSection ever unmounts.
+ * Sometimes it is a node the same commit created: #create-first-course when the last
+ * course goes, the "Correct" message once solving unmounts the Check button. Two tests in
+ * the DeleteCourseButton suite above pin exactly that split.
+ *
+ * Two earlier drafts of this sentence each took one of those halves for the whole rule:
+ * first that the target outlives what vanished, then that it never does. Neither is the
+ * rule, and the rule is not about survival at all. It is that neither component may
+ * decide WHICH node before the change. Whether it then holds one is a separate question
+ * with a different answer in each: QuizSection keeps three ref maps, while
+ * DeleteCourseButton keeps nothing and calls getElementById on every run. Holding a node
+ * is fine. Choosing it early is not, and that is what the paragraph below is about.
  *
  * What this suite shares with them is a decline guard, but not one guard: GenerateForm
  * carries the two-condition form ConceptTutor uses, `active === document.body || active
