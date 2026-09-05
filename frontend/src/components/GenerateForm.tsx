@@ -705,9 +705,7 @@ function SourceRowField({
      Button.tsx cites, reaching the opposite decision: that variant's border IS the
      control's only boundary, so it holds line-strong, where this one encloses a group and
      takes the step. LessonMarkdown's comment draws the same divider-not-boundary
-     distinction for the gridlines of a table inside a lesson. That note arrives with
-     PR #37, so it is absent from main until that PR lands, which is why this names the
-     file instead of describing it.
+     distinction for the gridlines of a table inside a lesson.
      No WCAG floor applies to this row or to a file row, and not because 1.4.11 is only
      about controls. It has two bullets and each is separately satisfied here. User
      Interface Components: the text inputs draw their own line-strong boundary. That is
