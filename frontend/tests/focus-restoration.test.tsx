@@ -939,16 +939,33 @@ describe("QuizSection focus restoration", () => {
 
 /**
  * GenerateForm has no single sender to restore focus to: rows are added and removed
- * freely, so the target is a different control on almost every commit. That is what the
- * suites above have no equivalent of, and it is what most of these tests pin: which
- * TARGET the add and remove effects pick once the list has changed shape. "No
- * equivalent" is about the target being unbounded, not about picking one out of the
- * changed list at all. Two of the suites above do: DeleteCourseButton's restore
- * effect picks between #new-course and #create-first-course, and the QuizSection suite's
- * own header a few hundred lines up says it "picks its target accordingly". Both are
- * two-way fallbacks, decided once and fixed thereafter, where this one is re-decided on
- * every add and every remove. The house decline guard is here too, on the submit path,
- * and is pinned alongside them.
+ * freely, so the target is a different control on almost every commit. That is what
+ * most of these tests pin: which TARGET the add and remove effects pick once the list
+ * has changed shape.
+ *
+ * Picking a target is not what is new here, and the first version of this paragraph
+ * claimed otherwise on a count of two. Every suite above picks. ConceptTutor chooses
+ * among the newest reply, the composer, and whichever of two buttons was pressed;
+ * DeadlineForm among a day input, a label input and submit; DaysOffControl between a
+ * day input and submit; DeleteCourseButton between #new-course and #create-first-course;
+ * QuizSection among three per-item refs, one of them an mcq radio pulled out of a map
+ * keyed by the answer, which is no more settled at author time than this file's per-row
+ * maps are.
+ *
+ * What is different is WHOSE control the target is. Everywhere above, focus goes back to
+ * the thing the learner acted on, or to a named fallback for when that thing is gone.
+ * The remove effect here cannot do that: the row acted on has been deleted, so it goes
+ * to a NEIGHBOUR chosen by position in the list as it now stands, the row that slid into
+ * the gap or the previous row if the removed one was last. That is why these tests spend
+ * most of their length on list shape rather than on the guard.
+ *
+ * DeleteCourseButton is worth reading next to that for the opposite reason. Its two
+ * candidates ARE written into its source, and it still resolves them with
+ * getElementById inside the effect on every run rather than holding a node: a candidate
+ * set small enough to enumerate is not a licence to decide the target once and cache it,
+ * which is the regression these suites exist to prevent.
+ *
+ * The house decline guard is here too, on the submit path, and is pinned alongside them.
  */
 describe("GenerateForm focus restoration", () => {
   const SOURCE_LIMITS: SourceLimits = {
