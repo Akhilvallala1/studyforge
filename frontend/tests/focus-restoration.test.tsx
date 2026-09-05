@@ -70,6 +70,12 @@
  *     introduced it, and it survived that precisely because the failure COUNT beside it
  *     was right. That is the part worth noticing: a correct measurement does not make
  *     the prose around it correct, and checking the number is not checking the sentence.
+ *     The FIRST version, 203d37b, is the one this paragraph used to leave out, and its
+ *     error is the same shape in miniature: its heading named the harsh mutation while the
+ *     outcome it reported was the gentle mutation's, so it recorded the text-content
+ *     arrival test as surviving. Re-measured on 203d37b's own tree, which is green at 90,
+ *     that mutation reddens five tests and the one it named as surviving is among them. So
+ *     nothing below about a clause being true absolves the version that opened the lineage.
  *     The second version, 487db13, is the one most worth a record. It
  *     claimed four failures and struck
  *     out the "settles on the same final text" clause as false. The clause was true. What
@@ -935,8 +941,14 @@ describe("QuizSection focus restoration", () => {
  * GenerateForm has no single sender to restore focus to: rows are added and removed
  * freely, so the target is a different control on almost every commit. That is what the
  * suites above have no equivalent of, and it is what most of these tests pin: which
- * TARGET the add and remove effects pick once the list has changed shape. The house
- * decline guard is here too, on the submit path, and is pinned alongside them.
+ * TARGET the add and remove effects pick once the list has changed shape. "No
+ * equivalent" is about the target being unbounded, not about picking one out of the
+ * changed list at all. Two of the suites above do: DeleteCourseButton's restore
+ * effect picks between #new-course and #create-first-course, and the QuizSection suite's
+ * own header a few hundred lines up says it "picks its target accordingly". Both are
+ * two-way fallbacks, decided once and fixed thereafter, where this one is re-decided on
+ * every add and every remove. The house decline guard is here too, on the submit path,
+ * and is pinned alongside them.
  */
 describe("GenerateForm focus restoration", () => {
   const SOURCE_LIMITS: SourceLimits = {
