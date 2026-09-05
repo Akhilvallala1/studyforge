@@ -68,8 +68,8 @@ export function stripDuplicateTitle(content: string, title: string): string {
  * "text-display"> needs no separate font-semibold. There is no third named HEADING step
  * below subtitle (text-ui is a UI-chrome step, and is smaller than body text, which is
  * the whole trap described below), so h3 takes an explicit font-semibold and no size
- * class at all, inheriting
- * the article's text-prose 1rem, instead of inventing a new token for one selector.
+ * class at all, inheriting the article's text-prose 1rem, instead of inventing a new
+ * token for one selector.
  * The missing size utility is deliberate and load-bearing: preflight sets h1..h6 {
  * font-size: inherit }, so an h3 with no font-size class lands exactly on body size,
  * whereas either neighbouring step would be wrong in one direction (text-ui is
@@ -78,10 +78,11 @@ export function stripDuplicateTitle(content: string, title: string): string {
  * arbitrary variant and shipped the heading one notch smaller than its own body text,
  * so do not add a size class back here without re-reading this. (That variant is
  * described rather than written out for the same scanner reason as above.)
- * `prose-headings:font-semibold`, which sat
- * on the <article> below covering h1 through h6 uniformly, is dropped along with it:
- * this app has no @tailwindcss/typography plugin (see package.json), so `prose-*` was
- * never a real Tailwind variant here and the built CSS confirms it emitted no rule.
+ *
+ * `prose-headings:font-semibold`, which sat on the <article> below covering h1 through
+ * h6 uniformly, is dropped along with that size utility: this app has no
+ * @tailwindcss/typography plugin (see package.json), so `prose-*` was never a real
+ * Tailwind variant here and the built CSS confirms it emitted no rule.
  *
  * [&_a]:text-accent is new: globals.css names "inline text links" as one of the
  * accent's three sanctioned uses, and Tailwind's preflight resets `a { color: inherit

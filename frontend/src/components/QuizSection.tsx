@@ -310,10 +310,16 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                       mt-3 against mt-1, but that is not an argument, because Field has no
                       consumers: `grep -rn "ui/Field\|<Field" src tests` returns nothing.
                       It is unadopted code, so it is not the app's recipe for anything. The
-                      inputs that actually render all draw this boundary at that colour,
-                      through the `border-line-strong` token: DaysOffControl, DeadlineForm's
-                      FIELD_CLASS, ReviewSession:322, and GenerateForm's two field constants,
-                      which PR #36 migrated off the raw zinc pair the token resolves to. Using
+                      NEUTRAL inputs that actually render all draw this boundary at that
+                      colour, through the `border-line-strong` token: DaysOffControl,
+                      DeadlineForm's FIELD_CLASS, ReviewSession:322, and GenerateForm's two
+                      field constants, which PR #36 migrated off the raw zinc pair the token
+                      resolves to. "Neutral" is load-bearing rather than a hedge: two other
+                      text controls render with an amber boundary instead, ConceptPractice's
+                      answer input and ConceptTutor's composer textarea, because they sit
+                      inside amber concept callouts and follow their container off the
+                      neutral scale on purpose. This input has no such container, so the
+                      neutral scale is the one it belongs to. Using
                       `border-line` would have dropped this one input alone to 1.27:1 light
                       and 1.33:1 dark, from 1.48 and 1.90. That is a different question
                       from whether line-strong itself clears WCAG 1.4.11's 3:1, which it
