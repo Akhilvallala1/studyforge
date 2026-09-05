@@ -708,15 +708,20 @@ function SourceRowField({
      distinction for the gridlines of a table inside a lesson. That note arrives with
      PR #37, so it is absent from main until that PR lands, which is why this names the
      file instead of describing it.
-     No WCAG floor applies to either case, and not because 1.4.11 is only about controls.
-     It has two bullets and each is separately satisfied here. User Interface Components:
-     the text inputs draw their own line-strong boundary, and the row's one other control
-     is a text-only Remove button, borderless by design and identified by its label, so
-     the hairline identifies no control and no state. That button is the ONLY control in
-     FileRowField, which is why this is worth spelling out rather than asserting every
-     control draws a boundary. Graphical Objects: what groups a row visually is its
-     PASTED TEXT / URL / PDF caption and the gap between rows in the list container, not
-     the hairline, so nothing needed to understand the content rests on it either. */
+     No WCAG floor applies to this row or to a file row, and not because 1.4.11 is only
+     about controls. It has two bullets and each is separately satisfied here. User
+     Interface Components: the text inputs draw their own line-strong boundary. That is
+     not a claim they clear the bullet, which wants 3:1 and which line-strong misses in
+     both schemes; closing that needs a new token and is filed separately, as Button.tsx's
+     secondary note records. The claim is only that the Card hairline is not what
+     identifies them, so removing it from the argument costs nothing. The row's one other
+     control is a text-only Remove button, borderless by design and identified by its
+     label, and 1.4.11 excludes text, which is 1.4.3's job. That button is the ONLY
+     control in FileRowField, which is why this is worth spelling out rather than
+     asserting every control draws a boundary. Graphical Objects: what groups a row
+     visually is its PASTED TEXT / URL / PDF caption and the gap between rows in the list
+     container, not the hairline, so nothing needed to understand the content rests on it
+     either. Both bullets are read here as an argument, not a measurement. */
   return (
     <Card padding={4}>
       <div className="flex items-center justify-between gap-2">
