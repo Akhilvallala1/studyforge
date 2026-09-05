@@ -310,8 +310,8 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                       mt-3 against mt-1, but that is not an argument, because Field has no
                       consumers: `grep -rn "ui/Field\|<Field" src tests` returns nothing.
                       It is unadopted code, so it is not the app's recipe for anything. The
-                      NEUTRAL inputs that actually render all draw this boundary at that
-                      colour, through the `border-line-strong` token: DaysOffControl,
+                      NEUTRAL text controls that actually render all draw this boundary at
+                      that colour, through the `border-line-strong` token: DaysOffControl,
                       DeadlineForm's FIELD_CLASS, ReviewSession:322, and GenerateForm's two
                       field constants, which PR #36 migrated off the raw zinc pair the token
                       resolves to. "Neutral" is load-bearing rather than a hedge: two other
