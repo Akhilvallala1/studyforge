@@ -44,6 +44,53 @@
  *     stale-intent test both fail
  *   - drop the focus call (QuizSection)          -> its four restore tests fail (both
  *     answer kinds, wrong and right)
+ *   - revert the live region to the shape it
+ *     replaced, an `announcement` fallback onto
+ *     the snapshot (DeleteCourseButton)          -> exactly two fail across the whole
+ *     suite, and no other file reddens:
+ *     the mutation-shape test and the self-consumption test. The text-content arrival test, `announces and
+ *     moves focus on arrival after a navigate-to-list delete elsewhere`, SURVIVES,
+ *     correctly: the effect still sets the state, so the region settles on the same final
+ *     text either way, and its text-content assertion cannot tell the two apart. Only an
+ *     assertion about HOW the text arrived can, which is the whole reason the
+ *     mutation-shape test exists as a separate case. Name that surviving test rather than
+ *     saying "both arrival tests survive": the mutation-shape test is ITSELF one of the
+ *     two tests whose names begin "announces ... arrival", so the plural phrasing
+ *     contradicted the failure list one line above it.
+ *
+ *     Every earlier version of this entry carried a false claim, including the versions
+ *     that were themselves corrections. The plural-arrival phrasing just described was
+ *     one, introduced by f83ecb9 and corrected by 30283b8. Another was a running tally
+ *     in this very position, counting how many predecessors had been wrong: 30283b8 put
+ *     "three" here and it was correct that day, wrong at the very next commit, and wrong
+ *     again at the one after that, because every correction adds a version the old
+ *     number does not count. That is why no numeral stands here now. Restoring one only
+ *     restarts the loop, since the next fix to this paragraph would falsify it again.
+ *     What the plural phrasing survived was the verification pass on the commit that
+ *     introduced it, and it survived that precisely because the failure COUNT beside it
+ *     was right. That is the part worth noticing: a correct measurement does not make
+ *     the prose around it correct, and checking the number is not checking the sentence.
+ *     The FIRST version, 203d37b, is the one this paragraph used to leave out, and its
+ *     error is the same shape in miniature: its heading named the harsh mutation while the
+ *     outcome it reported was the gentle mutation's, so it recorded the text-content
+ *     arrival test as surviving. Re-measured on 203d37b's own tree, which is green at 90,
+ *     that mutation reddens five tests and the one it named as surviving is among them. So
+ *     nothing below about a clause being true absolves the version that opened the lineage.
+ *     The second version, 487db13, is the one most worth a record. It
+ *     claimed four failures and struck
+ *     out the "settles on the same final text" clause as false. The clause was true. What
+ *     was false was the mutation it had been measured against: the snapshot rendered with
+ *     no state fallback at all, which is not the shape this replaced, is strictly
+ *     harsher, and reddens SIX tests suite-wide including two in
+ *     delete-confirmation.test.tsx. Neither reading was four. The note on the
+ *     mutation-shape test itself had named the real shape all along, so the file
+ *     contradicted itself for a round. Measure the mutation the code actually replaced,
+ *     and cross-check it against what the rest of the file says that shape was.
+ *   - drop the `handedOff` ref guard
+ *     (DeleteCourseButton)                       -> only the self-consumption test
+ *     fails, which is what earns that test its own case. Every other red test in this
+ *     component comes from the `!handoffTitle` guard on the very next line of the same
+ *     effect, and that guard cannot tell the writer of a handoff from a reader of one.
  *
  * One of those exposed a COUPLING worth recording, since the fix is the reusable part:
  * the delete decline test first synchronised on the live region, so dropping the
@@ -70,8 +117,9 @@
  */
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import type { ReactNode } from "react";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { ConceptTutor } from "@/components/ConceptTutor";
 import { DaysOffControl } from "@/components/DaysOffControl";
@@ -120,8 +168,16 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 
 // Both forms refresh the route after a save; the refresh is a no-op here because the
 // server data a refresh would carry is exactly what the props already hold.
+//
+// `replace` and `refresh` are hoisted rather than built fresh per `useRouter()` call
+// so the "navigates to the course list" test below can assert on the very mock the
+// component calls. A factory returning a new pair of `vi.fn()`s per call would leave
+// this file with no handle on them, and there would be no single pair to hold a handle
+// on: `useRouter()` is a hook, so it runs on every render, not once per mount. Hoisting
+// is what makes every render hand back the same pair.
+const { replace, refresh } = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: vi.fn(), push: vi.fn() }),
+  useRouter: () => ({ refresh, replace }),
 }));
 
 describe("ConceptTutor focus restoration", () => {
@@ -359,6 +415,15 @@ describe("DeleteCourseButton focus restoration", () => {
     spend_usd: 0.42,
   };
 
+  // Only the "navigate-to-list" tests below read sessionStorage or the hoisted
+  // router mocks; clearing them for every test in this describe rather than only
+  // those keeps the ordering of tests in this file from mattering to any of them.
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    replace.mockClear();
+    refresh.mockClear();
+  });
+
   async function renderList(options: { empty?: boolean; kept?: number } = {}) {
     vi.mocked(getDeletionPreview).mockResolvedValue({
       ...preview,
@@ -477,6 +542,260 @@ describe("DeleteCourseButton focus restoration", () => {
       screen.queryByText(/0 more/),
       "a learner with no concepts taught elsewhere should not be told about a category that is empty for them",
     ).not.toBeInTheDocument();
+  });
+
+  /*
+   * The detail page's entry point: `afterDelete="navigate-to-list"`. This is the
+   * regression risk T4 introduces, so it is pinned alongside the list's own restore
+   * tests above rather than instead of them: those five `renderList`-based tests
+   * render `DeleteCourseButton` with no `afterDelete` prop at all, and still pass
+   * unmodified (confirmed by re-running the file against this change), which is what
+   * pins the default staying "restore-focus". Mutation-verified the other direction
+   * too: temporarily flipping the default parameter to "navigate-to-list" does NOT
+   * turn every one of those five tests red, only "sends focus to New course after a
+   * delete that left focus nowhere", "sends focus to Create your first course when
+   * the list empties" and "names the deleted course in the live region" (the last
+   * for its live-region text, not its focus assertion: with the default flipped,
+   * `onDeleted` takes the replace branch, so neither `refresh` nor the in-place
+   * announcement ever fires). "declines to move focus when the learner moved on
+   * mid-request" and "omits the shared-concept clause rather than saying nought
+   * more" stay green either way: the first because nothing moves focus under either
+   * default, the second because it never confirms a delete at all. This test is what
+   * would catch the default going the other way, since `replace` would then never be
+   * called.
+   *
+   * Scope note, because the count above is easy to misread as a whole-suite figure: it
+   * is about the five `renderList` tests in THIS file. The same flipped default also
+   * reddens two in delete-confirmation.test.tsx, "refuses the press while loading, then
+   * honours it once the preview is there" and "stays pressable while the delete itself
+   * is in flight", so a full run shows five failures, not three.
+   */
+  test("navigates to the course list instead of restoring focus in place", async () => {
+    vi.mocked(getDeletionPreview).mockResolvedValue(preview);
+    const removal = deferred<CourseDeletion>();
+    vi.mocked(deleteCourse).mockReturnValue(removal.promise);
+
+    render(
+      <CourseDeletionProvider>
+        <DeleteCourseButton
+          courseId={1}
+          title="Organic Chemistry"
+          afterDelete="navigate-to-list"
+        />
+      </CourseDeletionProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const confirm = await screen.findByRole("button", { name: "Delete permanently" });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+
+    await act(async () => removal.resolve(preview));
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/courses"));
+    expect(
+      refresh,
+      "the page being deleted has nowhere sensible to refresh back to",
+    ).not.toHaveBeenCalled();
+    // The announcement and the focus restore both belong to the destination page's
+    // own provider instance now; see the handoff test below for that side of it.
+    expect(window.sessionStorage.getItem("studyforge:deleted-course-title")).toBe(
+      "Organic Chemistry",
+    );
+  });
+
+  /*
+   * The deleting page must not consume the handoff it just wrote.
+   *
+   * `subscribeToDeletionHandoff` is a no-op, so nothing NOTIFIES the source provider
+   * that the key appeared, but its snapshot is re-read on any render it happens to do
+   * before unmounting, and one is enough. Without the `handedOff` ref the source
+   * consumes its own handoff: clears the key, announces on a page about to be replaced,
+   * and leaves the list page to mount to an empty region.
+   *
+   * The state that drives the extra render WRAPS the provider deliberately. State held
+   * inside it would not re-render the provider, so the test would pass against broken
+   * code by never moving the thing it is meant to move.
+   *
+   * jsdom cannot say whether App Router really renders the source between `replace` and
+   * unmount, and this does not claim it does. It pins that the component survives it
+   * either way, which is cheaper than depending on the answer.
+   *
+   * Knob pushed the wrong way: dropping `if (handedOff.current) return` from the handoff
+   * effect turns this red on the sessionStorage assertion, received null.
+   */
+  test("the deleting page does not consume the handoff it just wrote", async () => {
+    vi.mocked(getDeletionPreview).mockResolvedValue(preview);
+    const removal = deferred<CourseDeletion>();
+    vi.mocked(deleteCourse).mockReturnValue(removal.promise);
+
+    let rerenderSource = () => {};
+    function SourcePage() {
+      const [, setTick] = useState(0);
+      rerenderSource = () => setTick((value) => value + 1);
+      return (
+        <CourseDeletionProvider>
+          <DeleteCourseButton
+            courseId={1}
+            title="Organic Chemistry"
+            afterDelete="navigate-to-list"
+          />
+        </CourseDeletionProvider>
+      );
+    }
+
+    render(<SourcePage />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const confirm = await screen.findByRole("button", { name: "Delete permanently" });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    fireEvent.click(confirm);
+
+    await act(async () => removal.resolve(preview));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/courses"));
+
+    // Still mounted, exactly as the source page is between `replace` and the navigation
+    // committing. Put it through one render.
+    await act(async () => {
+      rerenderSource();
+    });
+
+    expect(
+      window.sessionStorage.getItem("studyforge:deleted-course-title"),
+      "the destination provider has not mounted yet, so the title must still be waiting",
+    ).toBe("Organic Chemistry");
+    expect(
+      screen.getByRole("status").textContent,
+      "announcing here would speak on a page that is being replaced",
+    ).toBe("");
+  });
+
+  /*
+   * The arrival side of the same handoff, exercised on a fresh provider instance the
+   * way the real list page mounts one after `router.replace`: the announcement comes
+   * from the same mount effect that reads `useSyncExternalStore`'s stashed title and
+   * calls `setAnnouncement`, not from rendering that title directly (see the
+   * mutation-shape test below for why that distinction is load-bearing), and the
+   * focus restore is the SAME effect the in-place delete above uses, armed by the
+   * mount effect that reads the handoff instead of by `onDeleted`.
+   *
+   * Mutation-verified: removing `wantsFocus.current = true` from the handoff effect
+   * in DeleteCourseButton.tsx makes the focus assertion below fail (the link never
+   * gains focus); removing the `if (!handoffTitle) return` guard's window.sessionStorage
+   * write is not otherwise reachable here, since a mount with nothing stashed renders
+   * an empty status region regardless, so this test's coverage of the effect starts
+   * from the handoff being present, not from proving the guard's negative case.
+   */
+  test("announces and moves focus on arrival after a navigate-to-list delete elsewhere", async () => {
+    window.sessionStorage.setItem("studyforge:deleted-course-title", "Organic Chemistry");
+
+    render(
+      <CourseDeletionProvider>
+        <a id="new-course" href="#top">
+          New course
+        </a>
+      </CourseDeletionProvider>,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("status"),
+        "a learner who just navigated here from the detail page must be told what happened, even though the delete itself happened on a page that no longer exists",
+      ).toHaveTextContent("Organic Chemistry deleted."),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("link", { name: "New course" }),
+        "arriving here left focus on the body (a fresh navigation, not a click within this page), so the restore fires exactly as it would for an in-place delete",
+      ).toHaveFocus(),
+    );
+    expect(
+      window.sessionStorage.getItem("studyforge:deleted-course-title"),
+      "consumed once, so a later reload of this same page cannot replay it",
+    ).toBeNull();
+  });
+
+  /*
+   * The arrival test above pins the FINAL text of the live region, which a region
+   * rendered straight from `handoffTitle` would also satisfy: `toHaveTextContent`
+   * only ever samples the settled DOM, so it cannot tell "born with this text" from
+   * "mutated into having it", and a screen reader only speaks the second. This test
+   * pins the shape instead, via the actual sequence of DOM operations React performs
+   * (MutationObserver queues each mutation synchronously as it happens, independent
+   * of when the callback drains, so this is not a timing gamble): the status node
+   * must first be inserted by ITS PARENT with no text of its own, and only a LATER,
+   * separate mutation whose target is the status node itself may be the one that
+   * gives it content. A node that arrives already holding its final text produces
+   * no second record targeting itself at all, which is what rendering from
+   * `handoffTitle` directly used to do.
+   *
+   * Mutation-verified: reverting the live region to `announcement || (handoffTitle ?
+   * ... : "")` (the shape this replaced) collapses the insertion and the content into
+   * one record on the parent, and the assertion below finds no record targeting the
+   * status node and fails.
+   */
+  test("announces arrival by mutating the live region, not by rendering it born full", async () => {
+    window.sessionStorage.setItem("studyforge:deleted-course-title", "Organic Chemistry");
+    const records: MutationRecord[] = [];
+    const observer = new MutationObserver((list) => records.push(...list));
+    observer.observe(document.body, { childList: true, subtree: true });
+
+    render(
+      <CourseDeletionProvider>
+        <a id="new-course" href="#top">
+          New course
+        </a>
+      </CourseDeletionProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Organic Chemistry deleted."),
+    );
+    observer.disconnect();
+
+    const status = screen.getByRole("status");
+    expect(
+      records.some((record) => record.target === status),
+      "the live region must be mutated after it exists in the DOM, or a screen reader has nothing to observe",
+    ).toBe(true);
+  });
+
+  /*
+   * An ordinary visit to `/courses`, nothing stashed: the `if (!handoffTitle)
+   * return` guard in the handoff effect is what this pins. Without it, the effect
+   * body still runs on this mount (`handoffTitle` is only ever checked, never
+   * awaited), arming `wantsFocus.current` and announcing "null deleted." from a
+   * title that was never there, for a learner who never deleted anything.
+   *
+   * Mutation-verified: deleting the guard line makes both assertions below fail
+   * (focus moves to "New course" it never should have, and the status region picks
+   * up "null deleted."). It turns three tests above red as well. The self-consumption
+   * test goes red on its announcement assertion rather than its storage one, because an
+   * unguarded effect announces "null deleted." on the source page's own first mount,
+   * before any delete has happened; what that assertion then reads is the leftover of
+   * that, not anything the delete did. The two "announces ... arrival" tests go red for
+   * a related but distinct reason: their handoff effect re-runs a second
+   * time once `setAnnouncement` triggers a re-render (`handoffTitle`'s snapshot has
+   * gone null by then, since the removeItem earlier in the same effect body already
+   * cleared it), and without the guard that second run overwrites the announcement
+   * with "null deleted." too. That coupling is real but is not what this test is
+   * for: this one isolates the plain-mount case, which the arrival tests cannot,
+   * since both of them stash a title before rendering.
+   */
+  test("does not arm the deletion handoff on an ordinary mount with nothing stashed", () => {
+    render(
+      <CourseDeletionProvider>
+        <a id="new-course" href="#top">
+          New course
+        </a>
+      </CourseDeletionProvider>,
+    );
+
+    expect(
+      screen.getByRole("link", { name: "New course" }),
+      "nothing was deleted on this mount; only a delete handed off from elsewhere may move focus here",
+    ).not.toHaveFocus();
+    expect(
+      screen.getByRole("status"),
+      "an ordinary visit stashed nothing, so the live region has nothing to announce",
+    ).toHaveTextContent("");
   });
 });
 
@@ -620,10 +939,80 @@ describe("QuizSection focus restoration", () => {
 
 /**
  * GenerateForm has no single sender to restore focus to: rows are added and removed
- * freely, so the target is a different control on almost every commit. That is what the
- * four suites above have no equivalent of, and it is what most of these tests pin: which
- * TARGET the add and remove effects pick once the list has changed shape. The house
- * decline guard is here too, on the submit path, and is pinned alongside them.
+ * freely, so the target is a different control on almost every commit. That is what
+ * most of these tests pin: which TARGET the add and remove effects pick once the list
+ * has changed shape.
+ *
+ * Picking a target is not what is new here, and the first version of this paragraph
+ * claimed otherwise on a count of two. Every suite above picks. ConceptTutor chooses
+ * among the newest reply, the composer, and whichever of two buttons was pressed;
+ * DeadlineForm among a day input, a label input and submit; DaysOffControl between a
+ * day input and submit; DeleteCourseButton between #new-course and #create-first-course;
+ * QuizSection among three per-item refs, one of them an mcq radio pulled out of a map
+ * keyed by the answer, which is no more settled at author time than this file's per-row
+ * maps are.
+ *
+ * What is different is that the target is computed RELATIVE to the row that is going
+ * away. armFocusAfterRemoval indexes off that row's position in the list as it stood a
+ * moment earlier, `combined[index + 1] ?? combined[index - 1]`, and it runs before
+ * setRows so the index is still findable. When neither neighbour exists, because the
+ * removed row was the only one, it arms the text-adding button instead. That third
+ * outcome is not a missing list item: it is the case where there is no neighbour to go
+ * to at all, and it has its own test below. Nothing above computes an offset from where
+ * something else sat. ConceptTutor's latestReplyRef comes closest, bound in the render
+ * at `index === messages.length - 1`, but that is a standing rule, always the newest
+ * reply, rather than an offset, and the markup decides it rather than the effect.
+ *
+ * Do not read the five above as all restoring focus to the sender, either. ConceptTutor
+ * deliberately moves focus AWAY from the control the learner used, onto the reply
+ * region, which is not a control at all: the test named "takes a Ctrl+Enter sender from
+ * the composer to the reply, though focus never touched the body" is that case on
+ * purpose, and the composer it moves off is never disabled. DeadlineForm and
+ * DaysOffControl take their target from the call site, while DeleteCourseButton and
+ * QuizSection resolve theirs only after the change, because WHICH node is right is what
+ * the change decides. Sometimes it is a survivor: #new-course is untouched when other
+ * courses remain, and an attempt that leaves an item unsolved sends focus back to that
+ * item's own input or checked radio, neither of which QuizSection ever unmounts.
+ * Sometimes it is a node the same commit created: #create-first-course when the last
+ * course goes, the "Correct" message once solving unmounts the Check button.
+ *
+ * The QuizSection suite above pins both halves. Two of its tests land after a wrong
+ * answer, on an input or a checked radio that was already there, and two land after a
+ * right one, on the Correct message, one of those also asserting the Check button has
+ * gone. Its remaining two are decline tests, which assert focus does not move at all, so
+ * four of the six use `correct: false` where this sentence counts two. The
+ * DeleteCourseButton pair pins something narrower. An earlier draft of this paragraph
+ * said those two tests pin the split; they cannot, because renderList builds only the
+ * anchor whose branch the test asserts and never changes it, so BOTH of their targets
+ * are survivors. Reversing the two lookups leaves all 45 tests across this file and
+ * delete-confirmation.test.tsx green. What the pair does pin is that each id is looked
+ * up at all: removing either lookup turns a test red.
+ *
+ * Two earlier drafts of the sentence above each took one of those halves for the whole
+ * rule: first that the target outlives what vanished, then that it never does. Neither
+ * is the rule, and the rule is not about survival at all. It is that neither component
+ * may decide WHICH node before the change. Whether it then holds one is a separate
+ * question with a different answer in each: QuizSection keeps a ref to every node it
+ * might land on, while the post-delete restore keeps none and resolves the ids through
+ * getElementById on every run. That restore lives in CourseDeletionProvider, not in
+ * DeleteCourseButton itself, which holds two nodes of its own, for the focus moves of
+ * opening the panel and of cancelling out of it. Holding a node is fine. Choosing it
+ * early is not, and that is what the paragraph below is about.
+ *
+ * What this suite shares with them is a decline guard, but not one guard: GenerateForm
+ * carries the two-condition form ConceptTutor uses, `active === document.body || active
+ * === focusAtSend.current`, where DeadlineForm, DaysOffControl, DeleteCourseButton and
+ * QuizSection all take the body-only form. Worth keeping apart, because ConceptTutor's
+ * own comment records why it needed the second condition: the body-only test is a proxy
+ * for "the learner has not moved since they sent", true only when a control happened to
+ * blur itself, and testing just that is what made its two send paths disagree. The
+ * two-condition form is the one pinned alongside the list-shape tests.
+ *
+ * DeleteCourseButton is worth reading next to that for the opposite reason. Its two
+ * candidates ARE written into its source, and it still resolves them with
+ * getElementById inside the effect on every run rather than holding a node: a candidate
+ * set small enough to enumerate is not a licence to decide the target once and cache it,
+ * which is the regression these suites exist to prevent.
  */
 describe("GenerateForm focus restoration", () => {
   const SOURCE_LIMITS: SourceLimits = {
