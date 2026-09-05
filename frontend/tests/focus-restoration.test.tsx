@@ -44,16 +44,25 @@
  *     stale-intent test both fail
  *   - drop the focus call (QuizSection)          -> its four restore tests fail (both
  *     answer kinds, wrong and right)
- *   - render the live region from `handoffTitle`
- *     directly instead of mutating it via
- *     `setAnnouncement` (DeleteCourseButton)     -> four tests fail: the mutation-shape
- *     test, both arrival tests, and the self-consumption test. An earlier version of
- *     this entry claimed the text-content arrival test survived, "since both shapes
- *     settle on the same final string". It does not survive and they do not settle on
- *     the same string: the effect's `removeItem` runs before the re-render, so a region
- *     rendered straight from the snapshot is born holding the title and then goes
- *     empty, where the state version stays filled. Re-measured by applying the
- *     mutation, not reasoned about.
+ *   - revert the live region to the shape it
+ *     replaced, an `announcement` fallback onto
+ *     the snapshot (DeleteCourseButton)          -> exactly two fail: the mutation-shape
+ *     test and the self-consumption test. Both arrival tests SURVIVE, correctly: the
+ *     effect still sets the state, so the region settles on the same final text either
+ *     way, and a text-content assertion cannot tell the two apart. Only an assertion
+ *     about HOW the text arrived can, which is the whole reason the mutation-shape test
+ *     exists as a separate case.
+ *
+ *     Two earlier versions of this entry were wrong, in opposite directions, and the
+ *     second is the one worth keeping a record of. It claimed four failures and struck
+ *     out the "settles on the same final text" clause as false. The clause was true. What
+ *     was false was the mutation it had been measured against: the snapshot rendered with
+ *     no state fallback at all, which is not the shape this replaced, is strictly
+ *     harsher, and reddens SIX tests suite-wide including two in
+ *     delete-confirmation.test.tsx. Neither reading was four. The note on the
+ *     mutation-shape test itself had named the real shape all along, so the file
+ *     contradicted itself for a round. Measure the mutation the code actually replaced,
+ *     and cross-check it against what the rest of the file says that shape was.
  *   - drop the `handedOff` ref guard
  *     (DeleteCourseButton)                       -> only the self-consumption test
  *     fails, which is what earns that test its own case. Every other red test in this
