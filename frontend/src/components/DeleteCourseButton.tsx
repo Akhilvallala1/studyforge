@@ -58,7 +58,8 @@ export type AfterDelete = "restore-focus" | "navigate-to-list";
  * it has been announced: a stray reload of the list page must not replay a deletion that
  * already happened. "Once" describes the REMOVAL, not the read. The snapshot below is
  * re-read on every render, which is exactly what would let the deleting page consume its
- * own handoff and is why the `handedOff` ref exists; see the note on `subscribe`.
+ * own handoff and is why the `handedOff` ref exists; see the note on
+ * `subscribeToDeletionHandoff`.
  *
  * Read through `useSyncExternalStore` below, not `useState` seeded from a mount
  * effect. The hook is the tidier read for a value sourced outside React, and on the
