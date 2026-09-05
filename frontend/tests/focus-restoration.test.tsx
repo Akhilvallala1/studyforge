@@ -46,9 +46,9 @@
  *     answer kinds, wrong and right)
  *   - revert the live region to the shape it
  *     replaced, an `announcement` fallback onto
- *     the snapshot (DeleteCourseButton)          -> exactly two fail SUITE-WIDE, not two
- *     in this file: the mutation-shape
- *     test and the self-consumption test. The text-content arrival test, `announces and
+ *     the snapshot (DeleteCourseButton)          -> exactly two fail across the whole
+ *     suite, and no other file reddens:
+ *     the mutation-shape test and the self-consumption test. The text-content arrival test, `announces and
  *     moves focus on arrival after a navigate-to-list delete elsewhere`, SURVIVES,
  *     correctly: the effect still sets the state, so the region settles on the same final
  *     text either way, and its text-content assertion cannot tell the two apart. Only an
@@ -934,7 +934,7 @@ describe("QuizSection focus restoration", () => {
 /**
  * GenerateForm has no single sender to restore focus to: rows are added and removed
  * freely, so the target is a different control on almost every commit. That is what the
- * four suites above have no equivalent of, and it is what most of these tests pin: which
+ * suites above have no equivalent of, and it is what most of these tests pin: which
  * TARGET the add and remove effects pick once the list has changed shape. The house
  * decline guard is here too, on the submit path, and is pinned alongside them.
  */
