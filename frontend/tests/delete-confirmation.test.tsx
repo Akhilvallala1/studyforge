@@ -57,8 +57,14 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 
 // Hoisted so the "navigate-to-list" test below can assert on the same `replace` the
 // component calls: a fresh `{ refresh: vi.fn(), replace: vi.fn() }` per `useRouter()`
-// call (the shape every other test in this file relies on for its own, unrelated
-// reasons) would hand this test a mock it never sees the component touch.
+// call would hand this test a mock it never sees the component touch, and since
+// `useRouter()` runs on every render rather than once per mount, it would be a new pair
+// per render rather than a single one to miss.
+//
+// That test is the only place in this file that touches the router at all, so this
+// shape answers to the component and to nothing else. It carries `replace` because the
+// component calls `replace`; before navigate-on-delete landed the mock here read
+// `{ refresh, push }`, and that `push` had no caller then and has none now.
 const { replace, refresh } = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh, replace }),

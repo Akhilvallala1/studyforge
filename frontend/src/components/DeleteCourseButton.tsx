@@ -97,9 +97,11 @@ const DELETED_TITLE_KEY = "studyforge:deleted-course-title";
  *
  * It is safe because the only mounted reader that can observe its own write is the
  * writer, and the writer excludes itself: `onDeleted` sets `handedOff` before storing
- * the title, and the handoff effect bails on that ref. Every other instance reads this
- * key once on mount, after a `router.replace` that happened before it existed, so there
- * is no mid-life change left for a subscriber to deliver.
+ * the title, and the handoff effect bails on that ref. Every other instance first sees
+ * this key on mount, after a `router.replace` that happened before it existed, so there
+ * is no mid-life change left for a subscriber to deliver. (The snapshot itself is re-read
+ * on every render, not once on mount. That re-reading is exactly what lets the source
+ * page consume its own handoff, and so is what the `handedOff` ref is there to stop.)
  *
  * Without that exclusion, one re-render of the deleting page between `replace` and its
  * unmount would be enough for it to consume its own handoff: clear the key, announce on

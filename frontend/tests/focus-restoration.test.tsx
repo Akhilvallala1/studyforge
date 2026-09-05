@@ -46,9 +46,19 @@
  *     answer kinds, wrong and right)
  *   - render the live region from `handoffTitle`
  *     directly instead of mutating it via
- *     `setAnnouncement` (DeleteCourseButton)     -> the mutation-shape test fails; the
- *     text-content arrival test above it does not, since both shapes settle on the
- *     same final string
+ *     `setAnnouncement` (DeleteCourseButton)     -> four tests fail: the mutation-shape
+ *     test, both arrival tests, and the self-consumption test. An earlier version of
+ *     this entry claimed the text-content arrival test survived, "since both shapes
+ *     settle on the same final string". It does not survive and they do not settle on
+ *     the same string: the effect's `removeItem` runs before the re-render, so a region
+ *     rendered straight from the snapshot is born holding the title and then goes
+ *     empty, where the state version stays filled. Re-measured by applying the
+ *     mutation, not reasoned about.
+ *   - drop the `handedOff` ref guard
+ *     (DeleteCourseButton)                       -> only the self-consumption test
+ *     fails, which is what earns that test its own case. Every other red test in this
+ *     component comes from the `!handoffTitle` guard on the very next line of the same
+ *     effect, and that guard cannot tell the writer of a handoff from a reader of one.
  *
  * One of those exposed a COUPLING worth recording, since the fix is the reusable part:
  * the delete decline test first synchronised on the live region, so dropping the
@@ -129,9 +139,10 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 //
 // `replace` and `refresh` are hoisted rather than built fresh per `useRouter()` call
 // so the "navigates to the course list" test below can assert on the very mock the
-// component calls: DeleteCourseButton's provider only calls `useRouter()` once per
-// mount, but a factory that returns a new pair of `vi.fn()`s on every call would still
-// leave this file with no stable handle on it.
+// component calls. A factory returning a new pair of `vi.fn()`s per call would leave
+// this file with no handle on them, and there would be no single pair to hold a handle
+// on: `useRouter()` is a hook, so it runs on every render, not once per mount. Hoisting
+// is what makes every render hand back the same pair.
 const { replace, refresh } = vi.hoisted(() => ({ replace: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh, replace }),
@@ -723,8 +734,12 @@ describe("DeleteCourseButton focus restoration", () => {
    *
    * Mutation-verified: deleting the guard line makes both assertions below fail
    * (focus moves to "New course" it never should have, and the status region picks
-   * up "null deleted."). It also turns the two "announces ... arrival" tests above
-   * red, for a related but distinct reason: their handoff effect re-runs a second
+   * up "null deleted."). It turns three tests above red as well. The self-consumption
+   * test goes red on its announcement assertion rather than its storage one, because an
+   * unguarded effect announces "null deleted." on the source page's own first mount,
+   * before any delete has happened; what that assertion then reads is the leftover of
+   * that, not anything the delete did. The two "announces ... arrival" tests go red for
+   * a related but distinct reason: their handoff effect re-runs a second
    * time once `setAnnouncement` triggers a re-render (`handoffTitle`'s snapshot has
    * gone null by then, since the removeItem earlier in the same effect body already
    * cleared it), and without the guard that second run overwrites the announcement
