@@ -87,9 +87,8 @@ export function MarkCompleteButton({
             What that trades away is hover strength: the fill step from resting to hover
             is 1.08:1 light and 1.56:1 dark, against 1.44 and 1.97 for the boundary
             colour it rejected. That is the band every other hover in the app sits in:
-            Button's ghost variant steps 1.04 in light mode, and the tinted variant that
-            arrives with the generate-flow work in PR #36 (not on this branch, so do not
-            expect to find it in Button.tsx here) steps 1.05 and 1.30 on this same
+            Button's ghost variant steps 1.04 in light mode, and the tinted variant added
+            by the generate-flow work in PR #36 steps 1.05 and 1.30 on this same
             success surface. The raw version this replaced stepped
             1.13 and 1.56, so a weak hover is not something this change introduced.
 

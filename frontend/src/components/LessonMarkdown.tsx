@@ -51,17 +51,24 @@ export function stripDuplicateTitle(content: string, title: string): string {
  *
  * text-prose, not text-ui: globals.css's type scale calls it out by name as "Lesson
  * markdown body only", so this is the one place in the app it belongs. It replaces
- * the raw line-height utility the article carried before (leading-7, 1.75rem); its
- * font-size (1rem) is what that class left implicit, and its own 1.625rem line-height
- * tightens the body leading by about 7% as a side effect. Named in prose rather than
- * spelled out, because Tailwind v4's scanner reads comments and would emit a real
- * rule for a class this file no longer uses.
+ * the raw 1.75rem line-height utility the article carried before; its font-size
+ * (1rem) is what that class left implicit, and its own 1.625rem line-height
+ * tightens the body leading by about 7% as a side effect. That utility is named by
+ * its value rather than spelled out, because Tailwind v4's scanner reads comments
+ * and would emit a real rule for a class this file no longer uses. An earlier
+ * revision spelled it out in the clause just above, contradicting this very
+ * sentence, and shipped no dead rule only because the punctuation it sat against
+ * made the scanner reject the candidate: measured, the class between spaces IS
+ * emitted and the same class followed by a comma is not. That is luck, not a rule
+ * to lean on, so keep naming it by its value.
  *
  * Headings map onto the app's named scale rather than the raw text-2xl/xl/lg the prior
  * version used: [&_h1]:text-title and [&_h2]:text-subtitle both bake their own
  * font-weight (600) into the token, the same way PageHeader's own <h1 className=
- * "text-display"> needs no separate font-semibold. There is no third named step below
- * subtitle, so h3 takes an explicit font-semibold and no size class at all, inheriting
+ * "text-display"> needs no separate font-semibold. There is no third named HEADING step
+ * below subtitle (text-ui is a UI-chrome step, and is smaller than body text, which is
+ * the whole trap described below), so h3 takes an explicit font-semibold and no size
+ * class at all, inheriting
  * the article's text-prose 1rem, instead of inventing a new token for one selector.
  * The missing size utility is deliberate and load-bearing: preflight sets h1..h6 {
  * font-size: inherit }, so an h3 with no font-size class lands exactly on body size,
