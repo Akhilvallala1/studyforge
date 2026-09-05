@@ -698,6 +698,13 @@ function SourceRowField({
   const errorId = `source-${row.id}-error`;
   const label = row.kind === "text" ? "Pasted text" : "URL";
 
+  /* Adopting Card here (and in FileRowField) is not colour-neutral, in the same way the
+     secondary-variant note in Button.tsx records for itself: Card hardcodes border-line,
+     where this row previously drew its own line-strong boundary, so the border goes from
+     #d4d4d8 / #3f3f46 (1.48:1 light, 1.90:1 dark) to #e4e4e7 / #27272a (1.27:1, 1.33:1).
+     Accepted rather than overridden, because a source row is a grouping container and not
+     a control boundary, which is the same distinction the lesson table's gridlines are
+     argued on. No WCAG floor applies to either: 1.4.11 covers control boundaries. */
   return (
     <Card padding={4}>
       <div className="flex items-center justify-between gap-2">

@@ -65,7 +65,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
    * wrapper, so `currentColor` here IS whichever tone encloses this button, and one
    * variant covers those THREE without a variant per tone. Callout's fourth tone is not
    * covered, it is excluded: `info` sets `text-ink`, so a `tinted` button inside an info
-   * Callout inherits near-black and draws a 17.17:1 light / 15.14:1 dark hairline. That
+   * Callout inherits near-black and draws a 17.18:1 light / 15.13:1 dark hairline. That
    * is legible, not a contrast bug, but it is `secondary` in all but name and carries
    * none of the reason this variant exists, so use `secondary` there. Same for a
    * `tinted` button outside a Callout altogether: nothing tinted sets `currentColor` for
@@ -88,7 +88,8 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
    * still could not reach for it. The real choice was between this and a 10%-opacity
    * currentColor fill. That was tried first and rejected on the BUILT output, not on taste:
    * Tailwind can pre-multiply an opacity into a NAMED colour (ConceptTutor's amber-100
-   * at 70% emits #fef3c699 directly) but cannot for `currentColor`, so it emits a
+   * at 70% emits #fef3c6b3 directly, and at 60% #fef3c699) but cannot for
+   * `currentColor`, so it emits a
    * full-opacity currentColor background as the pre-color-mix fallback and only reaches
    * 10% inside `@supports (color: color-mix(...))`. On a browser missing that @supports,
    * hovering would paint the button's background in exactly its own text colour and the
