@@ -58,14 +58,19 @@
  *     two tests whose names begin "announces ... arrival", so the plural phrasing
  *     contradicted the failure list one line above it.
  *
- *     Three earlier versions of this entry were wrong. The plural-arrival phrasing just
- *     described was the third. It got past its AUTHOR, not past review: both reviewers
- *     who read that commit caught it, independently of each other and in the first round
- *     that saw it, so do not read this as a case of review missing something. What it
- *     survived was the verification pass, and it survived that precisely because the
- *     failure COUNT beside it was right. That is the part worth noticing: a correct
- *     measurement does not make the prose around it correct, and checking the number is
- *     not checking the sentence. The second version is the one most worth a record. It
+ *     Every earlier version of this entry carried a false claim, including the versions
+ *     that were themselves corrections. The plural-arrival phrasing just described was
+ *     one, introduced by f83ecb9 and corrected by 30283b8. Another was a running tally
+ *     in this very position, counting how many predecessors had been wrong: 30283b8 put
+ *     "three" here and it was correct that day, wrong at the very next commit, and wrong
+ *     again at the one after that, because every correction adds a version the old
+ *     number does not count. That is why no numeral stands here now. Restoring one only
+ *     restarts the loop, since the next fix to this paragraph would falsify it again.
+ *     What the plural phrasing survived was the verification pass on the commit that
+ *     introduced it, and it survived that precisely because the failure COUNT beside it
+ *     was right. That is the part worth noticing: a correct measurement does not make
+ *     the prose around it correct, and checking the number is not checking the sentence.
+ *     The second version, 487db13, is the one most worth a record. It
  *     claimed four failures and struck
  *     out the "settles on the same final text" clause as false. The clause was true. What
  *     was false was the mutation it had been measured against: the snapshot rendered with
