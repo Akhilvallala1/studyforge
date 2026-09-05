@@ -51,8 +51,9 @@ export function stripDuplicateTitle(content: string, title: string): string {
  *
  * text-prose, not text-ui: globals.css's type scale calls it out by name as "Lesson
  * markdown body only", so this is the one place in the app it belongs. It replaces
- * the raw line-height utility the article carried before (the 1.75rem step); its
- * font-size (1rem) is what that class left implicit. Named in prose rather than
+ * the raw line-height utility the article carried before (leading-7, 1.75rem); its
+ * font-size (1rem) is what that class left implicit, and its own 1.625rem line-height
+ * tightens the body leading by about 7% as a side effect. Named in prose rather than
  * spelled out, because Tailwind v4's scanner reads comments and would emit a real
  * rule for a class this file no longer uses.
  *
@@ -60,8 +61,17 @@ export function stripDuplicateTitle(content: string, title: string): string {
  * version used: [&_h1]:text-title and [&_h2]:text-subtitle both bake their own
  * font-weight (600) into the token, the same way PageHeader's own <h1 className=
  * "text-display"> needs no separate font-semibold. There is no third named step below
- * subtitle, so h3 stays at body size (text-ui) with an explicit font-semibold instead
- * of inventing a new token for one selector. `prose-headings:font-semibold`, which sat
+ * subtitle, so h3 takes an explicit font-semibold and no size class at all, inheriting
+ * the article's text-prose 1rem, instead of inventing a new token for one selector.
+ * The missing size utility is deliberate and load-bearing: preflight sets h1..h6 {
+ * font-size: inherit }, so an h3 with no font-size class lands exactly on body size,
+ * whereas either neighbouring step would be wrong in one direction (text-ui is
+ * 0.9375rem, BELOW the paragraphs the heading introduces; text-subtitle is 1.0625rem
+ * and is h2's). An earlier revision of this PR did put the ui step on h3 through an
+ * arbitrary variant and shipped the heading one notch smaller than its own body text,
+ * so do not add a size class back here without re-reading this. (That variant is
+ * described rather than written out for the same scanner reason as above.)
+ * `prose-headings:font-semibold`, which sat
  * on the <article> below covering h1 through h6 uniformly, is dropped along with it:
  * this app has no @tailwindcss/typography plugin (see package.json), so `prose-*` was
  * never a real Tailwind variant here and the built CSS confirms it emitted no rule.
@@ -87,7 +97,7 @@ export function stripDuplicateTitle(content: string, title: string): string {
  */
 export function LessonMarkdown({ content, title }: { content: string; title: string }) {
   return (
-    <article className="flex flex-col gap-4 text-prose [&_a]:text-accent [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-line-strong [&_blockquote]:pl-4 [&_blockquote]:text-ink-muted [&_code]:rounded [&_code]:bg-surface-sunken [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-small [&_h1]:text-title [&_h2]:text-subtitle [&_h3]:text-ui [&_h3]:font-semibold [&_li]:ml-5 [&_ol]:list-decimal [&_pre]:overflow-x-auto [&_pre]:rounded-control [&_pre]:bg-surface-sunken [&_pre]:p-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_table]:w-full [&_td]:border [&_td]:border-line [&_td]:px-3 [&_td]:py-1.5 [&_th]:border [&_th]:border-line [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_ul]:list-disc">
+    <article className="flex flex-col gap-4 text-prose [&_a]:text-accent [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-line-strong [&_blockquote]:pl-4 [&_blockquote]:text-ink-muted [&_code]:rounded [&_code]:bg-surface-sunken [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-small [&_h1]:text-title [&_h2]:text-subtitle [&_h3]:font-semibold [&_li]:ml-5 [&_ol]:list-decimal [&_pre]:overflow-x-auto [&_pre]:rounded-control [&_pre]:bg-surface-sunken [&_pre]:p-4 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_table]:w-full [&_td]:border [&_td]:border-line [&_td]:px-3 [&_td]:py-1.5 [&_th]:border [&_th]:border-line [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_ul]:list-disc">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>
         {stripDuplicateTitle(content, title)}
       </ReactMarkdown>
