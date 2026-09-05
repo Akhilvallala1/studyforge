@@ -47,14 +47,21 @@
  *   - revert the live region to the shape it
  *     replaced, an `announcement` fallback onto
  *     the snapshot (DeleteCourseButton)          -> exactly two fail: the mutation-shape
- *     test and the self-consumption test. Both arrival tests SURVIVE, correctly: the
- *     effect still sets the state, so the region settles on the same final text either
- *     way, and a text-content assertion cannot tell the two apart. Only an assertion
- *     about HOW the text arrived can, which is the whole reason the mutation-shape test
- *     exists as a separate case.
+ *     test and the self-consumption test. The text-content arrival test, `announces and
+ *     moves focus on arrival after a navigate-to-list delete elsewhere`, SURVIVES,
+ *     correctly: the effect still sets the state, so the region settles on the same final
+ *     text either way, and its text-content assertion cannot tell the two apart. Only an
+ *     assertion about HOW the text arrived can, which is the whole reason the
+ *     mutation-shape test exists as a separate case. Name that surviving test rather than
+ *     saying "both arrival tests survive": the mutation-shape test is ITSELF one of the
+ *     two tests whose names begin "announces ... arrival", so the plural phrasing
+ *     contradicted the failure list one line above it.
  *
- *     Two earlier versions of this entry were wrong, in opposite directions, and the
- *     second is the one worth keeping a record of. It claimed four failures and struck
+ *     Three earlier versions of this entry were wrong. The plural-arrival phrasing just
+ *     described was the third, and it survived a round precisely because the failure
+ *     COUNT beside it was right, which is worth noticing: a correct measurement does not
+ *     make the prose around it correct. The second is the one most worth a record.
+ *     It claimed four failures and struck
  *     out the "settles on the same final text" clause as false. The clause was true. What
  *     was false was the mutation it had been measured against: the snapshot rendered with
  *     no state fallback at all, which is not the shape this replaced, is strictly
