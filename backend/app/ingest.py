@@ -126,6 +126,17 @@ class UnsafeURLError(ValueError):
     """The URL points somewhere the server should not fetch on a caller's behalf."""
 
 
+class UnresolvableURLError(UnsafeURLError):
+    """The hostname does not resolve, so nothing was judged safe or unsafe.
+
+    Subclasses UnsafeURLError so a caller written against the base class still fails
+    closed on it. That is forward-compatibility, not a live dependency: the one
+    reachable handler is in load_source, and it catches this class first. The
+    distinction is for the caller, since `unsafe_url` pointed them at
+    STUDYFORGE_ALLOW_PRIVATE_URLS, which cannot help a name that does not resolve.
+    """
+
+
 def _is_internal(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     return (
         address.is_private
@@ -197,7 +208,7 @@ def _check_host(url: str) -> None:
         # and a private record and httpx may pick either.
         infos = socket.getaddrinfo(host, port or (443 if parsed.scheme == "https" else 80))
     except OSError as exc:
-        raise UnsafeURLError(f"Could not resolve {host}") from exc
+        raise UnresolvableURLError(f"Could not resolve {host}") from exc
 
     for info in infos:
         address = ipaddress.ip_address(info[4][0])
@@ -359,6 +370,10 @@ class TooManySources(ValueError):
 # from main.py's constants ON PURPOSE not at all: main.py passes it in, so there is one
 # definition of each sentence and this module holds none of it.
 UNSAFE_URL = "unsafe_url"
+# Distinct from UNSAFE_URL because the two need different things from the caller: a
+# blocked destination is a decision they may override with STUDYFORGE_ALLOW_PRIVATE_URLS,
+# a name that does not resolve is not. See UnresolvableURLError.
+URL_UNRESOLVABLE = "url_unresolvable"
 FETCH_FAILED = "fetch_failed"
 PDF_UNREADABLE = "pdf_unreadable"
 NO_USABLE_TEXT = "no_usable_text"
@@ -435,6 +450,11 @@ def load_source(spec: SourceSpec, copy: dict[str, str]) -> Source:
     elif spec.kind == "url":
         try:
             source = from_url("", str(spec.value))
+        except UnresolvableURLError as exc:
+            # MUST STAY ABOVE the UnsafeURLError branch, which is its base class and would
+            # otherwise swallow it and report a name that does not resolve as a safety
+            # refusal.
+            raise SourceError(URL_UNRESOLVABLE, str(exc)) from exc
         except UnsafeURLError as exc:
             # The guard's OWN message, not a generic one. It names the host and says how a
             # self-hoster turns the check off, which is the whole value of it.

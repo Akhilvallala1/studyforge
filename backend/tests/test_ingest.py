@@ -68,6 +68,31 @@ class TestURLSafety:
         with pytest.raises(ingest.UnsafeURLError):
             ingest.extract_url("https://split-horizon.example/")
 
+    def test_a_name_that_does_not_resolve_is_told_apart_from_a_blocked_one(self, monkeypatch):
+        """A name that does not resolve is not a safety refusal. Both stop the fetch, but
+        only one is worth pointing at STUDYFORGE_ALLOW_PRIVATE_URLS."""
+        def no_such_host(*a, **k):
+            raise OSError("Name or service not known")
+
+        monkeypatch.setattr(ingest.socket, "getaddrinfo", no_such_host)
+
+        with pytest.raises(ingest.UnresolvableURLError, match="Could not resolve"):
+            ingest.extract_url("https://tpyo.example/")
+
+    def test_unresolvable_is_a_kind_of_unsafe_url_error(self, monkeypatch):
+        """Pins the subclass relation, which is the only thing this asserts. No reachable
+        handler depends on it today: load_source catches UnresolvableURLError first, and
+        generation_failure's isinstance runs after ingestion has already converted every
+        one of these into a SourceError. It is here so a caller written against the base
+        class keeps failing closed if one is ever added."""
+        def no_such_host(*a, **k):
+            raise OSError("Name or service not known")
+
+        monkeypatch.setattr(ingest.socket, "getaddrinfo", no_such_host)
+
+        with pytest.raises(ingest.UnsafeURLError):
+            ingest.extract_url("https://tpyo.example/")
+
     @pytest.mark.parametrize("url", ["http://example.com:99999/", "http://example.com:notaport/"])
     def test_a_malformed_port_is_a_bad_request_not_a_gateway_error(self, url):
         """urlparse defers port parsing to attribute access, so this arrives as a bare
