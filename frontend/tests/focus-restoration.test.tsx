@@ -992,6 +992,44 @@ describe("DeleteCourseButton focus restoration", () => {
     expect(chemistry.textContent?.replace(hidden!.textContent ?? "", "").trim()).toBe("Delete");
   });
 
+  /*
+   * Issue #51: the panel's own comment says it "exists to say what a delete would
+   * destroy", which was true of the visual panel and not of what either button handed
+   * to assistive tech. `toHaveAccessibleDescription` reads the computed description,
+   * not the `aria-describedby` attribute: an attribute pointing at a missing or empty
+   * id computes to no description and would fail this.
+   */
+  test("describes both buttons with what the delete would destroy once the preview lands", async () => {
+    vi.mocked(getDeletionPreview).mockResolvedValue(preview);
+    openPanel();
+
+    const confirm = await screen.findByRole("button", { name: "Delete permanently" });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+
+    expect(
+      cancel,
+      "focus lands here once the preview settles, so the description must already be attached",
+    ).toHaveAccessibleDescription(/12 lessons, 8 of them completed/);
+    expect(confirm).toHaveAccessibleDescription(/12 lessons, 8 of them completed/);
+  });
+
+  // The same wiring on the other settled shape: a failed preview replaces the preview
+  // text with an alert, and focus also lands on Cancel for it (see the focus test
+  // above), so the description has to follow the alert there too.
+  test("describes both buttons with the failure alert when the preview fails", async () => {
+    vi.mocked(getDeletionPreview).mockRejectedValue(
+      new ApiError(503, "Could not reach the server."),
+    );
+    openPanel();
+
+    await screen.findByRole("alert");
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    const confirm = screen.getByRole("button", { name: "Delete permanently" });
+
+    expect(cancel).toHaveAccessibleDescription("Could not reach the server.");
+    expect(confirm).toHaveAccessibleDescription("Could not reach the server.");
+  });
 });
 
 /**

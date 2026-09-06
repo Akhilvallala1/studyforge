@@ -349,6 +349,13 @@ export function DeleteCourseButton({
    * which is what lets Cancel clear the busy state immediately without racing it.
    */
   const generationRef = useRef(0);
+  /*
+   * One id shared by the preview text and the failure alert, never both mounted at
+   * once (the render below is a `error ? ... : preview ? ...` ternary), so a single
+   * id is enough for both buttons' aria-describedby to reach whichever is on screen.
+   * See issue #51.
+   */
+  const consequenceId = `delete-consequence-${courseId}`;
 
   if (!ctx) throw new Error("DeleteCourseButton must be rendered inside CourseDeletionProvider");
   const { onDeleted, refreshing } = ctx;
@@ -495,11 +502,18 @@ export function DeleteCourseButton({
     <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3.5 dark:border-zinc-800 dark:bg-zinc-900">
       <p className="text-[13px] font-medium">Delete &ldquo;{title}&rdquo;?</p>
       {error ? (
-        <p role="alert" className="mt-1.5 text-[13px] text-red-700 dark:text-red-400">
+        <p
+          id={consequenceId}
+          role="alert"
+          className="mt-1.5 text-[13px] text-red-700 dark:text-red-400"
+        >
           {error}
         </p>
       ) : preview ? (
-        <div className="mt-1.5 text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+        <div
+          id={consequenceId}
+          className="mt-1.5 text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-400"
+        >
           {previewLines(preview).map((line) => (
             <p key={line} className="mt-1 first:mt-0">
               {line}
@@ -519,6 +533,7 @@ export function DeleteCourseButton({
         <button
           type="button"
           ref={cancelRef}
+          aria-describedby={consequenceId}
           onClick={() => {
             // Invalidates the in-flight preview fetch (see generationRef above) so its
             // response cannot resurface after this closes the loading window: without
@@ -552,6 +567,7 @@ export function DeleteCourseButton({
         <button
           type="button"
           ref={confirmRef}
+          aria-describedby={consequenceId}
           onClick={() => void confirmDelete()}
           /*
            * Disabled ONLY while the preview loads. Until it lands this button cannot
