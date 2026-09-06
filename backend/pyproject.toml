@@ -16,6 +16,9 @@ dependencies = [
     # Pure data, no code: the IANA timezone database. Windows ships no system zoneinfo,
     # so without this every ZoneInfo() lookup raises and study days silently become UTC.
     "tzdata>=2024.1",
+    # Pinned exactly: the public API changed shape between 0.6.x and 1.x, and
+    # app.youtube is written against 1.2.4's YouTubeTranscriptApi().list()/.fetch().
+    "youtube-transcript-api==1.2.4",
 ]
 
 [project.optional-dependencies]

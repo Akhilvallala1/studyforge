@@ -1,9 +1,10 @@
+import json
 import socket
 
 import httpx
 import pytest
 
-from app import ingest
+from app import ingest, main, youtube
 from app.ingest import chunk_text, clean_text
 
 
@@ -246,3 +247,228 @@ def test_chunk_text_hard_splits_oversized_paragraph():
     chunks = chunk_text("y" * 1000, max_chars=300)
     assert all(len(c) <= 300 for c in chunks)
     assert sum(len(c) for c in chunks) == 1000
+
+
+# --------------------------------------------------------------------------
+# YouTube sources: video_id routes load_source away from extract_url entirely
+# --------------------------------------------------------------------------
+
+YOUTUBE_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+GOOD_TEXT = "Gradient descent walks downhill by following the slope. " * 10
+
+
+def _fake_transcript(text: str) -> youtube.Transcript:
+    return youtube.Transcript(
+        video_id="dQw4w9WgXcQ",
+        title=None,
+        captions=(youtube.Caption(start=0.0, duration=1.0, text=text),),
+    )
+
+
+def _pdf_part(label: str) -> tuple:
+    return (f"{label}.pdf", f"{label} content: {GOOD_TEXT}".encode(), "application/pdf")
+
+
+class NeverCalledProvider:
+    """See test_multi_source.NeverCalledProvider. Redefined here rather than imported so
+    this file does not depend on test collection order or another test module's fixtures."""
+
+    name = "never"
+    model = "never"
+    is_paid = False
+
+    def generate(self, system, prompt, max_tokens=64000):
+        raise AssertionError("a provider was called before the caps refused the request")
+
+
+def test_a_youtube_url_never_calls_extract_url_or_resolves_a_host(monkeypatch):
+    """video_id() routes a hit straight to from_youtube. Neither extract_url (which would
+    fetch the SPA shell) nor a DNS lookup (there is no caller-controlled host to guard)
+    should run at all."""
+    monkeypatch.setattr(youtube, "fetch_transcript", lambda vid: _fake_transcript(GOOD_TEXT))
+
+    def _extract_url_boom(url):
+        raise AssertionError("extract_url must not be called for a YouTube URL")
+
+    def _getaddrinfo_boom(*args, **kwargs):
+        raise AssertionError("getaddrinfo must not be called for a YouTube URL")
+
+    monkeypatch.setattr(ingest, "extract_url", _extract_url_boom)
+    monkeypatch.setattr(ingest.socket, "getaddrinfo", _getaddrinfo_boom)
+
+    source = ingest.load_source(
+        ingest.SourceSpec(kind="url", ref=YOUTUBE_URL, value=YOUTUBE_URL),
+        main.SOURCE_FAILURE_COPY,
+    )
+
+    assert source.kind == "url"
+    assert source.ref == YOUTUBE_URL
+    assert source.text == GOOD_TEXT.strip()
+
+
+def test_a_non_youtube_url_still_takes_the_extract_url_path(monkeypatch):
+    """The routing decision has to actually route both ways, not just the YouTube one."""
+    called = []
+    monkeypatch.setattr(ingest, "extract_url", lambda url: called.append(url) or GOOD_TEXT)
+
+    source = ingest.load_source(
+        ingest.SourceSpec(kind="url", ref="https://example.com/article", value="https://example.com/article"),
+        main.SOURCE_FAILURE_COPY,
+    )
+
+    assert called == ["https://example.com/article"]
+    assert source.text == GOOD_TEXT
+
+
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "https://www.youtube.com/watch?v=abc",  # too short to be a real id
+        "https://youtu.be/dQw4w9WgXcQXX",  # too long
+        "https://www.youtube.com/feed/subscriptions",  # a feed, not a video
+        "https://www.youtube.com/@someuser",  # a channel, not a video
+        "https://www.youtube.com/",  # bare host
+    ],
+)
+def test_a_youtube_host_with_no_parseable_video_id_is_refused(monkeypatch, bad_url):
+    """A typo'd or non-video YouTube link must not fall through to extract_url and
+    fetch the SPA shell; it should be refused with youtube_bad_url instead."""
+
+    def _extract_url_boom(url):
+        raise AssertionError("extract_url must not be called for a YouTube host")
+
+    monkeypatch.setattr(ingest, "extract_url", _extract_url_boom)
+
+    with pytest.raises(ingest.SourceError) as excinfo:
+        ingest.load_source(
+            ingest.SourceSpec(kind="url", ref=bad_url, value=bad_url),
+            main.SOURCE_FAILURE_COPY,
+        )
+    assert excinfo.value.error == ingest.YOUTUBE_BAD_URL
+    assert excinfo.value.message == main.YOUTUBE_BAD_URL_MESSAGE
+
+
+@pytest.mark.parametrize(
+    "reason,code",
+    [
+        ("no_transcript", ingest.YOUTUBE_NO_TRANSCRIPT),
+        ("unavailable", ingest.YOUTUBE_UNAVAILABLE),
+    ],
+)
+def test_transcript_unavailable_reasons_map_to_their_own_codes(monkeypatch, reason, code):
+    def _raise(video_id):
+        raise youtube.TranscriptUnavailable(reason)
+
+    monkeypatch.setattr(youtube, "fetch_transcript", _raise)
+
+    with pytest.raises(ingest.SourceError) as excinfo:
+        ingest.load_source(
+            ingest.SourceSpec(kind="url", ref=YOUTUBE_URL, value=YOUTUBE_URL),
+            main.SOURCE_FAILURE_COPY,
+        )
+    assert excinfo.value.error == code
+    assert excinfo.value.message == main.SOURCE_FAILURE_COPY[code]
+
+
+def test_transcript_unavailable_fetch_failed_falls_to_the_existing_code(monkeypatch):
+    """The one TranscriptUnavailable reason that is NOT a new code: a retryable fetch
+    problem is reported the same way any other fetch failure is."""
+
+    def _raise(video_id):
+        raise youtube.TranscriptUnavailable("fetch_failed")
+
+    monkeypatch.setattr(youtube, "fetch_transcript", _raise)
+
+    with pytest.raises(ingest.SourceError) as excinfo:
+        ingest.load_source(
+            ingest.SourceSpec(kind="url", ref=YOUTUBE_URL, value=YOUTUBE_URL),
+            main.SOURCE_FAILURE_COPY,
+        )
+    assert excinfo.value.error == ingest.FETCH_FAILED
+    assert excinfo.value.error not in {ingest.YOUTUBE_NO_TRANSCRIPT, ingest.YOUTUBE_UNAVAILABLE}
+
+
+def test_a_captionless_video_is_a_422_source_failed_with_its_own_sentence(client, monkeypatch):
+    monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
+
+    def _raise(video_id):
+        raise youtube.TranscriptUnavailable("no_transcript")
+
+    monkeypatch.setattr(youtube, "fetch_transcript", _raise)
+
+    response = client.post(
+        "/courses/generate", json={"sources": [{"kind": "url", "value": YOUTUBE_URL}]}
+    )
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["error"] == "source_failed"
+    (entry,) = detail["sources"]
+    assert entry["error"] == ingest.YOUTUBE_NO_TRANSCRIPT
+    assert entry["error"] != ingest.NO_USABLE_TEXT
+    assert entry["message"] == main.YOUTUBE_NO_TRANSCRIPT_MESSAGE
+
+
+def test_a_mixed_pdf_and_captionless_video_reports_only_the_video(client, monkeypatch):
+    """One readable PDF plus one captionless video: exactly one failure, and `index`
+    points at the video's position in the combined request, not the PDF's."""
+    monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
+    monkeypatch.setattr(ingest, "extract_pdf", lambda data: data.decode())
+
+    def _raise(video_id):
+        raise youtube.TranscriptUnavailable("no_transcript")
+
+    monkeypatch.setattr(youtube, "fetch_transcript", _raise)
+
+    response = client.post(
+        "/courses/generate/multipart",
+        data={"sources": json.dumps([{"kind": "url", "value": YOUTUBE_URL}])},
+        files=[("file", _pdf_part("good"))],
+    )
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["error"] == "source_failed"
+    (entry,) = detail["sources"]
+    assert entry["index"] == 0, "the video was sent first (sources, then file)"
+    assert entry["kind"] == "url"
+    assert entry["error"] == ingest.YOUTUBE_NO_TRANSCRIPT
+
+
+@pytest.mark.parametrize(
+    "code,message",
+    [
+        (ingest.YOUTUBE_NO_TRANSCRIPT, main.YOUTUBE_NO_TRANSCRIPT_MESSAGE),
+        (ingest.YOUTUBE_UNAVAILABLE, main.YOUTUBE_UNAVAILABLE_MESSAGE),
+        (ingest.YOUTUBE_BAD_URL, main.YOUTUBE_BAD_URL_MESSAGE),
+    ],
+)
+def test_each_new_code_gets_its_own_sentence_through_legacy_refusal(code, message):
+    """Not the fallback. Without a branch for a new code, _legacy_refusal falls through
+    to "No usable text found in the source", which would be a wrong sentence for all
+    three of these."""
+    failure = ingest.SourceFailure(
+        kind="url", ref=YOUTUBE_URL, error=code, message=message, index=0
+    )
+
+    exc = main._legacy_refusal(failure, stage="url")
+
+    assert exc.status_code == 400
+    assert exc.detail == message
+    assert exc.detail != "No usable text found in the source"
+
+
+def test_the_legacy_single_url_body_gets_the_new_message_too(client, monkeypatch):
+    """The deprecated single-`url` request path routes through the same failure codes,
+    so it must not regress to the generic fallback sentence either."""
+    monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
+
+    def _raise(video_id):
+        raise youtube.TranscriptUnavailable("unavailable")
+
+    monkeypatch.setattr(youtube, "fetch_transcript", _raise)
+
+    response = client.post("/courses/generate", json={"url": YOUTUBE_URL})
+
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == main.YOUTUBE_UNAVAILABLE_MESSAGE

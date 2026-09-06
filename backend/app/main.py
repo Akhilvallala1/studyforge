@@ -302,6 +302,17 @@ class GenerateRequest(BaseModel):
 # because the target machine actively refused it" straight into the UI.
 URL_FETCH_MESSAGE = "Could not fetch that URL. Check the address and that the page is reachable."
 PDF_PARSE_MESSAGE = "Could not read that PDF. It may be scanned images or corrupted."
+YOUTUBE_NO_TRANSCRIPT_MESSAGE = (
+    "That video has no captions, so there is no text to build a course from. Try a video "
+    "with captions turned on."
+)
+YOUTUBE_UNAVAILABLE_MESSAGE = (
+    "That video could not be played (it may be private, age-restricted, or removed), so "
+    "there is nothing to read a transcript from. Try a different video."
+)
+YOUTUBE_BAD_URL_MESSAGE = (
+    "That does not look like a YouTube video URL. Check the address and try again."
+)
 MODEL_FAILURE_MESSAGE = (
     "The model could not generate a course from this material. "
     "Try again, or try shorter material."
@@ -341,6 +352,9 @@ SOURCE_FAILURE_COPY = {
     ingest.FETCH_FAILED: URL_FETCH_MESSAGE,
     ingest.PDF_UNREADABLE: PDF_PARSE_MESSAGE,
     ingest.NO_USABLE_TEXT: "No usable text found in the source",
+    ingest.YOUTUBE_NO_TRANSCRIPT: YOUTUBE_NO_TRANSCRIPT_MESSAGE,
+    ingest.YOUTUBE_UNAVAILABLE: YOUTUBE_UNAVAILABLE_MESSAGE,
+    ingest.YOUTUBE_BAD_URL: YOUTUBE_BAD_URL_MESSAGE,
 }
 
 
@@ -572,8 +586,17 @@ def _legacy_refusal(failure: ingest.SourceFailure, stage: str) -> HTTPException:
     and no reason to tell the caller to retry. Without this branch it would fall to the
     bottom and a mistyped hostname would be reported as "No usable text found in the
     source", which is why a new code cannot be added to ingest alone.
+
+    The three youtube_* codes join the same 400 branch as url_unresolvable: none of them
+    is fixed by retrying the same URL, so none gets fetch_failed's 502.
     """
-    if failure.error in {ingest.UNSAFE_URL, ingest.URL_UNRESOLVABLE}:
+    if failure.error in {
+        ingest.UNSAFE_URL,
+        ingest.URL_UNRESOLVABLE,
+        ingest.YOUTUBE_NO_TRANSCRIPT,
+        ingest.YOUTUBE_UNAVAILABLE,
+        ingest.YOUTUBE_BAD_URL,
+    }:
         return HTTPException(400, failure.message)
     if failure.error == ingest.FETCH_FAILED:
         return HTTPException(502, URL_FETCH_MESSAGE)
