@@ -217,8 +217,15 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                 nothing renders differently.
               */}
               <Card>
+                {/*
+                  The explicit {" "} is load-bearing, not formatting. This <p> names both
+                  the MCQ radiogroup and the short-answer input via aria-labelledby, and an
+                  accessible name is built from text content: `mr-2` is a margin and
+                  contributes nothing to it, while JSX drops the newline between the two.
+                  Without the space a screen reader says "1.Which orbit shape".
+                */}
                 <p id={`quiz-question-${item.id}`} className="text-ui font-medium">
-                  <span className="mr-2 text-ink-subtle">{index + 1}.</span>
+                  <span className="mr-2 text-ink-subtle">{index + 1}.</span>{" "}
                   {item.question}
                 </p>
                 {item.concept && (
