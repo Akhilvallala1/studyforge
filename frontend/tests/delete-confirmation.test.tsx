@@ -141,6 +141,10 @@ describe("delete confirmation before the preview lands", () => {
     const confirm = await screen.findByRole("button", { name: "Delete permanently" });
     await waitFor(() => expect(confirm).toBeEnabled());
 
+    // The panel places focus on Cancel, so the learner tabs here before pressing. Doing
+    // it explicitly is what makes the focus assertion below mean anything: `fireEvent`
+    // moves focus nowhere on its own.
+    act(() => confirm.focus());
     fireEvent.click(confirm);
 
     // The `toBeEnabled()` wait above is the assertion that actually catches a
@@ -181,13 +185,14 @@ describe("delete confirmation before the preview lands", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
-    // Wait for the preview, since that is when the panel moves focus to the confirming
-    // button. Cancelling before it lands would not be testing the same situation.
+    // Wait for the preview, since that is when the panel places focus. Cancelling before
+    // it lands would not be testing the same situation.
     const confirm = await screen.findByRole("button", { name: "Delete permanently" });
     await waitFor(() => expect(confirm).toBeEnabled());
-    expect(confirm).toHaveFocus();
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    expect(cancel).toHaveFocus();
 
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(cancel);
 
     const trigger = await screen.findByRole("button", { name: "Delete" });
     // No separate "activeElement is not document.body" assertion here: it cannot go

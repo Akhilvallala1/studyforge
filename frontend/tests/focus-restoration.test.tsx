@@ -59,19 +59,26 @@
  *   The next four are the PANEL's own focus effect, a different guard in the same
  *   component, measured separately. Worth counting rather than skimming: the component
  *   carries three body guards, so a reader who takes the wrong entry reads the wrong
- *   one. Each was run on this tree and the failure lists are exact, not sampled:
- *   the suite is 99 tests and each mutant is the only edit in the file.
+ *   one. Each was run on this tree and the failure lists are exact, not sampled, each
+ *   mutant the only edit in the file. No test count stands here; the one that did went
+ *   stale within two commits, and the count was never what these claims rested on.
  *   - restore the pre-fix panel effect, which
- *     focused only on a landed preview           -> the preview-failure test and the
- *     tabbed-away test fail, and the failed-delete test SURVIVES, correctly: that shape
- *     never depends on `error`, so it never re-runs to steal anything. Which is exactly
- *     what earns the failed-delete case a test of its own, since the mutation that
- *     reintroduces the reported bug cannot reach it
+ *     focused the confirming button, and only
+ *     once a preview had landed                  -> three fail: the preview-failure test,
+ *     the settled-path test below, and the cancelled-confirmation test over in
+ *     delete-confirmation.test.tsx. The failed-delete test SURVIVES, correctly: that
+ *     shape never depends on `error`, so it never re-runs to steal anything, which is
+ *     what earns the failed-delete case a test of its own. Re-measured when the settled
+ *     path moved to Cancel, and the list changed: this entry used to name the tabbed-away
+ *     test, which now passes under this mutant
  *   - drop the body guard from the panel effect  -> the tabbed-away test and the
  *     failed-delete test fail, and the preview-failure test passes: it is the placement
  *     that fixes the bug, and the guard that keeps the fix from causing two more
- *   - send an error to the confirming button
- *     rather than to Cancel                      -> only the preview-failure test fails
+ *   - focus the confirming button on the settled
+ *     path, the `error ? cancelRef : confirmRef`
+ *     ternary this replaced                      -> the settled-path test fails, and so
+ *     does the cancelled-confirmation test in delete-confirmation.test.tsx, which reads
+ *     the panel's placement as its precondition
  *   - drop the panel effect's `!loadingPreview`
  *     gate and throw if it ever reaches a
  *     disabled control                           -> the whole suite stays green, so the
@@ -503,6 +510,13 @@ describe("DeleteCourseButton focus restoration", () => {
     // race that made this file fail about one run in eight on a loaded machine. See
     // tests/delete-confirmation.test.tsx for the defect it was reporting.
     await waitFor(() => expect(confirm).toBeEnabled());
+    // The panel places focus on Cancel, not here, so a learner reaches this button by
+    // tabbing to it. Doing that explicitly is load-bearing for the same reason it is in
+    // `openPanel`: `fireEvent.click` moves focus nowhere, so without this the callers
+    // that `confirm.blur()` to stand in for the unmount would blur an element that never
+    // had focus, leaving Cancel active and the restore's body guard declining a case it
+    // was not written to decline.
+    act(() => confirm.focus());
     const removal = deferred<CourseDeletion>();
     vi.mocked(deleteCourse).mockReturnValue(removal.promise);
     return { confirm, removal };
@@ -612,6 +626,34 @@ describe("DeleteCourseButton focus restoration", () => {
     ).toHaveFocus();
   });
 
+  /*
+   * The settled path used to focus the confirming button. That is an inline panel, not a
+   * modal, so nothing contains Tab: with Cancel rendered first, forward Tab went from the
+   * confirming button OUT of the panel to the next course's controls, and Cancel could be
+   * reached only by Shift+Tab. Found in a browser by QA, on the destructive path.
+   *
+   * jsdom does not implement sequential focus navigation, so the second assertion pins
+   * the DOM property that decides where Tab goes rather than pressing Tab and believing
+   * a simulation of it.
+   */
+  test("sends focus to Cancel when the preview lands, leaving the confirming button one Tab away", async () => {
+    vi.mocked(getDeletionPreview).mockResolvedValue(preview);
+    openPanel();
+
+    const confirm = await screen.findByRole("button", { name: "Delete permanently" });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+
+    expect(
+      cancel,
+      "focus must not start on the destructive control, and from here both buttons are reachable",
+    ).toHaveFocus();
+    expect(
+      cancel.compareDocumentPosition(confirm) & Node.DOCUMENT_POSITION_FOLLOWING,
+      "Cancel has to precede the confirming button for forward Tab to reach it",
+    ).toBeTruthy();
+  });
+
   test("declines to move focus when the learner moved on while the preview loaded", async () => {
     const previewCall = deferred<CourseDeletion>();
     vi.mocked(getDeletionPreview).mockReturnValue(previewCall.promise);
@@ -629,7 +671,7 @@ describe("DeleteCourseButton focus restoration", () => {
 
   test("leaves focus on the confirming button when the delete itself fails", async () => {
     const { confirm, removal } = await renderList();
-    expect(confirm, "the preview landed, so the panel has already placed focus here").toHaveFocus();
+    expect(confirm, "the learner tabbed here from Cancel and pressed it").toHaveFocus();
 
     fireEvent.click(confirm);
     await act(async () => removal.reject(new ApiError(500, "Could not delete the course.")));
