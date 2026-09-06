@@ -326,6 +326,7 @@ export function DeleteCourseButton({
    */
   const [loadingPreview, setLoadingPreview] = useState(false);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   /*
    * Set only by Cancel, and read once by the effect below.
@@ -378,26 +379,50 @@ export function DeleteCourseButton({
   }
 
   /*
-   * Move to the confirming button once the panel is open AND the preview has landed,
-   * so a keyboard learner is not left on a control that has just changed meaning
-   * underneath them.
+   * Place focus once the panel has settled into one of its two shapes, so a keyboard
+   * learner is not left on a control that has just changed meaning underneath them.
+   *
+   * OPENING THE PANEL UNMOUNTS THE TRIGGER, so from the press until this runs there is
+   * nothing focused at all. Both outcomes therefore have to place focus, and the error
+   * branch was the one that did not: the preview request failed, the alert appeared, and
+   * focus stayed on the body. Recoverable by tabbing, but where that lands is a browser's
+   * choice rather than ours, and it was the only path on this feature that left the
+   * learner nowhere at all. Found in a browser by QA.
+   *
+   * AN ERROR GOES TO CANCEL RATHER THAN TO THE CONFIRMING BUTTON, and not merely because
+   * it is the likeliest next action. This panel exists to state what a delete would
+   * destroy, so a failed preview is precisely the case where that has NOT been said.
+   * Making the destructive control the default target at the moment we know least about
+   * its consequences is the wrong way round. Cancel is safe, and reopening retries.
+   *
+   * GUARDED ON THE BODY like every other restore in this codebase, which closes a second
+   * gap in the same breath. Without it this steals focus twice over: from a learner who
+   * tabbed away while the preview was loading, and from one whose DELETE failed, since
+   * that sets `error` too while their focus is still on the button they just pressed (it
+   * is deliberately not disabled during the delete itself, so it keeps focus throughout;
+   * its only `disabled` covers the preview window, which is over by then). The guard
+   * tells "nothing has focus because the trigger vanished" apart from "the learner is
+   * somewhere on purpose", without this effect needing to know which request failed.
    *
    * Gated on `!loadingPreview` as defence in depth, NOT because a reachable path needs
    * it today. The case it reads as guarding against, a stale fetch's `setPreview`
    * landing after the panel is reopened, is already prevented one level up by Cancel's
    * `generationRef.current++`: the abandoned request returns before `setPreview(result)`,
-   * so `preview` is null on reopen and the `preview` check alone declines.
+   * so `preview` is null on reopen and the settled-shape check alone declines.
    *
-   * Measured, do not restate this without re-running it: dropping the `!loadingPreview`
-   * gate and throwing if the effect ever focuses a disabled button leaves the whole
-   * suite green, so the throw never fires. An earlier version of this comment called the
-   * opposite "verified"; it described the world before Cancel's bump existed, and the
-   * bump and that comment landed in the same commit. Keep the gate if Cancel's bump is
-   * ever removed, but it is redundant while both are here.
+   * Measured on THIS shape of the effect, do not restate it without re-running it:
+   * dropping the `!loadingPreview` gate and throwing if the effect ever focuses a
+   * disabled button leaves the whole suite green, so the throw never fires. Keep the
+   * gate if Cancel's bump is ever removed, but it is redundant while both are here.
    */
   useEffect(() => {
-    if (open && preview && !loadingPreview) confirmRef.current?.focus();
-  }, [open, preview, loadingPreview]);
+    if (!open) return;
+    if (loadingPreview) return;
+    // Neither shape has arrived, so there is nothing settled to place focus on yet.
+    if (!preview && !error) return;
+    if (document.activeElement !== document.body) return;
+    (error ? cancelRef : confirmRef).current?.focus();
+  }, [open, preview, error, loadingPreview]);
 
   // Cancel unmounts the panel that holds the focused Cancel button, so without this
   // focus falls to the body and a keyboard learner loses their place in the list.
@@ -472,8 +497,9 @@ export function DeleteCourseButton({
         </div>
       ) : (
         // aria-live so a screen reader user learns something is happening: with the
-        // confirming button disabled and focus still on body at this point (the focus
-        // effect above declines until the preview lands), nothing else here speaks.
+        // confirming button disabled and focus still on the body at this point (the
+        // effect above declines for as long as the preview is loading, whichever way it
+        // ends up going), nothing else here speaks.
         <p aria-live="polite" className="mt-1.5 text-[13px] text-zinc-500 dark:text-zinc-400">
           Checking what this would delete…
         </p>
@@ -481,6 +507,7 @@ export function DeleteCourseButton({
       <div className="mt-3.5 flex flex-wrap items-center gap-3">
         <button
           type="button"
+          ref={cancelRef}
           onClick={() => {
             // Invalidates the in-flight preview fetch (see generationRef above) so its
             // response cannot resurface after this closes the loading window: without

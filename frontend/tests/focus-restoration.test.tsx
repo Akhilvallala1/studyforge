@@ -21,6 +21,22 @@
  * would still pass while the restore never fired for button senders. The qa-tester's
  * browser pass is the only coverage of that trigger, not a nicety on top of this file.
  *
+ * TWO TESTS ARE EXEMPT FROM THAT CAVEAT, and they are the only two: the pair that goes
+ * through `openPanel` in the DeleteCourseButton block. That helper focuses the trigger
+ * before pressing it, the way a keyboard learner arrives, and opening the panel unmounts
+ * that trigger; jsdom drops focus to the body when an element holding it is removed, as
+ * a browser does. So their body-focus state is produced rather than asserted. It is
+ * load-bearing for ONE of the two: were the unmount not to drop focus, the guard would
+ * decline and the preview-failure test would go red. The tabbed-away test would stay
+ * green, and has to: it focuses the search box itself on the line after the press, so
+ * the activeElement the effect sees is the same either way, and its subject IS the
+ * decline, which a decline cannot falsify. Measured rather than reasoned: modelling that
+ * counterfactual by focusing the search box at the end of `openPanel` reddens exactly
+ * the preview-failure test. The third new test in that block, the failed-delete one, is
+ * not exempt.
+ * It is about focus STAYING where the effect already put it, and makes no claim about
+ * how the body comes to hold focus.
+ *
  * Written as mutation tests. Each was confirmed by making the change and watching the
  * right tests go red:
  *   - drop the guard, focus unconditionally      -> the three decline tests and both
@@ -38,6 +54,30 @@
  *   - drop the empty-state fallback in the id
  *     lookup (DeleteCourseButton)                -> only the empty-list test fails, which
  *     is what makes that test worth its own case rather than a variant of the first
+ *
+ *   The three DeleteCourseButton entries above are the PROVIDER's post-delete restore.
+ *   The next four are the PANEL's own focus effect, a different guard in the same
+ *   component, measured separately. Worth counting rather than skimming: the component
+ *   carries three body guards, so a reader who takes the wrong entry reads the wrong
+ *   one. Each was run on this tree and the failure lists are exact, not sampled:
+ *   the suite is 99 tests and each mutant is the only edit in the file.
+ *   - restore the pre-fix panel effect, which
+ *     focused only on a landed preview           -> the preview-failure test and the
+ *     tabbed-away test fail, and the failed-delete test SURVIVES, correctly: that shape
+ *     never depends on `error`, so it never re-runs to steal anything. Which is exactly
+ *     what earns the failed-delete case a test of its own, since the mutation that
+ *     reintroduces the reported bug cannot reach it
+ *   - drop the body guard from the panel effect  -> the tabbed-away test and the
+ *     failed-delete test fail, and the preview-failure test passes: it is the placement
+ *     that fixes the bug, and the guard that keeps the fix from causing two more
+ *   - send an error to the confirming button
+ *     rather than to Cancel                      -> only the preview-failure test fails
+ *   - drop the panel effect's `!loadingPreview`
+ *     gate and throw if it ever reaches a
+ *     disabled control                           -> the whole suite stays green, so the
+ *     throw never fires. That re-derives the "defence in depth" claim in the component's
+ *     own comment against the CURRENT shape of the effect rather than carrying the
+ *     measurement forward from the shape it replaced
  *   - never announce (DeleteCourseButton)        -> its live-region test fails
  *   - always render the shared-concept clause    -> the omit-when-zero test fails
  *   - drop the guard (QuizSection)               -> its decline test and its
@@ -517,6 +557,86 @@ describe("DeleteCourseButton focus restoration", () => {
     expect(
       search,
       "a learner who moved to the search box mid-request keeps their place; the header link must not steal it",
+    ).toHaveFocus();
+  });
+
+  /**
+   * Opens the panel WITHOUT settling how the preview resolves, which is what the two
+   * tests that call it need and what `renderList` cannot give them: it mocks a resolved
+   * preview before it clicks, so it can express neither a preview that fails nor one
+   * still in flight. The failed-delete test below is not a caller and wants the
+   * opposite, a settled preview, which is why it uses `renderList`. No header link here,
+   * because neither caller confirms a delete, and the provider's restore is the only
+   * thing that reads one.
+   *
+   * The trigger is FOCUSED before it is pressed, which is the point of this helper and
+   * not decoration. `fireEvent.click` moves focus nowhere, so without that line the body
+   * would hold focus merely because nothing had ever taken it, and the two tests below
+   * would assert against a state they had not produced. Focusing first makes the unmount
+   * do the work a browser does: React removes the element holding focus, jsdom drops it
+   * to the body, and the panel's guard sees the state it was written for. It is
+   * load-bearing rather than cosmetic, since a jsdom that left focus on the detached
+   * trigger would fail that guard and redden the preview-failure test. That one only:
+   * the tabbed-away test focuses the search box on the next line, so the effect sees the
+   * same activeElement whichever way jsdom behaves here.
+   */
+  function openPanel() {
+    render(
+      <CourseDeletionProvider>
+        <DeleteCourseButton courseId={1} title="Organic Chemistry" />
+        <input aria-label="Search" />
+      </CourseDeletionProvider>,
+    );
+    const trigger = screen.getByRole("button", { name: "Delete" });
+    act(() => trigger.focus());
+    fireEvent.click(trigger);
+  }
+
+  /*
+   * The one path on this feature that used to place no focus at all. Opening the panel
+   * unmounts the trigger, so focus is on the body from the press onwards; the effect
+   * then waited for a preview that never arrived. The learner was left nowhere, with an
+   * alert they had to go and find. Found in a browser by QA.
+   */
+  test("sends focus to Cancel when the deletion preview fails", async () => {
+    vi.mocked(getDeletionPreview).mockRejectedValue(
+      new ApiError(503, "Could not reach the server."),
+    );
+    openPanel();
+
+    await screen.findByRole("alert");
+
+    expect(
+      screen.getByRole("button", { name: "Cancel" }),
+      "this panel exists to say what a delete would destroy, so a failed preview is the moment we know least about the consequences: focus belongs on the safe control, not the destructive one",
+    ).toHaveFocus();
+  });
+
+  test("declines to move focus when the learner moved on while the preview loaded", async () => {
+    const previewCall = deferred<CourseDeletion>();
+    vi.mocked(getDeletionPreview).mockReturnValue(previewCall.promise);
+    openPanel();
+    const search = screen.getByLabelText("Search");
+    act(() => search.focus());
+
+    await act(async () => previewCall.resolve(preview));
+
+    expect(
+      search,
+      "a slow preview must not haul back a learner who moved to the search box while it loaded",
+    ).toHaveFocus();
+  });
+
+  test("leaves focus on the confirming button when the delete itself fails", async () => {
+    const { confirm, removal } = await renderList();
+    expect(confirm, "the preview landed, so the panel has already placed focus here").toHaveFocus();
+
+    fireEvent.click(confirm);
+    await act(async () => removal.reject(new ApiError(500, "Could not delete the course.")));
+
+    expect(
+      confirm,
+      "a failed delete sets the same `error` a failed preview does, but this button is not disabled during the delete itself, so it never lost focus; the effect must not move it to Cancel",
     ).toHaveFocus();
   });
 
