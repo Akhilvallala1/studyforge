@@ -69,6 +69,25 @@ class StubPaidProvider:
                     ],
                 }
             )
+        elif "without writing the lesson itself" in system:
+            # generation.QUESTIONS_SYSTEM's phrase. Without this branch a questions-only
+            # prompt falls through to the lesson shape below, which happens to carry
+            # "concepts" and "quiz" too, so a caller expecting this stage to fail loudly
+            # would instead get a course and never notice the branch was missing.
+            text = json.dumps(
+                {
+                    "concepts": ["stub-concept"],
+                    "quiz": [
+                        {
+                            "question": "Stub question?",
+                            "kind": "short",
+                            "options": [],
+                            "answer": "stub-answer",
+                            "concept": "stub-concept",
+                        }
+                    ],
+                }
+            )
         elif "re-teaching one concept" in system:
             text = json.dumps(
                 {

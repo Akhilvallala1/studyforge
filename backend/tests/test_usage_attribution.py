@@ -23,6 +23,7 @@ from app.concepts import normalize_concept
 from app.db import Base, SessionLocal
 from app.llm.base import LLMCallError, LLMResult
 from app.llm.fake_provider import FakeProvider
+from app.metering import MeteredLLM
 
 # --------------------------------------------------------------------------
 # Stub providers
@@ -69,6 +70,35 @@ class TutorTurnProvider:
             }
         )
         return LLMResult(text=text, input_tokens=110, output_tokens=55)
+
+
+class QuestionsProvider:
+    """Returns a well-formed concepts/quiz reply, matching the questions-only stage."""
+
+    name = "fake"
+    model = "questions-model"
+    is_paid = False
+
+    def __init__(self):
+        self.calls = 0
+
+    def generate(self, system: str, prompt: str, max_tokens: int = 64000):
+        self.calls += 1
+        text = json.dumps(
+            {
+                "concepts": ["a concept"],
+                "quiz": [
+                    {
+                        "question": "Q?",
+                        "kind": "short",
+                        "options": [],
+                        "answer": "a",
+                        "concept": "a concept",
+                    }
+                ],
+            }
+        )
+        return LLMResult(text=text, input_tokens=90, output_tokens=40)
 
 
 class FailingTutorProvider:
@@ -483,7 +513,7 @@ def test_only_generation_stages_are_covered_by_the_failed_run_sentence():
     would silently inherit a sentence about a generation run that failed, which is the
     exact shape of the bug this file exists for, so the covered set is pinned here.
     """
-    assert set(generation.STAGES) == {"outline", "lesson"}
+    assert set(generation.STAGES) == {"outline", "lesson", "questions"}
     assert remediation.REMEDIATION_STAGE not in generation.STAGES
     assert tutor.TUTOR_STAGE not in generation.STAGES
     assert tutor.TUTOR_STAGE != remediation.REMEDIATION_STAGE
@@ -500,6 +530,10 @@ def test_every_stage_actually_recorded_is_one_the_page_can_explain(client, monke
     meter.generate() would never touch it, and would land in a group whose sentence
     was written about something else. So this reads the stages the app ACTUALLY
     recorded, after driving both the paths that record any.
+
+    The questions stage has no endpoint yet (Phase B lands generate_questions before
+    anything can reach it over HTTP), so it is driven straight through generation.py
+    rather than through client.post, the same way the pipeline itself will call it.
     """
     monkeypatch.setattr(main, "get_provider", lambda: FakeProvider())
     assert client.post("/courses/generate", json={"text": "Whales breathe air."}).status_code == 200
@@ -511,6 +545,9 @@ def test_every_stage_actually_recorded_is_one_the_page_can_explain(client, monke
     monkeypatch.setattr(main, "get_provider", lambda: TutorTurnProvider())
     key, _ = _seed_taught_concept(1)
     assert _ask_tutor(client, key).status_code == 200
+
+    meter = MeteredLLM(QuestionsProvider(), uuid4().hex)
+    generation.generate_questions(meter, "Lesson", "summary", ["A chunk of source text."])
 
     session = SessionLocal()
     try:

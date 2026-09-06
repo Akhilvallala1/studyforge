@@ -588,6 +588,20 @@ def test_recording_meter_flags_missing_schema_keys():
     assert not meter.records[0].schema_ok
 
 
+def test_recording_meter_flags_questions_stage_schema_ok_without_content():
+    """The questions stage never asks for "content", so its absence must not fail it."""
+    meter = RecordingMeter(StubMeter([json.dumps({"concepts": ["x"], "quiz": []})]))
+    meter.generate("questions", "sys", "prompt")
+    assert meter.records[0].schema_ok
+
+
+def test_recording_meter_still_requires_content_on_the_lesson_stage():
+    """Adding the questions entry to REQUIRED_KEYS must not weaken the lesson stage."""
+    meter = RecordingMeter(StubMeter([json.dumps({"concepts": ["x"], "quiz": []})]))
+    meter.generate("lesson", "sys", "prompt")
+    assert not meter.records[0].schema_ok
+
+
 def test_recording_meter_records_then_reraises_provider_error():
     class Boom:
         def generate(self, *args, **kwargs):

@@ -19,8 +19,14 @@ from app.metering import MeteredLLM
 from evals.metrics import evaluate
 
 # Keys the pipeline needs from each stage's JSON. A response that parses but is
-# missing these is a reliability failure too, just a quieter one.
-REQUIRED_KEYS = {"outline": ("title", "modules"), "lesson": ("content", "concepts", "quiz")}
+# missing these is a reliability failure too, just a quieter one. "questions" has no
+# "content" key to demand: generate_questions never asks the model for one, and the
+# lesson stage's requirement is unchanged by this entry existing alongside it.
+REQUIRED_KEYS = {
+    "outline": ("title", "modules"),
+    "lesson": ("content", "concepts", "quiz"),
+    "questions": ("concepts", "quiz"),
+}
 
 
 @dataclass
