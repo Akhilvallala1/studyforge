@@ -1,11 +1,8 @@
 """Turn a YouTube URL into the video id, and a video id into its transcript text.
 
 `is_youtube_url` and `video_id` are pure parsing: no network, no import of the
-transcript library, so either is free to call from anywhere that needs to recognise a
-YouTube URL. `fetch_transcript` is
-the only function in this module (or anywhere else in the app) that imports
-`youtube_transcript_api`, so swapping that dependency later, or mocking it in a test,
-touches this one function and nothing that calls it.
+transcript library. `fetch_transcript` is the only function in this module (or
+anywhere else in the app) that imports `youtube_transcript_api`.
 """
 
 import re
@@ -70,7 +67,7 @@ def video_id(url: str) -> str | None:
         elif not parts or parts[0] == "watch":
             candidate = (parse_qs(parsed.query).get("v") or [None])[0]
 
-    if candidate and WATCH_ID.match(candidate):
+    if candidate and WATCH_ID.fullmatch(candidate):
         return candidate
     return None
 
@@ -79,9 +76,10 @@ def video_id(url: str) -> str | None:
 class Caption:
     """One transcript line, with its position in the video.
 
-    start/duration are unused by Phase A, which only reads `Transcript.text()`, but are
-    kept because Phase C anchors a lesson's timestamp links off exactly these offsets and
-    re-fetching later to recover them would repeat a network call for data already in hand.
+    start/duration are unused by course generation, which only reads `Transcript.text()`,
+    but are kept because the not-yet-built source-anchored viewer anchors a lesson's
+    timestamp links off exactly these offsets, and re-fetching later to recover them
+    would repeat a network call for data already in hand.
     """
 
     start: float
@@ -114,15 +112,14 @@ def fetch_transcript(video_id: str) -> Transcript:
 
     Raises TranscriptUnavailable with:
       "no_transcript": the video has no captions in any language.
-      "unavailable": the video itself cannot be watched (removed, private, age-gated,
-        or the id does not name a real video).
-      "fetch_failed": YouTube could be reached but the transcript could not, for a
-        reason worth retrying rather than treating as a property of the video (rate
-        limiting, a blocked request, a malformed response).
+      "unavailable": the video cannot be watched (removed, private, age-gated, or the
+        id names no real video).
+      "fetch_failed": reachable, but the transcript itself could not be, for a reason
+        worth retrying (rate limiting, a blocked request, a malformed response).
 
-    The library's `.list()` already picks the first available transcript in whatever
-    language exists; this does not restrict to English, since course generation reads
-    the transcript as source text in whatever language it is in.
+    `.list()` returns every available transcript; `next(iter(...))` below picks the
+    first one, in whatever language exists, in the manual-before-auto-generated order
+    `TranscriptList.__iter__` yields them in.
     """
     from youtube_transcript_api import (
         AgeRestricted,

@@ -33,6 +33,10 @@ GOOD_ID = "dQw4w9WgXcQ"
         (GOOD_ID, None),  # a bare id, not a URL
         (f"https://youtu.be/{GOOD_ID[:10]}", None),  # 10 characters
         (f"https://youtu.be/{GOOD_ID}Q", None),  # 12 characters
+        # %0A decodes to a trailing newline, which `$` (unlike `\Z`/fullmatch) accepts
+        # right before. A regex using .match here would wrongly return the 12-char
+        # "id\n" instead of rejecting it.
+        (f"https://youtube.com/watch?v={GOOD_ID}%0A", None),
         ("https://youtube.com/feed/subscriptions", None),  # a feed, not a video
         ("https://youtube.com/@someuser", None),  # a channel, not a video
         ("https://youtube.com/", None),  # bare host

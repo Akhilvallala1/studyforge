@@ -390,7 +390,7 @@ URL_UNRESOLVABLE = "url_unresolvable"
 FETCH_FAILED = "fetch_failed"
 PDF_UNREADABLE = "pdf_unreadable"
 NO_USABLE_TEXT = "no_usable_text"
-# `kind` stays "url" for all three: see from_youtube on why this is not a fourth `kind`.
+# `kind` stays "url" for all three (see from_youtube).
 # YOUTUBE_NO_TRANSCRIPT/YOUTUBE_UNAVAILABLE are TranscriptUnavailable's "no_transcript" and
 # "unavailable" reasons; its "fetch_failed" reason falls to the existing FETCH_FAILED
 # instead, since a caller retries it the same way as any other fetch failure.
@@ -411,6 +411,8 @@ def from_url(key: str, url: str) -> Source:
 
 
 def from_youtube(key: str, url: str, transcript: "youtube.Transcript") -> Source:
+    # kind stays "url": the caller submitted a URL (main.py's SourceSpec.kind has no
+    # "youtube" option), and load_source is the one that noticed it names a video.
     return Source(key=key, kind="url", ref=url, text=transcript.text())
 
 
@@ -484,8 +486,9 @@ def load_source(spec: SourceSpec, copy: dict[str, str]) -> Source:
             # A YouTube watch page is a JavaScript shell with nothing for extract_url to
             # strip, so this never falls through to it. And there is no SSRF surface to
             # check here: the host YouTube's API talks to is fixed by that library, not
-            # by anything in `url`, and `video_id` is a regex-validated 11-character
-            # token, not a caller-controlled address, so _check_host has nothing to guard.
+            # by anything in `url`, and `video_id` only ever returns None or a full regex
+            # match on the 11-character id alphabet, not a caller-controlled address, so
+            # _check_host has nothing to guard.
             video_id = youtube.video_id(url)
             if video_id is None:
                 raise SourceError(YOUTUBE_BAD_URL, _copy_for(copy, YOUTUBE_BAD_URL))
