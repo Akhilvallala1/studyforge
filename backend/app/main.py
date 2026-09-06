@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
@@ -29,6 +30,7 @@ from app import (
     remediation,
     review,
     tutor,
+    youtube,
 )
 from app.attempts import (
     _attempt_state,
@@ -264,11 +266,16 @@ class GenerateRequest(BaseModel):
 
     DEPRECATED, and with a date rather than an aspiration: `text` and `url` are removed in
     0.4.0. Until then they are supported, not merely tolerated.
+
+    `mode` defaults to "lessons", so every existing caller and every existing test is
+    unaffected. "source" renders the source material itself (see
+    generation.SOURCE_CONTENT_KIND) instead of model-authored lesson prose.
     """
 
     sources: list[SourceInput] | None = None
     text: str | None = None
     url: str | None = None
+    mode: Literal["lessons", "source"] = "lessons"
 
     @model_validator(mode="after")
     def _normalize_aliases(self) -> "GenerateRequest":
@@ -463,20 +470,48 @@ def _cost_limit_exceeded(exc: CostLimitExceeded) -> HTTPException:
     )
 
 
+def _lesson_source_position(segments: list[int], positions: list[int]) -> int | None:
+    """Which source position (0-based, matching source_rows) a lesson's segments anchor
+    to, or None if they name no valid chunk.
+
+    A lesson's segments are chunk indexes; positions[i] is the source that chunk i came
+    from (ingest.chunk_sources_with_positions). When a lesson's segments span more than
+    one source, it is anchored to the source owning the MAJORITY of its segments, ties
+    broken by lowest source position. This is a judgment call, not a forced one: "most of
+    the material" is a reasonable proxy for "what this lesson is about", but a lesson
+    genuinely split evenly between two sources has no single right answer.
+    """
+    counts: dict[int, int] = {}
+    for index in segments:
+        if 0 <= index < len(positions):
+            position = positions[index]
+            counts[position] = counts.get(position, 0) + 1
+    if not counts:
+        return None
+    best = max(counts.values())
+    return min(position for position, count in counts.items() if count == best)
+
+
 def _save_course(
     session: Session,
     course: dict,
     sources: list[ingest.Source] | None = None,
     mode: str = "lessons",
+    positions: list[int] | None = None,
 ) -> models.Course:
     """Persist a generated course, and the sources it was built from.
 
     `mode` defaults to "lessons" so every existing caller is unaffected: no blob is ever
     written and every lesson keeps content_kind's own default of "lesson". "source" is
-    for a later session's endpoints, which render the source itself rather than prose
-    about it; when it is passed, each lesson in order is tied to the source at the same
-    position (one lesson per source is what that mode builds), and a PDF source's
-    original bytes are kept alongside it so the source can be displayed as itself.
+    for the endpoints that render the source itself rather than prose about it; when it
+    is passed, each lesson is tied to the source owning the majority of its segments (see
+    _lesson_source_position), and a PDF source's original bytes are kept alongside it so
+    the source can be displayed as itself.
+
+    `positions` is chunk-index-to-source-position, from
+    ingest.chunk_sources_with_positions, and is only consulted when mode == "source". A
+    lesson whose segments are empty or index nothing in `positions` keeps source_id NULL
+    rather than guessing.
 
     byte_size is recorded whenever a source carried raw bytes, regardless of mode: it is
     a fact about the source, not about whether this run chose to keep the blob.
@@ -503,7 +538,6 @@ def _save_course(
         session.add(row)
         session.flush()
 
-    lesson_index = 0
     for m_pos, module in enumerate(course["modules"]):
         module_row = models.Module(title=module["title"], position=m_pos)
         for l_pos, lesson in enumerate(module["lessons"]):
@@ -513,10 +547,13 @@ def _save_course(
                 content=lesson.get("content", ""),
                 concepts=lesson.get("concepts", []),
             )
-            if mode == "source" and lesson_index < len(source_rows):
+            if mode == "source":
                 lesson_row.content_kind = "source"
-                lesson_row.source_id = source_rows[lesson_index].id
-            lesson_index += 1
+                source_position = _lesson_source_position(
+                    lesson.get("segments") or [], positions or []
+                )
+                if source_position is not None and source_position < len(source_rows):
+                    lesson_row.source_id = source_rows[source_position].id
             for item in lesson.get("quiz", []):
                 lesson_row.quiz_items.append(
                     models.QuizItem(
@@ -541,19 +578,28 @@ def _run_generation(
     owners: list[str],
     sources: list[ingest.Source] | None = None,
     mode: str = "lessons",
+    positions: list[int] | None = None,
 ) -> dict:
     """Run the metered generation pipeline, save the course, backfill the run's
-    llm_calls rows with the new course id, and return the generate-endpoint response."""
+    llm_calls rows with the new course id, and return the generate-endpoint response.
+
+    `mode == "source"` routes generation through generate_questions_course instead of
+    generate_course: same outline and routing, but each lesson keeps the source's own
+    text (see generation.SOURCE_CONTENT_KIND) rather than model-authored prose.
+    """
     run_id = uuid.uuid4().hex
     meter = MeteredLLM(get_provider(), run_id)
+    generate = (
+        generation.generate_questions_course if mode == "source" else generation.generate_course
+    )
     try:
-        course = generation.generate_course(meter, chunks, owners)
+        course = generate(meter, chunks, owners)
     except CostLimitExceeded as exc:
         raise _cost_limit_exceeded(exc) from exc
     except Exception as exc:
         raise generation_failure(exc, "generate") from exc
 
-    row = _save_course(session, course, sources, mode)
+    row = _save_course(session, course, sources, mode, positions)
     session.query(models.LlmCall).filter(models.LlmCall.run_id == run_id).update(
         {"course_id": row.id}
     )
@@ -660,17 +706,18 @@ def _legacy_refusal(failure: ingest.SourceFailure, stage: str) -> HTTPException:
 @dataclass
 class Ingested:
     """What _ingest_or_refuse hands to _run_generation_from: the sources it read, plus
-    the chunks and owners chunk_sources cut from them.
+    the chunks, owners and positions chunk_sources_with_positions cut from them.
 
     Internal to this module, not a public API shape. A dataclass rather than a third
     tuple element so a caller unpacking (chunks, owners) two-at-a-time does not silently
-    start reading the wrong thing; `sources` is what persistence needs and the other two
-    are what generation has always taken.
+    start reading the wrong thing; `sources` and `positions` are what persistence needs
+    and `chunks`/`owners` are what generation has always taken.
     """
 
     sources: list[ingest.Source]
     chunks: list[str]
     owners: list[str]
+    positions: list[int]
 
 
 def _ingest_or_refuse(specs: list[ingest.SourceSpec], *, legacy: bool, stage: str) -> Ingested:
@@ -713,13 +760,15 @@ def _ingest_or_refuse(specs: list[ingest.SourceSpec], *, legacy: bool, stage: st
         if legacy:
             raise HTTPException(422, message)
         raise _unprocessable("source_too_large", message)
-    chunks, owners = ingest.chunk_sources(sources)
-    return Ingested(sources=sources, chunks=chunks, owners=owners)
+    chunks, owners, positions = ingest.chunk_sources_with_positions(sources)
+    return Ingested(sources=sources, chunks=chunks, owners=owners, positions=positions)
 
 
-def _run_generation_from(session: Session, ingested: Ingested) -> dict:
-    """Unpack what _ingest_or_refuse returns and run the pipeline on all three parts."""
-    return _run_generation(session, ingested.chunks, ingested.owners, ingested.sources)
+def _run_generation_from(session: Session, ingested: Ingested, mode: str = "lessons") -> dict:
+    """Unpack what _ingest_or_refuse returns and run the pipeline on all four parts."""
+    return _run_generation(
+        session, ingested.chunks, ingested.owners, ingested.sources, mode, ingested.positions
+    )
 
 
 def _parse_multipart_sources(raw: str) -> list[SourceInput]:
@@ -784,17 +833,26 @@ def generate_from_text(body: GenerateRequest, session: Session = Depends(get_ses
         for index, source in enumerate(body.sources or [])
     ]
     ingested = _ingest_or_refuse(specs, legacy=not body.used_canonical_field(), stage="url")
-    return _run_generation_from(session, ingested)
+    return _run_generation_from(session, ingested, body.mode)
 
 
 @app.post("/courses/generate/pdf")
-def generate_from_pdf(file: list[UploadFile], session: Session = Depends(get_session)):
+def generate_from_pdf(
+    file: list[UploadFile],
+    mode: Literal["lessons", "source"] = Form(default="lessons"),
+    session: Session = Depends(get_session),
+):
     """One or more PDFs, uploaded under the field name `file`.
 
     STILL `file` AND NOT `files`, which is not a naming slip. FastAPI collects every part
     with that name into the list, so a client sending one part is unchanged and a client
     sending five needs no new field. Renaming it would have broken every existing caller to
     buy nothing.
+
+    `mode` defaults to "lessons", so every existing caller is unaffected; see
+    GenerateRequest.mode for what "source" does. It is accepted HERE and not only on the
+    multipart route because this is the route the web UI posts uploads to
+    (frontend/src/lib/api.ts), and a PDF is the source type source mode exists to display.
     """
     specs = [
         ingest.SourceSpec(
@@ -805,7 +863,7 @@ def generate_from_pdf(file: list[UploadFile], session: Session = Depends(get_ses
         for index, upload in enumerate(file)
     ]
     ingested = _ingest_or_refuse(specs, legacy=len(specs) <= 1, stage="pdf")
-    return _run_generation_from(session, ingested)
+    return _run_generation_from(session, ingested, mode)
 
 
 async def _raw_sources_field(request: Request) -> Any:
@@ -826,6 +884,7 @@ def generate_multipart(
     raw_sources: Any = Depends(_raw_sources_field),
     sources: str | None = Form(default=None),
     file: list[UploadFile] = File(default=[]),
+    mode: Literal["lessons", "source"] = Form(default="lessons"),
     session: Session = Depends(get_session),
 ):
     """One course from URLs, pasted text and PDFs combined in a single request.
@@ -834,6 +893,9 @@ def generate_multipart(
     {"kind", "value", "ref"} shape /courses/generate takes in its body. `file` is the same
     field the PDF-only route uses, so an upload behaves identically on both. Either part may
     be omitted, but not both.
+
+    `mode` defaults to "lessons", so every existing caller is unaffected; see
+    GenerateRequest.mode for what "source" does.
 
     COMBINED ORDER IS `sources` THEN `file`, both in the order their parts arrived. That
     order is what `index` in a refusal counts from, and what the outline prompt sees the
@@ -912,7 +974,7 @@ def generate_multipart(
     )
 
     ingested = _ingest_or_refuse(specs, legacy=False, stage="multipart")
-    return _run_generation_from(session, ingested)
+    return _run_generation_from(session, ingested, mode)
 
 
 @app.get("/meta/limits")
@@ -960,6 +1022,106 @@ def get_course(course_id: int, session: Session = Depends(get_session)):
             for m in row.modules
         ],
     }
+
+
+# CR, LF, double quotes (Content-Disposition's own delimiter) and either path separator.
+# ref is untrusted (a pasted label, an uploaded filename, a URL) and lands in an HTTP
+# response header below; this is what keeps it from being able to inject a second header
+# or escape the quoted filename parameter.
+# Control bytes too, not just CR and LF: a NUL in a filename makes h11 reject the
+# whole response, so an odd upload could deny itself its own download.
+_FILENAME_UNSAFE = re.compile(r'[\x00-\x1f\x7f"/\\]')
+
+
+def _sanitize_source_filename(ref: str) -> str:
+    """`ref` made safe to quote inside a Content-Disposition filename parameter.
+
+    Falls back to a fixed name if stripping leaves nothing usable, and always ends in
+    .pdf since this only ever names a stored PDF blob.
+    """
+    cleaned = _FILENAME_UNSAFE.sub("", ref).strip()
+    if not cleaned:
+        cleaned = "source"
+    if not cleaned.lower().endswith(".pdf"):
+        cleaned += ".pdf"
+    return cleaned
+
+
+@app.get("/courses/{course_id}/sources")
+def list_course_sources(course_id: int, session: Session = Depends(get_session)):
+    """The sources a course was built from, in the order the outline saw them.
+
+    Never returns blob bytes, only whether one is stored, so a client can decide to ask
+    for GET .../sources/{source_id}/file rather than being handed the file inline.
+
+    locator is re-validated against youtube.WATCH_ID here, not just at write time: it
+    is stored data a future migration or a bug could corrupt, and this is the last
+    checkpoint before it reaches a client. An invalid one is reported as "" rather than
+    echoed, the same "absent, not wrong" choice ingest.chunk_text makes elsewhere.
+    """
+    course = session.get(models.Course, course_id)
+    if not course:
+        raise HTTPException(404, "Course not found")
+    rows = (
+        session.query(models.CourseSource)
+        .filter(models.CourseSource.course_id == course_id)
+        .order_by(models.CourseSource.position)
+        .all()
+    )
+    return [
+        {
+            "id": row.id,
+            "position": row.position,
+            "kind": row.kind,
+            "ref": row.ref,
+            "title": row.title,
+            "locator": row.locator if youtube.WATCH_ID.fullmatch(row.locator or "") else "",
+            "char_count": row.char_count,
+            "byte_size": row.byte_size,
+            "has_file": row.blob is not None,
+        }
+        for row in rows
+    ]
+
+
+@app.get("/courses/{course_id}/sources/{source_id}/file")
+def get_course_source_file(
+    course_id: int, source_id: int, session: Session = Depends(get_session)
+):
+    """The original bytes behind a PDF source.
+
+    Serves PDFs only. The Content-Type sent is the fixed literal "application/pdf",
+    never CourseSourceBlob.media_type: that column is data the upload request supplied
+    and this endpoint does not trust it to pick what a browser is told to do with the
+    bytes. A source whose kind is not "pdf" is answered the same 404 as one with no blob
+    at all, since neither has a file to serve.
+
+    A source_id that belongs to a DIFFERENT course is also a 404, the same message as
+    "no such source", rather than leaking that the id exists at all.
+    """
+    course = session.get(models.Course, course_id)
+    if not course:
+        raise HTTPException(404, "Course not found")
+    source = session.get(models.CourseSource, source_id)
+    if not source or source.course_id != course_id:
+        raise HTTPException(404, "Source not found")
+    if source.kind != "pdf" or source.blob is None:
+        raise HTTPException(404, "Source has no file")
+
+    filename = _sanitize_source_filename(source.ref or source.title)
+    return Response(
+        content=source.blob.data,
+        media_type="application/pdf",
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": f'inline; filename="{filename}"',
+            # sandbox with no allow-* keeps a PDF a browser renders inline from running
+            # script or navigating the top frame if it ever contains anything active;
+            # default-src 'none' denies it any other capability besides being displayed.
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @app.get("/courses/{course_id}/deletion-preview")

@@ -24,6 +24,9 @@ PAYLOAD_KEYS = {
     "concepts_retired",
     "concepts_kept",
     "spend_usd",
+    # Additive (B6): sources deletion._summary now reports, on top of the keys above.
+    "sources",
+    "stored_bytes",
 }
 
 

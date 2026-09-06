@@ -115,6 +115,31 @@ def keys_named_elsewhere(session: Session, course: models.Course) -> set[str]:
     return concept_keys(others)
 
 
+def _source_stats(session: Session, course: models.Course) -> tuple[int, int]:
+    """(count of course_sources rows, total bytes of blobs actually stored) for a course.
+
+    stored_bytes sums CourseSourceBlob.data lengths through the join, not
+    CourseSource.byte_size: byte_size is recorded for every source that carried raw
+    bytes regardless of mode (see _save_course), while a blob is only written in
+    "source" mode, and the two disagree exactly there. This counts what would really be
+    freed by the cascade, not what the upload happened to weigh.
+    """
+    count = (
+        session.query(func.count(models.CourseSource.id))
+        .filter(models.CourseSource.course_id == course.id)
+        .scalar()
+        or 0
+    )
+    stored_bytes = (
+        session.query(func.sum(func.length(models.CourseSourceBlob.data)))
+        .join(models.CourseSource, models.CourseSourceBlob.source_id == models.CourseSource.id)
+        .filter(models.CourseSource.course_id == course.id)
+        .scalar()
+        or 0
+    )
+    return count, int(stored_bytes)
+
+
 def _attempt_count(session: Session, course: models.Course) -> int:
     """Answers recorded in this course, counted through the join rather than by id list.
 
@@ -145,6 +170,7 @@ def _summary(session: Session, course: models.Course) -> tuple[dict, set[str]]:
     elsewhere = keys_named_elsewhere(session, course)
     retired = mine - elsewhere
     kept = mine & elsewhere
+    source_count, stored_bytes = _source_stats(session, course)
 
     spend = (
         session.query(func.sum(models.LlmCall.estimated_cost_usd))
@@ -176,6 +202,11 @@ def _summary(session: Session, course: models.Course) -> tuple[dict, set[str]]:
         "concepts_retired": len(retired),
         "concepts_kept": len(kept),
         "spend_usd": float(spend),
+        # Additive: a new key, nothing renamed. course_sources cascades with the course
+        # (see models.Course.sources), so these counts are what the same delete already
+        # destroys; this only reports it.
+        "sources": source_count,
+        "stored_bytes": stored_bytes,
     }
     return payload, retired
 

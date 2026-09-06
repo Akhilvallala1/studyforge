@@ -616,10 +616,30 @@ def chunk_sources(sources: list[Source]) -> tuple[list[str], list[str]]:
     sources are FIVE chunks here and ONE concatenated, so a concatenating measurement
     reports an unrouted run for a routed one. The eval harness had precisely that bug.
     """
+    chunks, owners, _positions = chunk_sources_with_positions(sources)
+    return chunks, owners
+
+
+def chunk_sources_with_positions(
+    sources: list[Source],
+) -> tuple[list[str], list[str], list[int]]:
+    """Same chunking as chunk_sources, plus positions[i]: the 0-based index into
+    `sources` that chunk i came from.
+
+    `owners` (the ref) is not safe to map a chunk back to a source by, because refs are
+    not unique: two uploaded files can share a filename, and reconstructing positions by
+    watching `owners` change value would merge two adjacent sources that happen to share
+    one. `positions` is written from the same loop that owns the real source index, so it
+    is exact rather than reconstructed. chunk_sources keeps its existing 2-tuple return so
+    evals/ and every other caller of it is unaffected; callers that need the mapping (a
+    lesson's segments back to a source) call this function instead.
+    """
     chunks: list[str] = []
     owners: list[str] = []
-    for source in sources:
+    positions: list[int] = []
+    for position, source in enumerate(sources):
         for chunk in chunk_text(source.text):
             chunks.append(chunk)
             owners.append(source.ref)
-    return chunks, owners
+            positions.append(position)
+    return chunks, owners, positions
