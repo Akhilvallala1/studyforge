@@ -411,7 +411,7 @@ def from_url(key: str, url: str) -> Source:
 
 
 def from_youtube(key: str, url: str, transcript: "youtube.Transcript") -> Source:
-    # kind stays "url": the caller submitted a URL (main.py's SourceSpec.kind has no
+    # kind stays "url": the caller submitted a URL (main.py's SourceInput.kind has no
     # "youtube" option), and load_source is the one that noticed it names a video.
     return Source(key=key, kind="url", ref=url, text=transcript.text())
 
