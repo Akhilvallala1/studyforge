@@ -330,13 +330,27 @@ def test_every_failure_is_reported_not_only_the_first(client, monkeypatch):
 
 
 def _unresolvable(monkeypatch):
-    """Make every name lookup fail. Safe to apply globally in a test that sends only
-    UNRESOLVABLE_URL, and the reason those tests do not also send an IP literal: those
-    resolve through getaddrinfo too and would fail here for the wrong reason."""
+    """Make every name lookup fail with a genuine NXDOMAIN. Safe to apply globally in a
+    test that sends only UNRESOLVABLE_URL, and the reason those tests do not also send
+    an IP literal: those resolve through getaddrinfo too and would fail here for the
+    wrong reason."""
+    import socket as socket_module
+
     def no_such_host(*a, **k):
-        raise OSError("Name or service not known")
+        raise socket_module.gaierror(socket_module.EAI_NONAME, "Name or service not known")
 
     monkeypatch.setattr(ingest.socket, "getaddrinfo", no_such_host)
+
+
+def _transient_dns_failure(monkeypatch):
+    """Make every name lookup fail the way a resolver outage does, not the way a
+    mistyped hostname does."""
+    import socket as socket_module
+
+    def resolver_down(*a, **k):
+        raise socket_module.gaierror(socket_module.EAI_AGAIN, "Temporary failure in name resolution")
+
+    monkeypatch.setattr(ingest.socket, "getaddrinfo", resolver_down)
 
 
 def test_a_mistyped_hostname_is_not_reported_as_unsafe(client, monkeypatch):
@@ -374,6 +388,50 @@ def test_a_mistyped_hostname_on_the_legacy_alias_keeps_its_own_message(client, m
     detail = response.json()["detail"]
     assert "Could not resolve" in detail
     assert "No usable text" not in detail
+
+
+def test_a_transient_dns_failure_is_reported_as_retryable(client, monkeypatch):
+    """A resolver outage is not a bad hostname, so it must not come back as
+    url_unresolvable's 400 (do not retry). It should surface the same way any other
+    fetch failure does: fetch_failed inside the 422 source list."""
+    monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
+    _transient_dns_failure(monkeypatch)
+
+    response = _generate(client, {"sources": [{"kind": "url", "value": UNRESOLVABLE_URL}]})
+
+    assert response.status_code == 422, response.text
+    (entry,) = response.json()["detail"]["sources"]
+    assert entry["error"] == ingest.FETCH_FAILED
+    assert entry["error"] != ingest.URL_UNRESOLVABLE
+
+
+def test_a_transient_dns_failure_on_the_legacy_alias_gets_a_502(client, monkeypatch):
+    """The legacy single-url body keeps fetch_failed's own status: 502, safe to retry,
+    rather than url_unresolvable's 400."""
+    monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
+    _transient_dns_failure(monkeypatch)
+
+    response = _generate(client, {"url": UNRESOLVABLE_URL})
+
+    assert response.status_code == 502, response.text
+
+
+def test_allow_private_urls_does_not_change_how_an_unresolvable_name_is_reported(
+    client, monkeypatch
+):
+    """STUDYFORGE_ALLOW_PRIVATE_URLS governs which resolved addresses are permitted, not
+    whether a name resolves. A mistyped hostname must still come back as
+    url_unresolvable, the same as when the setting is off, rather than falling to a
+    generic fetch failure once private addresses are allowed."""
+    monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
+    monkeypatch.setenv("STUDYFORGE_ALLOW_PRIVATE_URLS", "true")
+    _unresolvable(monkeypatch)
+
+    response = _generate(client, {"sources": [{"kind": "url", "value": UNRESOLVABLE_URL}]})
+
+    assert response.status_code == 422, response.text
+    (entry,) = response.json()["detail"]["sources"]
+    assert entry["error"] == ingest.URL_UNRESOLVABLE
 
 
 def test_one_bad_source_among_good_ones_generates_nothing(client, monkeypatch):

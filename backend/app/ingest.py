@@ -200,15 +200,24 @@ def _check_host(url: str) -> None:
         # arrives here as a bare ValueError. Left unwrapped it escapes as a generic
         # failure and the caller is told to retry a URL that cannot work.
         raise UnsafeURLError("That URL has an invalid port") from exc
-    if _allow_private_hosts():
-        return
 
     try:
         # Every address the name resolves to, since a name can carry both a public
-        # and a private record and httpx may pick either.
+        # and a private record and httpx may pick either. Resolved unconditionally, even
+        # when STUDYFORGE_ALLOW_PRIVATE_URLS is set, so a bad hostname is reported the
+        # same way either way instead of only when private addresses are refused.
         infos = socket.getaddrinfo(host, port or (443 if parsed.scheme == "https" else 80))
-    except OSError as exc:
-        raise UnresolvableURLError(f"Could not resolve {host}") from exc
+    except socket.gaierror as exc:
+        # Only "no such name", not every OSError getaddrinfo can raise: a resolver
+        # outage or a downed network is an infrastructure fault, not a bad URL, and is
+        # left to propagate so it comes back as fetch_failed/502 instead.
+        nodata = getattr(socket, "EAI_NODATA", None)
+        if exc.errno in (socket.EAI_NONAME, nodata):
+            raise UnresolvableURLError(f"Could not resolve {host}") from exc
+        raise
+
+    if _allow_private_hosts():
+        return
 
     for info in infos:
         address = ipaddress.ip_address(info[4][0])

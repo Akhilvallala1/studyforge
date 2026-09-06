@@ -1,3 +1,5 @@
+import socket
+
 import httpx
 import pytest
 
@@ -72,7 +74,7 @@ class TestURLSafety:
         """A name that does not resolve is not a safety refusal. Both stop the fetch, but
         only one is worth pointing at STUDYFORGE_ALLOW_PRIVATE_URLS."""
         def no_such_host(*a, **k):
-            raise OSError("Name or service not known")
+            raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
 
         monkeypatch.setattr(ingest.socket, "getaddrinfo", no_such_host)
 
@@ -81,16 +83,56 @@ class TestURLSafety:
 
     def test_unresolvable_is_a_kind_of_unsafe_url_error(self, monkeypatch):
         """Pins the subclass relation, which is the only thing this asserts. No reachable
-        handler depends on it today: load_source catches UnresolvableURLError first, and
-        generation_failure's isinstance runs after ingestion has already converted every
-        one of these into a SourceError. It is here so a caller written against the base
-        class keeps failing closed if one is ever added."""
+        handler depends on it today: load_source catches UnresolvableURLError first. It is
+        here so a caller written against the base class keeps failing closed if one is
+        ever added."""
         def no_such_host(*a, **k):
-            raise OSError("Name or service not known")
+            raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
 
         monkeypatch.setattr(ingest.socket, "getaddrinfo", no_such_host)
 
         with pytest.raises(ingest.UnsafeURLError):
+            ingest.extract_url("https://tpyo.example/")
+
+    def test_a_transient_resolver_failure_is_retryable_not_unresolvable(self, monkeypatch):
+        """EAI_AGAIN means the resolver itself is having trouble right now, not that the
+        name is bad. It must not become UnresolvableURLError (400, do not retry); it
+        should fall through to load_source's generic handler, which reports fetch_failed
+        (502, safe to retry)."""
+        def transient(*a, **k):
+            raise socket.gaierror(socket.EAI_AGAIN, "Temporary failure in name resolution")
+
+        monkeypatch.setattr(ingest.socket, "getaddrinfo", transient)
+
+        with pytest.raises(socket.gaierror):
+            ingest.extract_url("https://tpyo.example/")
+
+    def test_a_non_gaierror_oserror_is_also_retryable(self, monkeypatch):
+        """A downed network (no route, no DNS server reachable) can raise a plain OSError
+        rather than a gaierror. That is an infrastructure fault too, not a bad hostname."""
+        def network_down(*a, **k):
+            raise OSError("Network is unreachable")
+
+        monkeypatch.setattr(ingest.socket, "getaddrinfo", network_down)
+
+        with pytest.raises(OSError) as excinfo:
+            ingest.extract_url("https://tpyo.example/")
+        assert not isinstance(excinfo.value, ingest.UnsafeURLError)
+
+    def test_allow_private_urls_still_reports_unresolvable_names_the_same_way(
+        self, monkeypatch
+    ):
+        """STUDYFORGE_ALLOW_PRIVATE_URLS is about which resolved addresses are permitted,
+        not about whether a name resolves at all. A name that does not exist must come
+        back the same way (url_unresolvable) whether or not private addresses are
+        allowed, rather than falling to a generic fetch failure once the setting flips."""
+        def no_such_host(*a, **k):
+            raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+
+        monkeypatch.setattr(ingest.socket, "getaddrinfo", no_such_host)
+        monkeypatch.setenv("STUDYFORGE_ALLOW_PRIVATE_URLS", "true")
+
+        with pytest.raises(ingest.UnresolvableURLError, match="Could not resolve"):
             ingest.extract_url("https://tpyo.example/")
 
     @pytest.mark.parametrize("url", ["http://example.com:99999/", "http://example.com:notaport/"])
