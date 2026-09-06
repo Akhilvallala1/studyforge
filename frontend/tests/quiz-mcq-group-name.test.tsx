@@ -28,13 +28,13 @@ vi.mock("@/lib/api", async (importOriginal) => ({
 
 const QUESTION = "Which orbit shape keeps a satellite's altitude constant?";
 
-// The question <p> opens with a numbering <span> whose separation from the text is a
-// margin, so the accessible name concatenates to "1." + the question with no space in
-// between. Pinned rather than matched loosely: the number is part of what a screen
-// reader reads out, and a test that only looked for the question would not notice it
-// going missing. Pre-existing and not this change's subject, but it now reaches the
-// learner through one more control, so the exact string is the honest assertion.
-const NAMED = (n: number, question = QUESTION) => `${n}.${question}`;
+// The number is part of what a screen reader reads out, so the whole name is pinned
+// rather than matched loosely: a test that looked only for the question would not notice
+// the number going missing. The SPACE after it is equally pinned. This comment used to
+// record its absence as pre-existing and out of scope; qa-tester then heard the result
+// ("1.Which orbit shape") in a browser, so QuizSection now emits an explicit {" "} and
+// this asserts it. Removing that expression turns every test below red except the last.
+const NAMED = (n: number, question = QUESTION) => `${n}. ${question}`;
 
 describe("mcq option group", () => {
   test("is a radiogroup named by its question", () => {

@@ -125,8 +125,13 @@ export type SpendGroup = "course" | "remediation" | "failed_run";
 
 export interface PerCourseUsage {
   group: SpendGroup;
-  /** Null for every group except "course". */
+  /**
+   * Null for every group except "course". NOT a liveness signal: the backend keeps a
+   * deleted course's id so its spend stays in its own bucket, and SQLite reissues that
+   * id to the next course created. Use `title` to ask whether the course still exists.
+   */
   course_id: number | null;
+  /** The LIVE course's title, and null once it is deleted. The one liveness signal. */
   title: string | null;
   /** What the leftmost column shows, for courses and non-course groups alike. */
   label: string;
