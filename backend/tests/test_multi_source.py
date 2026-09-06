@@ -34,6 +34,8 @@ GOOD_TEXT = "Gradient descent walks downhill by following the slope. " * 30
 # rather than a domain that fails to resolve, so the failure is the guard's and not DNS's.
 PRIVATE_URL = "http://127.0.0.1/wiki"
 OTHER_PRIVATE_URL = "http://10.0.0.5/notes"
+# A name, not an IP literal, because the failure under test is the lookup itself.
+UNRESOLVABLE_URL = "http://tpyo.example/notes"
 
 
 class NeverCalledProvider:
@@ -325,6 +327,53 @@ def test_every_failure_is_reported_not_only_the_first(client, monkeypatch):
             "the guard's own message, which names the host and how to allow it, rather "
             "than a generic one"
         )
+
+
+def _unresolvable(monkeypatch):
+    """Make every name lookup fail. Safe to apply globally in a test that sends only
+    UNRESOLVABLE_URL, and the reason those tests do not also send an IP literal: those
+    resolve through getaddrinfo too and would fail here for the wrong reason."""
+    def no_such_host(*a, **k):
+        raise OSError("Name or service not known")
+
+    monkeypatch.setattr(ingest.socket, "getaddrinfo", no_such_host)
+
+
+def test_a_mistyped_hostname_is_not_reported_as_unsafe(client, monkeypatch):
+    """A name that does not resolve used to come back as `unsafe_url`, which told the
+    caller their URL had been refused on safety grounds and offered them
+    STUDYFORGE_ALLOW_PRIVATE_URLS. Neither is true when the name simply does not resolve,
+    and the setting would not have helped."""
+    monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
+    _unresolvable(monkeypatch)
+
+    response = _generate(client, {"sources": [{"kind": "url", "value": UNRESOLVABLE_URL}]})
+
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["error"] == "source_failed"
+    (entry,) = detail["sources"]
+    assert entry["error"] == ingest.URL_UNRESOLVABLE
+    assert entry["error"] != ingest.UNSAFE_URL
+    assert "Could not resolve" in entry["message"]
+    assert "private or local network" not in entry["message"], (
+        "the safety copy names a setting that cannot fix a hostname that does not exist"
+    )
+
+
+def test_a_mistyped_hostname_on_the_legacy_alias_keeps_its_own_message(client, monkeypatch):
+    """The consumer a new code most easily breaks. _legacy_refusal branches on the code,
+    so without a url_unresolvable branch this falls to the bottom of that chain and a
+    name that does not resolve is reported as "No usable text found in the source"."""
+    monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
+    _unresolvable(monkeypatch)
+
+    response = _generate(client, {"url": UNRESOLVABLE_URL})
+
+    assert response.status_code == 400, response.text
+    detail = response.json()["detail"]
+    assert "Could not resolve" in detail
+    assert "No usable text" not in detail
 
 
 def test_one_bad_source_among_good_ones_generates_nothing(client, monkeypatch):

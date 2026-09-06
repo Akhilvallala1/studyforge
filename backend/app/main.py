@@ -566,12 +566,19 @@ def _legacy_refusal(failure: ingest.SourceFailure, stage: str) -> HTTPException:
     contract too. Retiring the PDF half needs its own decision: either a second field name
     that means "I understand the new shape", or a major version that accepts the break.
 
-    The mapping is exactly what the old code did. An unsafe URL keeps the guard's own
-    message and its 400; a fetch failure keeps its 502; a bad PDF and an empty source keep
-    their 400s. generation_failure is not reused here because it takes a live exception and
-    wants a traceback, and by this point the failure is a value that was already logged.
+    The mapping is what the old code did, plus url_unresolvable. An unsafe URL keeps the
+    guard's own message and its 400; a fetch failure keeps its 502; a bad PDF and an empty
+    source keep their 400s. generation_failure is not reused here because it takes a live
+    exception and wants a traceback, and by this point the failure is a value that was
+    already logged.
+
+    url_unresolvable is 400 with the guard's own message, alongside unsafe_url rather than
+    with fetch_failed's 502: nothing was ever contacted, so there is no upstream to blame
+    and no reason to tell the caller to retry. Without this branch it would fall to the
+    bottom and a mistyped hostname would be reported as "No usable text found in the
+    source", which is why a new code cannot be added to ingest alone.
     """
-    if failure.error == ingest.UNSAFE_URL:
+    if failure.error in {ingest.UNSAFE_URL, ingest.URL_UNRESOLVABLE}:
         return HTTPException(400, failure.message)
     if failure.error == ingest.FETCH_FAILED:
         return HTTPException(502, URL_FETCH_MESSAGE)
