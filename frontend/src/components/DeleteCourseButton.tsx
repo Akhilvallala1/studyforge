@@ -486,11 +486,10 @@ export function DeleteCourseButton({
           className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-500 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:text-zinc-100"
         >
           {/*
-            A visually hidden suffix, not aria-label: aria-label would replace the
-            visible text outright, which breaks a voice-control user's "click Delete"
-            phrase once several cards are on screen. This keeps "Delete" a literal
-            prefix of the accessible name, which is computed as "Delete <title>" while
-            the on-screen label stays exactly "Delete". See issue #54.
+            A visually hidden suffix rather than aria-label. Both compute the same
+            "Delete <title>" name, measured; the span is preferred because aria-label
+            would restate the visible word in a second place that can drift from it,
+            and because machine translation skips attributes. See issue #54.
           */}
           Delete <span className="sr-only">{title}</span>
         </button>
@@ -525,7 +524,11 @@ export function DeleteCourseButton({
         // confirming button disabled and focus still on the body at this point (the
         // effect above declines for as long as the preview is loading, whichever way it
         // ends up going), nothing else here speaks.
-        <p aria-live="polite" className="mt-1.5 text-[13px] text-zinc-500 dark:text-zinc-400">
+        <p
+          id={consequenceId}
+          aria-live="polite"
+          className="mt-1.5 text-[13px] text-zinc-500 dark:text-zinc-400"
+        >
           Checking what this would delete…
         </p>
       )}
