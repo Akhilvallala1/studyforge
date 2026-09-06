@@ -976,7 +976,7 @@ describe("DeleteCourseButton focus restoration", () => {
     );
 
     const chemistry = screen.getByRole("button", { name: "Delete Organic Chemistry" });
-    const algebra = screen.getByRole("button", { name: "Delete Linear Algebra" });
+    screen.getByRole("button", { name: "Delete Linear Algebra" });
 
     // The course title must arrive through a visually hidden node, not the visible
     // text: strip it out and what remains of the button's own text must still read

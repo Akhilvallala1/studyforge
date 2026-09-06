@@ -350,9 +350,10 @@ export function DeleteCourseButton({
    */
   const generationRef = useRef(0);
   /*
-   * One id shared by the preview text and the failure alert, never both mounted at
-   * once (the render below is a `error ? ... : preview ? ...` ternary), so a single
-   * id is enough for both buttons' aria-describedby to reach whichever is on screen.
+   * One id shared by all three things the panel can be showing: the failure alert, the
+   * preview text, and the loading line. They are the arms of a single
+   * `error ? ... : preview ? ... : ...` ternary, so exactly one is mounted at any time
+   * and the id stays unique. A fourth carrier would have to join that ternary too.
    * See issue #51.
    */
   const consequenceId = `delete-consequence-${courseId}`;
