@@ -107,6 +107,36 @@ class TestURLSafety:
         with pytest.raises(socket.gaierror):
             ingest.extract_url("https://tpyo.example/")
 
+    def test_eai_nodata_is_unresolvable_where_the_platform_defines_it(self, monkeypatch):
+        """EAI_NODATA is the other "no such name" spelling. On Windows it is the same
+        value as EAI_NONAME, so that arm is invisible here; a distinct sentinel makes the
+        branch real on every platform rather than only on the ones where the constants
+        differ."""
+        monkeypatch.setattr(ingest.socket, "EAI_NODATA", 4242, raising=False)
+
+        def no_data(*a, **k):
+            raise socket.gaierror(4242, "No address associated with hostname")
+
+        monkeypatch.setattr(ingest.socket, "getaddrinfo", no_data)
+
+        with pytest.raises(ingest.UnresolvableURLError, match="Could not resolve"):
+            ingest.extract_url("https://tpyo.example/")
+
+    def test_a_gaierror_with_no_errno_is_retryable_without_eai_nodata(self, monkeypatch):
+        """musl (Alpine) does not define EAI_NODATA at all. Looking it up with a None
+        default turns the membership test into `errno in (EAI_NONAME, None)`, and a
+        gaierror carrying no errno then matches and is reported as a do-not-retry 400 on
+        a URL that may be perfectly fine. A one-argument gaierror is that shape."""
+        monkeypatch.delattr(ingest.socket, "EAI_NODATA", raising=False)
+
+        def odd(*a, **k):
+            raise socket.gaierror("the resolver said something unexpected")
+
+        monkeypatch.setattr(ingest.socket, "getaddrinfo", odd)
+
+        with pytest.raises(socket.gaierror):
+            ingest.extract_url("https://tpyo.example/")
+
     def test_a_non_gaierror_oserror_is_also_retryable(self, monkeypatch):
         """A downed network (no route, no DNS server reachable) can raise a plain OSError
         rather than a gaierror. That is an infrastructure fault too, not a bad hostname."""

@@ -210,9 +210,11 @@ def _check_host(url: str) -> None:
     except socket.gaierror as exc:
         # Only "no such name", not every OSError getaddrinfo can raise: a resolver
         # outage or a downed network is an infrastructure fault, not a bad URL, and is
-        # left to propagate so it comes back as fetch_failed/502 instead.
-        nodata = getattr(socket, "EAI_NODATA", None)
-        if exc.errno in (socket.EAI_NONAME, nodata):
+        # left to propagate so it comes back as fetch_failed/502 instead. EAI_NODATA is
+        # not defined by every libc (musl omits it) and must not fall back to None: a
+        # gaierror carrying no errno would then match and be reported as a bad name.
+        no_such_name = {socket.EAI_NONAME, getattr(socket, "EAI_NODATA", socket.EAI_NONAME)}
+        if exc.errno in no_such_name:
             raise UnresolvableURLError(f"Could not resolve {host}") from exc
         raise
 
