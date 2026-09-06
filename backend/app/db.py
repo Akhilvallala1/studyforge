@@ -118,6 +118,21 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # means this row's course still exists, so its id may be resolved. Rows already in
     # the wild backfill to NULL and go on resolving exactly as they did.
     ("llm_calls", "course_title_at_deletion", "VARCHAR(300)"),
+    # Source-anchored study: what a lesson renders. NOT NULL with a constant default, the
+    # matched pair described above: models.Lesson.content_kind carries
+    # server_default=text("'lesson'") and this definition carries the same default, so
+    # upgraded == fresh and every lesson already in the table backfills to "lesson"
+    # rather than to NULL, which is true of every one of them.
+    ("lessons", "content_kind", "VARCHAR(20) NOT NULL DEFAULT 'lesson'"),
+    # The CourseSource a source-mode lesson renders. Plain INTEGER with NO REFERENCES,
+    # and the reason is specific to this column rather than a house style: the ALTER
+    # below and create_all's DDL must produce IDENTICAL schemas for upgraded == fresh,
+    # and that comparison reads inspector.get_columns, which does not report foreign
+    # keys at all. A REFERENCES clause here would pass that comparison silently while
+    # making the two schemas actually differ. This is a DIFFERENT reason from
+    # llm_calls.course_id's missing FK above, which exists so usage rows survive a
+    # course deletion; do not conflate the two.
+    ("lessons", "source_id", "INTEGER"),
 )
 
 

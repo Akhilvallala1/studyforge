@@ -8,6 +8,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -52,6 +53,9 @@ class Course(Base):
     modules: Mapped[list["Module"]] = relationship(
         back_populates="course", cascade="all, delete-orphan", order_by="Module.position"
     )
+    sources: Mapped[list["CourseSource"]] = relationship(
+        back_populates="course", cascade="all, delete-orphan", order_by="CourseSource.position"
+    )
 
 
 class Module(Base):
@@ -78,6 +82,18 @@ class Lesson(Base):
     content: Mapped[str] = mapped_column(Text, default="")  # markdown
     concepts: Mapped[list] = mapped_column(JSON, default=list)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # "lesson" | "source". A source-mode lesson renders the source itself rather than
+    # LLM-written prose about it, so a reader needs this before touching `content`. NOT
+    # NULL with a constant default: every lesson ever written is "lesson", so backfilling
+    # existing rows to that value is simply true of them. Matched with the ADDED_COLUMNS
+    # entry in app/db.py; see the note there before changing either half alone.
+    content_kind: Mapped[str] = mapped_column(
+        String(20), default="lesson", server_default=text("'lesson'")
+    )
+    # The CourseSource this lesson renders, in source mode; NULL in lesson mode. Plain
+    # Integer with NO ForeignKey, deliberately: see the ADDED_COLUMNS entry in app/db.py
+    # for why a FK here would defeat the very comparison that entry exists to satisfy.
+    source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     module: Mapped[Module] = relationship(back_populates="lessons")
     quiz_items: Mapped[list["QuizItem"]] = relationship(
@@ -100,6 +116,62 @@ class QuizItem(Base):
     attempts: Mapped[list["Attempt"]] = relationship(
         back_populates="quiz_item", cascade="all, delete-orphan"
     )
+
+
+class CourseSource(Base):
+    """One piece of material a course was built from: a URL, a paste, or a PDF.
+
+    Brand new table, so it needs no ADDED_COLUMNS entry: create_all handles a table it
+    has never seen, and only an ALTER on a table that already shipped needs one.
+
+    position orders the sources as the request listed them, matching ingest.Source's own
+    order, which is the order the outline prompt saw them in. kind mirrors
+    ingest.Source.kind ("url" | "text" | "pdf"). ref is the cleaned label
+    (ingest.clean_ref), locator is the stable handle (a YouTube video id, "" otherwise),
+    and char_count/byte_size are recorded at write time rather than derived, so a row
+    stays readable without re-reading the blob or the source text.
+    """
+
+    __tablename__ = "course_sources"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    course_id: Mapped[int] = mapped_column(ForeignKey("courses.id"))
+    position: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(20))
+    ref: Mapped[str] = mapped_column(String(200), default="")
+    title: Mapped[str] = mapped_column(String(300), default="")
+    locator: Mapped[str] = mapped_column(String(64), default="")
+    char_count: Mapped[int] = mapped_column(Integer, default=0)
+    byte_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    course: Mapped[Course] = relationship(back_populates="sources")
+    blob: Mapped["CourseSourceBlob | None"] = relationship(
+        back_populates="source", cascade="all, delete-orphan", uselist=False
+    )
+
+
+class CourseSourceBlob(Base):
+    """The original bytes behind a PDF source, kept so the source can be displayed as
+    itself rather than as prose written about it.
+
+    A separate table from CourseSource rather than a nullable column on it: every read
+    of a CourseSource row (a course listing, a source list) would otherwise pull the
+    blob through the mapper whether or not anything asked for it. Split out, ordinary
+    reads never touch it.
+
+    Keyed on source_id as its own primary key (a 1:1, not a 1:many) because a source has
+    at most one original file. media_type is the MIME type the upload declared, needed to
+    serve the bytes back with a correct Content-Type.
+    """
+
+    __tablename__ = "course_source_blobs"
+
+    source_id: Mapped[int] = mapped_column(ForeignKey("course_sources.id"), primary_key=True)
+    media_type: Mapped[str] = mapped_column(String(100), default="application/pdf")
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+
+    source: Mapped[CourseSource] = relationship(back_populates="blob")
 
 
 class Attempt(Base):

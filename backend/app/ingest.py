@@ -317,12 +317,21 @@ class Source:
     Lifted from evals/sources.py rather than copied. `key` is a short stable handle the
     eval harness groups by; the app leaves it empty, because nothing in the request path
     needs to name a source twice.
+
+    locator and raw both default to their empty forms, which matters because
+    evals/sources.py constructs Source directly and must keep working unmodified.
+    locator is the stable handle persistence keys off: the 11-character YouTube video id
+    for a YouTube source, plumbed through from youtube.video_id rather than re-parsed
+    from ref, and "" for every other kind. raw is the original bytes for a PDF, kept only
+    long enough for _save_course to persist them, and None otherwise.
     """
 
     key: str
     kind: str  # "url" | "text" | "pdf"
     ref: str
     text: str
+    locator: str = ""
+    raw: bytes | None = None
 
     def meta(self) -> dict:
         return {"key": self.key, "kind": self.kind, "ref": self.ref}
@@ -413,7 +422,9 @@ def from_url(key: str, url: str) -> Source:
 def from_youtube(key: str, url: str, transcript: "youtube.Transcript") -> Source:
     # kind stays "url": the caller submitted a URL (main.py's SourceInput.kind has no
     # "youtube" option), and load_source is the one that noticed it names a video.
-    return Source(key=key, kind="url", ref=url, text=transcript.text())
+    return Source(
+        key=key, kind="url", ref=url, text=transcript.text(), locator=transcript.video_id
+    )
 
 
 def from_text(key: str, label: str, text: str) -> Source:
@@ -421,7 +432,7 @@ def from_text(key: str, label: str, text: str) -> Source:
 
 
 def from_pdf_bytes(key: str, label: str, data: bytes) -> Source:
-    return Source(key=key, kind="pdf", ref=label, text=extract_pdf(data))
+    return Source(key=key, kind="pdf", ref=label, text=extract_pdf(data), raw=data)
 
 
 # What a caller is told when the copy dict is missing an entry. Theoretical today, since

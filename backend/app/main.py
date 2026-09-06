@@ -3,6 +3,7 @@ import logging
 import os
 import uuid
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, Literal
 
@@ -462,8 +463,47 @@ def _cost_limit_exceeded(exc: CostLimitExceeded) -> HTTPException:
     )
 
 
-def _save_course(session: Session, course: dict) -> models.Course:
+def _save_course(
+    session: Session,
+    course: dict,
+    sources: list[ingest.Source] | None = None,
+    mode: str = "lessons",
+) -> models.Course:
+    """Persist a generated course, and the sources it was built from.
+
+    `mode` defaults to "lessons" so every existing caller is unaffected: no blob is ever
+    written and every lesson keeps content_kind's own default of "lesson". "source" is
+    for a later session's endpoints, which render the source itself rather than prose
+    about it; when it is passed, each lesson in order is tied to the source at the same
+    position (one lesson per source is what that mode builds), and a PDF source's
+    original bytes are kept alongside it so the source can be displayed as itself.
+
+    byte_size is recorded whenever a source carried raw bytes, regardless of mode: it is
+    a fact about the source, not about whether this run chose to keep the blob.
+    """
     row = models.Course(title=course["title"], description=course["description"])
+    source_rows: list[models.CourseSource] = []
+    for position, source in enumerate(sources or []):
+        source_row = models.CourseSource(
+            position=position,
+            kind=source.kind,
+            ref=source.ref,
+            title=source.ref,
+            locator=source.locator,
+            char_count=len(source.text),
+            byte_size=len(source.raw) if source.raw is not None else None,
+        )
+        if mode == "source" and source.raw is not None:
+            source_row.blob = models.CourseSourceBlob(data=source.raw)
+        row.sources.append(source_row)
+        source_rows.append(source_row)
+    if source_rows:
+        # Flushed so source_rows carry real ids before the lessons below reference them;
+        # commit happens once, at the end, alongside everything else.
+        session.add(row)
+        session.flush()
+
+    lesson_index = 0
     for m_pos, module in enumerate(course["modules"]):
         module_row = models.Module(title=module["title"], position=m_pos)
         for l_pos, lesson in enumerate(module["lessons"]):
@@ -473,6 +513,10 @@ def _save_course(session: Session, course: dict) -> models.Course:
                 content=lesson.get("content", ""),
                 concepts=lesson.get("concepts", []),
             )
+            if mode == "source" and lesson_index < len(source_rows):
+                lesson_row.content_kind = "source"
+                lesson_row.source_id = source_rows[lesson_index].id
+            lesson_index += 1
             for item in lesson.get("quiz", []):
                 lesson_row.quiz_items.append(
                     models.QuizItem(
@@ -491,7 +535,13 @@ def _save_course(session: Session, course: dict) -> models.Course:
     return row
 
 
-def _run_generation(session: Session, chunks: list[str], owners: list[str]) -> dict:
+def _run_generation(
+    session: Session,
+    chunks: list[str],
+    owners: list[str],
+    sources: list[ingest.Source] | None = None,
+    mode: str = "lessons",
+) -> dict:
     """Run the metered generation pipeline, save the course, backfill the run's
     llm_calls rows with the new course id, and return the generate-endpoint response."""
     run_id = uuid.uuid4().hex
@@ -503,7 +553,7 @@ def _run_generation(session: Session, chunks: list[str], owners: list[str]) -> d
     except Exception as exc:
         raise generation_failure(exc, "generate") from exc
 
-    row = _save_course(session, course)
+    row = _save_course(session, course, sources, mode)
     session.query(models.LlmCall).filter(models.LlmCall.run_id == run_id).update(
         {"course_id": row.id}
     )
@@ -607,10 +657,24 @@ def _legacy_refusal(failure: ingest.SourceFailure, stage: str) -> HTTPException:
     return HTTPException(400, "No usable text found in the source")
 
 
-def _ingest_or_refuse(
-    specs: list[ingest.SourceSpec], *, legacy: bool, stage: str
-) -> tuple[list[str], list[str]]:
-    """Read every source, refuse if any failed, and return its chunks and their labels.
+@dataclass
+class Ingested:
+    """What _ingest_or_refuse hands to _run_generation_from: the sources it read, plus
+    the chunks and owners chunk_sources cut from them.
+
+    Internal to this module, not a public API shape. A dataclass rather than a third
+    tuple element so a caller unpacking (chunks, owners) two-at-a-time does not silently
+    start reading the wrong thing; `sources` is what persistence needs and the other two
+    are what generation has always taken.
+    """
+
+    sources: list[ingest.Source]
+    chunks: list[str]
+    owners: list[str]
+
+
+def _ingest_or_refuse(specs: list[ingest.SourceSpec], *, legacy: bool, stage: str) -> Ingested:
+    """Read every source, refuse if any failed, and return its sources, chunks and labels.
 
     FAIL CLOSED, AND IT COSTS NOTHING TO DO SO. Everything here happens before the first
     token is bought: the fetching and the parsing are done, the caps are applied, and only
@@ -649,13 +713,13 @@ def _ingest_or_refuse(
         if legacy:
             raise HTTPException(422, message)
         raise _unprocessable("source_too_large", message)
-    return ingest.chunk_sources(sources)
+    chunks, owners = ingest.chunk_sources(sources)
+    return Ingested(sources=sources, chunks=chunks, owners=owners)
 
 
-def _run_generation_from(session: Session, ingested: tuple[list[str], list[str]]) -> dict:
-    """Unpack what _ingest_or_refuse returns and run the pipeline on both halves."""
-    chunks, owners = ingested
-    return _run_generation(session, chunks, owners)
+def _run_generation_from(session: Session, ingested: Ingested) -> dict:
+    """Unpack what _ingest_or_refuse returns and run the pipeline on all three parts."""
+    return _run_generation(session, ingested.chunks, ingested.owners, ingested.sources)
 
 
 def _parse_multipart_sources(raw: str) -> list[SourceInput]:
