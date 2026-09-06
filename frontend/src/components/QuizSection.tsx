@@ -232,7 +232,18 @@ export function QuizSection({ quiz, progress }: { quiz: QuizItem[]; progress: Qu
                 )}
 
                 {item.kind === "mcq" ? (
-                  <div className="mt-3 flex flex-col gap-2">
+                  <div
+                    className="mt-3 flex flex-col gap-2"
+                    /*
+                      Without this there is no group at all, only loose radios with no
+                      question attached. Named from the question <p> above rather than an
+                      sr-only legend (which is what ConceptPractice and ReviewSession use),
+                      since the real question text is already there under an id, and the
+                      short-answer input below names itself from the same one.
+                    */
+                    role="radiogroup"
+                    aria-labelledby={`quiz-question-${item.id}`}
+                  >
                     {item.options.map((option) => (
                       <label
                         key={option}
