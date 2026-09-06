@@ -389,11 +389,15 @@ export function DeleteCourseButton({
    * choice rather than ours, and it was the only path on this feature that left the
    * learner nowhere at all. Found in a browser by QA.
    *
-   * AN ERROR GOES TO CANCEL RATHER THAN TO THE CONFIRMING BUTTON, and not merely because
-   * it is the likeliest next action. This panel exists to state what a delete would
-   * destroy, so a failed preview is precisely the case where that has NOT been said.
-   * Making the destructive control the default target at the moment we know least about
-   * its consequences is the wrong way round. Cancel is safe, and reopening retries.
+   * BOTH SHAPES GO TO CANCEL RATHER THAN TO THE CONFIRMING BUTTON. Partly because this
+   * panel exists to state what a delete would destroy, so making the destructive control
+   * the default target is wrong on the error path, where that has NOT been said. But the
+   * settled path needs it too, and for a reason of its own: this is an inline panel, not
+   * a modal, so nothing contains Tab. Cancel is rendered BEFORE the confirming button, so
+   * focusing the latter left Cancel reachable only by Shift+Tab, with forward Tab leaving
+   * the panel for the next course's controls. From Cancel both are reachable. Do not
+   * "fix" this by reordering the two buttons, which would put the destructive one first
+   * on screen, nor by trapping Tab in a panel that is not modal.
    *
    * GUARDED ON THE BODY like every other restore in this codebase, which closes a second
    * gap in the same breath. Without it this steals focus twice over: from a learner who
@@ -421,7 +425,7 @@ export function DeleteCourseButton({
     // Neither shape has arrived, so there is nothing settled to place focus on yet.
     if (!preview && !error) return;
     if (document.activeElement !== document.body) return;
-    (error ? cancelRef : confirmRef).current?.focus();
+    cancelRef.current?.focus();
   }, [open, preview, error, loadingPreview]);
 
   // Cancel unmounts the panel that holds the focused Cancel button, so without this
