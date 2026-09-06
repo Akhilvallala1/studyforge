@@ -23,10 +23,14 @@ Closed adaptive-learning platforms lock in your content, your progress history, 
 - [x] Web UI (Next.js)
 - [x] API cost tracking, with a spend alert and an optional hard cap
 - [x] Delete a course, with the whole cascade counted out before you confirm
+- [x] YouTube links as a source, read from the video's captions
+- [ ] Source-anchored study: the video or the PDF shown in the app, with questions under it and no rewritten explanation
 
 **Deleting a course deletes what you did in it.** The cascade is larger than the word suggests: the course goes, and with it its modules, its lessons, their quiz items, and every answer you ever gave in it, which is the table your mastery signal is derived from. Concepts that no surviving course teaches stop being reviewed, and their review history goes with them. A concept another course still teaches keeps its card and its history untouched, which matters more than it sounds: getting that wrong would wipe your memory of a concept because you tidied up one of the two courses that happened to mention it. Your retention, streak and pace are all measured from history, so they can move afterwards, and that is correct rather than a bug, because you really have not done those things any more. The one thing kept is the spend: `/usage` still shows what the course cost, under its own title, permanently, since that is money that was really spent. The confirmation is all that stands between you and the rest of it, so it shows the real counts for your course, produced by the same code that performs the delete rather than by a second description of it that could drift.
 
 Over the API, `DELETE /courses/{course_id}` is deliberately not idempotent: a second delete of the same id is a 404. `DELETE /plan/days-off/{day}` is idempotent because a day off is set membership and removing an absent one leaves you where you asked to be, but a course is an entity, and answering 200 for one that is not there would tell a client its delete had worked when there was nothing to delete.
+
+**Source-anchored study is not built yet.** Reading a YouTube link works: a watch page carries no transcript in its HTML, so StudyForge reads the video's captions instead, and a link that names no video is refused rather than fetched. What is missing is showing the source back to you. Nothing about a source is stored at present, so the PDF you upload and the URL you paste are both gone by the time the course exists, and displaying either needs that storage first. It is meant to sit alongside course generation rather than replace it, because one video or one paper is best studied directly, while six weeks of lecture notes are worth synthesising across.
 
 ### Phase 2 - Adaptive learning
 - [x] Spaced repetition scheduling (FSRS-6) for review: a card per concept, a daily due queue, and a rating session at `/review`

@@ -18,6 +18,8 @@ from urllib.parse import urlparse
 import httpx
 from pypdf import PdfReader
 
+from app import youtube
+
 MAX_CHUNK_CHARS = 8000
 
 # HOW MANY SOURCES ONE COURSE CAN BE BUILT FROM, and how much text they may amount to.
@@ -388,10 +390,30 @@ URL_UNRESOLVABLE = "url_unresolvable"
 FETCH_FAILED = "fetch_failed"
 PDF_UNREADABLE = "pdf_unreadable"
 NO_USABLE_TEXT = "no_usable_text"
+# `kind` stays "url" for all three (see from_youtube).
+# YOUTUBE_NO_TRANSCRIPT/YOUTUBE_UNAVAILABLE are TranscriptUnavailable's "no_transcript" and
+# "unavailable" reasons; its "fetch_failed" reason falls to the existing FETCH_FAILED
+# instead, since a caller retries it the same way as any other fetch failure.
+# YOUTUBE_BAD_URL fires when youtube.is_youtube_url(url) is True but youtube.video_id(url)
+# still found nothing: a YouTube host that does not name a video.
+YOUTUBE_NO_TRANSCRIPT = "youtube_no_transcript"
+YOUTUBE_UNAVAILABLE = "youtube_unavailable"
+YOUTUBE_BAD_URL = "youtube_bad_url"
+
+_YOUTUBE_REASON_CODES = {
+    "no_transcript": YOUTUBE_NO_TRANSCRIPT,
+    "unavailable": YOUTUBE_UNAVAILABLE,
+}
 
 
 def from_url(key: str, url: str) -> Source:
     return Source(key=key, kind="url", ref=url, text=extract_url(url))
+
+
+def from_youtube(key: str, url: str, transcript: "youtube.Transcript") -> Source:
+    # kind stays "url": the caller submitted a URL (main.py's SourceInput.kind has no
+    # "youtube" option), and load_source is the one that noticed it names a video.
+    return Source(key=key, kind="url", ref=url, text=transcript.text())
 
 
 def from_text(key: str, label: str, text: str) -> Source:
@@ -459,19 +481,37 @@ def load_source(spec: SourceSpec, copy: dict[str, str]) -> Source:
     if spec.kind == "text":
         source = from_text("", spec.ref, spec.value if isinstance(spec.value, str) else "")
     elif spec.kind == "url":
-        try:
-            source = from_url("", str(spec.value))
-        except UnresolvableURLError as exc:
-            # MUST STAY ABOVE the UnsafeURLError branch, which is its base class and would
-            # otherwise swallow it and report a name that does not resolve as a safety
-            # refusal.
-            raise SourceError(URL_UNRESOLVABLE, str(exc)) from exc
-        except UnsafeURLError as exc:
-            # The guard's OWN message, not a generic one. It names the host and says how a
-            # self-hoster turns the check off, which is the whole value of it.
-            raise SourceError(UNSAFE_URL, str(exc)) from exc
-        except Exception as exc:
-            raise SourceError(FETCH_FAILED, _copy_for(copy, FETCH_FAILED)) from exc
+        url = str(spec.value)
+        if youtube.is_youtube_url(url):
+            # A YouTube watch page is a JavaScript shell with nothing for extract_url to
+            # strip, so this never falls through to it. And there is no SSRF surface to
+            # check here: the host YouTube's API talks to is fixed by that library, not
+            # by anything in `url`, and `video_id` only ever returns None or a full regex
+            # match on the 11-character id alphabet, not a caller-controlled address, so
+            # _check_host has nothing to guard.
+            video_id = youtube.video_id(url)
+            if video_id is None:
+                raise SourceError(YOUTUBE_BAD_URL, _copy_for(copy, YOUTUBE_BAD_URL))
+            try:
+                transcript = youtube.fetch_transcript(video_id)
+            except youtube.TranscriptUnavailable as exc:
+                code = _YOUTUBE_REASON_CODES.get(exc.reason, FETCH_FAILED)
+                raise SourceError(code, _copy_for(copy, code)) from exc
+            source = from_youtube("", url, transcript)
+        else:
+            try:
+                source = from_url("", url)
+            except UnresolvableURLError as exc:
+                # MUST STAY ABOVE the UnsafeURLError branch, which is its base class and
+                # would otherwise swallow it and report a name that does not resolve as
+                # a safety refusal.
+                raise SourceError(URL_UNRESOLVABLE, str(exc)) from exc
+            except UnsafeURLError as exc:
+                # The guard's OWN message, not a generic one. It names the host and says
+                # how a self-hoster turns the check off, which is the whole value of it.
+                raise SourceError(UNSAFE_URL, str(exc)) from exc
+            except Exception as exc:
+                raise SourceError(FETCH_FAILED, _copy_for(copy, FETCH_FAILED)) from exc
     elif spec.kind == "pdf":
         try:
             data = spec.value if isinstance(spec.value, bytes) else str(spec.value).encode()
