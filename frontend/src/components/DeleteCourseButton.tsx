@@ -349,6 +349,14 @@ export function DeleteCourseButton({
    * which is what lets Cancel clear the busy state immediately without racing it.
    */
   const generationRef = useRef(0);
+  /*
+   * One id shared by all three things the panel can be showing: the failure alert, the
+   * preview text, and the loading line. They are the arms of a single
+   * `error ? ... : preview ? ... : ...` ternary, so exactly one is mounted at any time
+   * and the id stays unique. A fourth carrier would have to join that ternary too.
+   * See issue #51.
+   */
+  const consequenceId = `delete-consequence-${courseId}`;
 
   if (!ctx) throw new Error("DeleteCourseButton must be rendered inside CourseDeletionProvider");
   const { onDeleted, refreshing } = ctx;
@@ -478,7 +486,13 @@ export function DeleteCourseButton({
           onClick={() => void openConfirm()}
           className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-500 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:text-zinc-100"
         >
-          Delete
+          {/*
+            A visually hidden suffix rather than aria-label. Both compute the same
+            "Delete <title>" name, measured; the span is preferred because aria-label
+            would restate the visible word in a second place that can drift from it,
+            and because machine translation skips attributes. See issue #54.
+          */}
+          Delete <span className="sr-only">{title}</span>
         </button>
       </div>
     );
@@ -488,11 +502,18 @@ export function DeleteCourseButton({
     <div className="mt-3 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3.5 dark:border-zinc-800 dark:bg-zinc-900">
       <p className="text-[13px] font-medium">Delete &ldquo;{title}&rdquo;?</p>
       {error ? (
-        <p role="alert" className="mt-1.5 text-[13px] text-red-700 dark:text-red-400">
+        <p
+          id={consequenceId}
+          role="alert"
+          className="mt-1.5 text-[13px] text-red-700 dark:text-red-400"
+        >
           {error}
         </p>
       ) : preview ? (
-        <div className="mt-1.5 text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+        <div
+          id={consequenceId}
+          className="mt-1.5 text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-400"
+        >
           {previewLines(preview).map((line) => (
             <p key={line} className="mt-1 first:mt-0">
               {line}
@@ -504,7 +525,11 @@ export function DeleteCourseButton({
         // confirming button disabled and focus still on the body at this point (the
         // effect above declines for as long as the preview is loading, whichever way it
         // ends up going), nothing else here speaks.
-        <p aria-live="polite" className="mt-1.5 text-[13px] text-zinc-500 dark:text-zinc-400">
+        <p
+          id={consequenceId}
+          aria-live="polite"
+          className="mt-1.5 text-[13px] text-zinc-500 dark:text-zinc-400"
+        >
           Checking what this would delete…
         </p>
       )}
@@ -512,6 +537,7 @@ export function DeleteCourseButton({
         <button
           type="button"
           ref={cancelRef}
+          aria-describedby={consequenceId}
           onClick={() => {
             // Invalidates the in-flight preview fetch (see generationRef above) so its
             // response cannot resurface after this closes the loading window: without
@@ -545,6 +571,7 @@ export function DeleteCourseButton({
         <button
           type="button"
           ref={confirmRef}
+          aria-describedby={consequenceId}
           onClick={() => void confirmDelete()}
           /*
            * Disabled ONLY while the preview loads. Until it lands this button cannot

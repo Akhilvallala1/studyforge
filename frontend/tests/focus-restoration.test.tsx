@@ -502,7 +502,7 @@ describe("DeleteCourseButton focus restoration", () => {
         <input aria-label="Search" />
       </CourseDeletionProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     const confirm = await screen.findByRole("button", { name: "Delete permanently" });
     // That name also matches while the preview is still loading, when the button is
     // disabled and refuses the press. Clicking it there is a no-op, and every
@@ -601,7 +601,7 @@ describe("DeleteCourseButton focus restoration", () => {
         <input aria-label="Search" />
       </CourseDeletionProvider>,
     );
-    const trigger = screen.getByRole("button", { name: "Delete" });
+    const trigger = screen.getByRole("button", { name: "Delete Organic Chemistry" });
     act(() => trigger.focus());
     fireEvent.click(trigger);
   }
@@ -746,7 +746,7 @@ describe("DeleteCourseButton focus restoration", () => {
         />
       </CourseDeletionProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     const confirm = await screen.findByRole("button", { name: "Delete permanently" });
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
@@ -806,7 +806,7 @@ describe("DeleteCourseButton focus restoration", () => {
     }
 
     render(<SourcePage />);
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     const confirm = await screen.findByRole("button", { name: "Delete permanently" });
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
@@ -958,6 +958,88 @@ describe("DeleteCourseButton focus restoration", () => {
       screen.getByRole("status"),
       "an ordinary visit stashed nothing, so the live region has nothing to announce",
     ).toHaveTextContent("");
+  });
+
+  /*
+   * Issue #54: every trigger used to expose the accessible name "Delete", so a rotor
+   * or a tabbing screen reader user could not tell which course any one of them would
+   * destroy. Two different courses are rendered so a name collision would fail this.
+   * The `getByRole` name option is a full-string match, so the two queries below are
+   * themselves the name assertions.
+   */
+  test("gives each Delete trigger an accessible name that includes its course title", () => {
+    render(
+      <CourseDeletionProvider>
+        <DeleteCourseButton courseId={1} title="Organic Chemistry" />
+        <DeleteCourseButton courseId={2} title="Linear Algebra" />
+      </CourseDeletionProvider>,
+    );
+
+    const chemistry = screen.getByRole("button", { name: "Delete Organic Chemistry" });
+    screen.getByRole("button", { name: "Delete Linear Algebra" });
+
+    // The course title must arrive through a visually hidden node, not the visible
+    // text: strip it out and what remains of the button's own text must still read
+    // "Delete", which is the visible-label requirement the issue pins alongside the name.
+    const hidden = chemistry.querySelector(".sr-only");
+    expect(hidden, "the title must be conveyed by a visually hidden node").not.toBeNull();
+    expect(chemistry.textContent?.replace(hidden!.textContent ?? "", "").trim()).toBe("Delete");
+  });
+
+  /*
+   * Issue #51: the panel's own comment says it "exists to say what a delete would
+   * destroy", which was true of the visual panel and not of what either button handed
+   * to assistive tech. `toHaveAccessibleDescription` reads the computed description,
+   * not the `aria-describedby` attribute: an attribute pointing at a missing or empty
+   * id computes to no description and would fail this.
+   */
+  test("describes both buttons with what the delete would destroy once the preview lands", async () => {
+    vi.mocked(getDeletionPreview).mockResolvedValue(preview);
+    openPanel();
+
+    const confirm = await screen.findByRole("button", { name: "Delete permanently" });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+
+    expect(
+      cancel,
+      "focus lands here once the preview settles, so the description must already be attached",
+    ).toHaveAccessibleDescription(/12 lessons, 8 of them completed/);
+    expect(confirm).toHaveAccessibleDescription(/12 lessons, 8 of them completed/);
+  });
+
+  // The same wiring on the other settled shape: a failed preview replaces the preview
+  // text with an alert, and focus also lands on Cancel for it (see the focus test
+  // above), so the description has to follow the alert there too.
+  test("describes both buttons with the failure alert when the preview fails", async () => {
+    vi.mocked(getDeletionPreview).mockRejectedValue(
+      new ApiError(503, "Could not reach the server."),
+    );
+    openPanel();
+
+    await screen.findByRole("alert");
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    const confirm = screen.getByRole("button", { name: "Delete permanently" });
+
+    expect(cancel).toHaveAccessibleDescription("Could not reach the server.");
+    expect(confirm).toHaveAccessibleDescription("Could not reach the server.");
+  });
+
+  // The third branch. Neither settled node is on screen while the preview is in
+  // flight, but Cancel is already tabbable, so the loading line has to carry the id
+  // too or the description is empty for as long as the request takes.
+  test("describes both buttons with the loading line while the preview is in flight", () => {
+    vi.mocked(getDeletionPreview).mockReturnValue(deferred<CourseDeletion>().promise);
+    openPanel();
+
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    const confirm = screen.getByRole("button", { name: "Delete permanently" });
+
+    expect(
+      cancel,
+      "a dangling aria-describedby computes to no description, which is what this catches",
+    ).toHaveAccessibleDescription("Checking what this would delete…");
+    expect(confirm).toHaveAccessibleDescription("Checking what this would delete…");
   });
 });
 
