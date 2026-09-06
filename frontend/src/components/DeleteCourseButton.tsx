@@ -478,7 +478,14 @@ export function DeleteCourseButton({
           onClick={() => void openConfirm()}
           className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-500 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:text-zinc-100"
         >
-          Delete
+          {/*
+            A visually hidden suffix, not aria-label: aria-label would replace the
+            visible text outright, which breaks a voice-control user's "click Delete"
+            phrase once several cards are on screen. This keeps "Delete" a literal
+            prefix of the accessible name, which is computed as "Delete <title>" while
+            the on-screen label stays exactly "Delete". See issue #54.
+          */}
+          Delete <span className="sr-only">{title}</span>
         </button>
       </div>
     );

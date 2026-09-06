@@ -99,7 +99,7 @@ describe("delete confirmation before the preview lands", () => {
         <DeleteCourseButton courseId={1} title="Organic Chemistry" />
       </CourseDeletionProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
 
     // The panel is open and the preview is still in flight, held open deliberately.
     const confirm = await screen.findByRole("button", { name: "Delete permanently" });
@@ -137,7 +137,7 @@ describe("delete confirmation before the preview lands", () => {
         <DeleteCourseButton courseId={1} title="Organic Chemistry" />
       </CourseDeletionProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     const confirm = await screen.findByRole("button", { name: "Delete permanently" });
     await waitFor(() => expect(confirm).toBeEnabled());
 
@@ -183,7 +183,7 @@ describe("delete confirmation before the preview lands", () => {
         <DeleteCourseButton courseId={1} title="Organic Chemistry" />
       </CourseDeletionProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
 
     // Wait for the preview, since that is when the panel places focus. Cancelling before
     // it lands would not be testing the same situation.
@@ -194,7 +194,7 @@ describe("delete confirmation before the preview lands", () => {
 
     fireEvent.click(cancel);
 
-    const trigger = await screen.findByRole("button", { name: "Delete" });
+    const trigger = await screen.findByRole("button", { name: "Delete Organic Chemistry" });
     // No separate "activeElement is not document.body" assertion here: it cannot go
     // red on its own once `toHaveFocus()` above has passed (an element cannot have
     // focus while the body is the active element), so it would only ever be a dead
@@ -231,7 +231,7 @@ describe("delete confirmation before the preview lands", () => {
         <DeleteCourseButton courseId={1} title="Organic Chemistry" />
       </CourseDeletionProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     const cancel = await screen.findByRole("button", { name: "Cancel" });
     expect(cancel, "a slow preview must stay abandonable").toBeEnabled();
 
@@ -271,7 +271,7 @@ describe("delete confirmation before the preview lands", () => {
         <input aria-label="Search" />
       </CourseDeletionProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     const confirm = await screen.findByRole("button", { name: "Delete permanently" });
     await waitFor(() => expect(confirm).toBeEnabled());
 
@@ -301,7 +301,11 @@ describe("delete confirmation before the preview lands", () => {
       </CourseDeletionProvider>,
     );
 
-    await waitFor(() => expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(2));
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("button", { name: /^Delete (Organic Chemistry|Linear Algebra)$/ }),
+      ).toHaveLength(2),
+    );
     expect(document.activeElement).toBe(document.body);
   });
 
@@ -338,14 +342,14 @@ describe("delete confirmation before the preview lands", () => {
       </CourseDeletionProvider>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     await screen.findByRole("button", { name: "Delete permanently" });
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     // No feedback distinguishes a swallowed press from a slow one, so the only way to
     // tell them apart is that a second preview actually starts loading.
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     const confirm = await screen.findByRole("button", { name: "Delete permanently" });
     expect(
       confirm,
@@ -394,7 +398,7 @@ describe("delete confirmation before the preview lands", () => {
       </CourseDeletionProvider>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     await screen.findByRole("button", { name: "Delete permanently" });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
@@ -402,7 +406,7 @@ describe("delete confirmation before the preview lands", () => {
     // in which Cancel's bump is the guard doing the work.
     await act(async () => first.resolve(preview));
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     await screen.findByRole("button", { name: "Delete permanently" });
 
     expect(
@@ -436,11 +440,11 @@ describe("delete confirmation before the preview lands", () => {
       </CourseDeletionProvider>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     await screen.findByRole("button", { name: "Delete permanently" });
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     await screen.findByRole("button", { name: "Delete permanently" });
 
     // The abandoned request fails only AFTER the panel is reopened. Rejecting it while
@@ -480,7 +484,7 @@ describe("delete confirmation before the preview lands", () => {
         <DeleteCourseButton courseId={1} title="Organic Chemistry" afterDelete="navigate-to-list" />
       </CourseDeletionProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     const confirm = await screen.findByRole("button", { name: "Delete permanently" });
     await waitFor(() => expect(confirm).toBeEnabled());
 

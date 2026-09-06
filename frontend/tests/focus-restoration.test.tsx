@@ -502,7 +502,7 @@ describe("DeleteCourseButton focus restoration", () => {
         <input aria-label="Search" />
       </CourseDeletionProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     const confirm = await screen.findByRole("button", { name: "Delete permanently" });
     // That name also matches while the preview is still loading, when the button is
     // disabled and refuses the press. Clicking it there is a no-op, and every
@@ -601,7 +601,7 @@ describe("DeleteCourseButton focus restoration", () => {
         <input aria-label="Search" />
       </CourseDeletionProvider>,
     );
-    const trigger = screen.getByRole("button", { name: "Delete" });
+    const trigger = screen.getByRole("button", { name: "Delete Organic Chemistry" });
     act(() => trigger.focus());
     fireEvent.click(trigger);
   }
@@ -746,7 +746,7 @@ describe("DeleteCourseButton focus restoration", () => {
         />
       </CourseDeletionProvider>,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     const confirm = await screen.findByRole("button", { name: "Delete permanently" });
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
@@ -806,7 +806,7 @@ describe("DeleteCourseButton focus restoration", () => {
     }
 
     render(<SourcePage />);
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Organic Chemistry" }));
     const confirm = await screen.findByRole("button", { name: "Delete permanently" });
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
@@ -959,6 +959,39 @@ describe("DeleteCourseButton focus restoration", () => {
       "an ordinary visit stashed nothing, so the live region has nothing to announce",
     ).toHaveTextContent("");
   });
+
+  /*
+   * Issue #54: every trigger used to expose the accessible name "Delete", so a rotor
+   * or a tabbing screen reader user could not tell which course any one of them would
+   * destroy. Two different courses are rendered so a name collision would fail this.
+   * `toHaveAccessibleName` is used rather than reading the `aria-label` attribute,
+   * since the fix is a visually hidden span, not an `aria-label`.
+   */
+  test("gives each Delete trigger an accessible name that includes its course title", () => {
+    render(
+      <CourseDeletionProvider>
+        <DeleteCourseButton courseId={1} title="Organic Chemistry" />
+        <DeleteCourseButton courseId={2} title="Linear Algebra" />
+      </CourseDeletionProvider>,
+    );
+
+    const chemistry = screen.getByRole("button", { name: "Delete Organic Chemistry" });
+    const algebra = screen.getByRole("button", { name: "Delete Linear Algebra" });
+
+    expect(
+      chemistry,
+      "distinct accessible names, or a rotor's button list still cannot tell the rows apart",
+    ).toHaveAccessibleName("Delete Organic Chemistry");
+    expect(algebra).toHaveAccessibleName("Delete Linear Algebra");
+
+    // The course title must arrive through a visually hidden node, not the visible
+    // text: strip it out and what remains of the button's own text must still read
+    // "Delete", which is the visible-label requirement the issue pins alongside the name.
+    const hidden = chemistry.querySelector(".sr-only");
+    expect(hidden, "the title must be conveyed by a visually hidden node").not.toBeNull();
+    expect(chemistry.textContent?.replace(hidden!.textContent ?? "", "").trim()).toBe("Delete");
+  });
+
 });
 
 /**
