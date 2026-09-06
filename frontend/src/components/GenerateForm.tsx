@@ -46,6 +46,40 @@ interface IntakeNote {
   skipped: SkippedFile[];
 }
 
+/**
+ * A summary failure, carried with the number of sources it was a verdict on. That count
+ * is not a truth test on the message. It records the size of the set the verdict was
+ * made against, so a later render can tell that the set has since changed size, which is
+ * a proxy for "the form has moved on" rather than an answer to "is this still true".
+ *
+ * It errs in both directions, and both are known. Adding a source to a form complaining
+ * about a blank row hides a message that is still true, which is tolerable because that
+ * row keeps its own error and so nothing goes unmarked. A set that changes and comes
+ * back to the same size would show one that has stopped being true, which is not
+ * tolerable, and is why the removal handlers discard the error outright rather than
+ * leaving it to the count.
+ *
+ * Not every hidden message leaves a mark behind, and the ones that do not are worth
+ * naming rather than reading "nothing goes unmarked" as general. Which those are is a
+ * property of the submit catch's ARMS, not of an error class. Its last two arms, the
+ * `err instanceof ApiError` one and the fallback reporting "Could not reach the server.
+ * Is the backend running?", announce a message and mark nothing, so a count change takes
+ * it off the screen outright. Naming the class instead would be wrong:
+ * SourceGenerationError extends ApiError, and its own arm runs first and hands the
+ * per-source failures to applyFailures, which does mark rows. Nor is even that arm a
+ * guarantee of a mark: a failure matched by neither index nor the ref fallback marks
+ * nothing, and its message is then hidden unmarked like the other two.
+ *
+ * Deliberate either way. The message was a verdict on a request that no longer matches
+ * the form, and the next submit reissues it if it still applies. main kept such a
+ * message up instead, so this is a change, and the narrower one, since main kept it up
+ * whatever the learner did short of submitting again.
+ */
+interface SummaryError {
+  message: string;
+  sources: number;
+}
+
 function skipReasonLabel(reason: SkipReason): string {
   switch (reason) {
     case "not-pdf":
@@ -145,11 +179,12 @@ export function GenerateForm() {
   const [fileRows, setFileRows] = useState<FileRow[]>([]);
   const [limits, setLimits] = useState<SourceLimits | null>(null);
   const [intakeNote, setIntakeNote] = useState<IntakeNote | null>(null);
-  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [summaryError, setSummaryError] = useState<SummaryError | null>(null);
   // Bumped alongside every summaryError announcement, including a repeat of the exact
-  // same message: a state update to an unchanged string is a no-op React bails out of,
-  // which would otherwise leave a second identical failure silently un-announced and
-  // focus stuck on the submit button. The focus effect keys off this, not summaryError.
+  // same message, so that a second identical failure is never silently un-announced with
+  // focus left on the submit button. The focus effect keys off this rather than off
+  // summaryError so that re-announcing stays independent of how the error is represented:
+  // as a bare string it was a value React bailed out of updating, and the repeat was lost.
   const [summaryErrorSeq, setSummaryErrorSeq] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -270,6 +305,50 @@ export function GenerateForm() {
   }, [rows, fileRows]);
 
   const totalSources = rows.length + fileRows.length;
+
+  /**
+   * The summary failure, shown only while the form still holds as many sources as the
+   * verdict was made against. That is a proxy for the message still describing the form
+   * rather than a test of it, and the SummaryError comment above names which way it errs
+   * on each side. It is a verdict on the sources as they stood at the last submit, and it
+   * used to be cleared only by the next submit or a reset, so it outlived its own premise
+   * while still reading as current: the zero-source message survived adding a source,
+   * telling a learner who had just done the thing to go do it.
+   *
+   * Compared against a count rather than retired from every handler that touches the
+   * sources, because a file pick cannot answer "did anything land?" synchronously.
+   * ingestFiles decides accept against skip inside the setFileRows updater, and the
+   * tally it assigns there is not readable on the line after the call. Not because React
+   * never runs an updater early: it may evaluate one eagerly to see whether it can bail
+   * out of the render, so "not until the next render" would overstate what React
+   * promises. It promises nothing either way, which is the point. An earlier version of
+   * this fix read such a tally, and measurement rather than reasoning settled it: that
+   * guard never fired once. The count is the same question, asked of state React has
+   * already committed.
+   *
+   * Derived rather than cleared in an effect, which is the same comparison one render
+   * later plus a second render to carry it, and which react-hooks/set-state-in-effect
+   * rejects for that reason.
+   *
+   * A pick where every file is skipped returns the previous array unchanged, so the count
+   * does not move and a message asking for a PDF stays up. That is correct rather than
+   * incidental: nothing was added, so the instruction is still true. Submitting does not
+   * move the count either, which is what stops this hiding an error the submit has just
+   * raised: handleSubmit rebuilds both arrays to clear row errors, and rebuilding an
+   * array does not change how many entries it holds. Nor can anything else move it
+   * mid-request: `locked` disables every add button and every row's Remove from
+   * setSubmitting(true) until the request settles, and the count announceSummaryError
+   * records is the one closed over at submit time in any case.
+   *
+   * Hiding is not enough on its own, which is why the removal handlers below also discard
+   * the error outright. A count that walks away and comes back would otherwise bring the
+   * message with it: add a PDF to a form complaining about a blank text row, remove the
+   * text row, and the count is what it was at submit, so "Fix the highlighted source
+   * before generating." returns with no highlighted source anywhere on the form.
+   */
+  const visibleSummaryError =
+    summaryError !== null && summaryError.sources === totalSources ? summaryError.message : null;
+
   // Text rows only, never URL rows: a URL row's `value` is the address, not the page's
   // content, so counting it toward this figure would read as "40 characters" for a link
   // to an 80,000-character article. There is no fraction to show against max_total_chars
@@ -287,8 +366,15 @@ export function GenerateForm() {
   }
 
   function updateRow(id: string, patch: Partial<Pick<SourceRow, "value" | "ref">>) {
-    // Editing a row clears only that row's own failure, and only that: no other row's
-    // error, and nothing beyond the one field being typed into.
+    // Editing a row clears that row's own failure and no other row's. Editing the
+    // CONTENT also discards the summary error, which is a verdict on content: "Fix the
+    // highlighted source before generating." must not outlive fixing that source. The
+    // count comparison above cannot see this, since editing a row changes no count.
+    //
+    // Editing only the optional label is deliberately not content. Were it to retire the
+    // summary error too, a still-blank row would be left with no error showing anywhere,
+    // because this map has already cleared the row's own.
+    if (patch.value !== undefined) setSummaryError(null);
     setRows((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch, error: null } : row)));
   }
 
@@ -311,13 +397,31 @@ export function GenerateForm() {
     }
   }
 
+  /**
+   * Both removal paths discard the summary error rather than leaving it to the count
+   * comparison, because hiding is not clearing: a count that returns to the value it had
+   * at submit would bring a hidden message back up with it.
+   *
+   * So every path that can LOWER the count has to discard. Counted in call sites rather
+   * than in functions, since that is the unit that can be enumerated: of the twelve
+   * setRows/setFileRows calls in this file, four can lower it, the two filters below and
+   * resetForm's two empties, and resetForm already clears the error on its own account.
+   * The other eight cannot: six map over the rows in place, addRow appends, and
+   * ingestFiles either appends or hands `prev` straight back.
+   *
+   * Adding needs no equivalent and deliberately has none. An add can only move the count
+   * away from the submit-time value, so it is the lowering paths above, never this one,
+   * that can carry a hidden message back into view.
+   */
   function removeRow(id: string) {
     armFocusAfterRemoval(id);
+    setSummaryError(null);
     setRows((prev) => prev.filter((row) => row.id !== id));
   }
 
   function removeFileRow(id: string) {
     armFocusAfterRemoval(id);
+    setSummaryError(null);
     setFileRows((prev) => prev.filter((row) => row.id !== id));
   }
 
@@ -444,13 +548,16 @@ export function GenerateForm() {
   }
 
   /**
-   * Announce a summary failure and move focus to it. A plain `setSummaryError` would
-   * silently no-op on a second submit that fails with the exact same message, since
-   * React bails out of a state update to an unchanged value: the seq bump makes every
-   * announcement, repeat or not, a real commit the focus effect reacts to.
+   * Announce a summary failure and move focus to it. The seq bump is what makes every
+   * announcement, repeat or not, a commit the focus effect reacts to.
+   *
+   * `totalSources` is captured into the state rather than re-read when the message is
+   * rendered: it is the count this submit judged, and pairing it with the message is what
+   * lets a later render tell that the source count has moved since. That is the proxy the
+   * display gate runs on, not a check that the verdict is still true.
    */
   function announceSummaryError(message: string) {
-    setSummaryError(message);
+    setSummaryError({ message, sources: totalSources });
     setSummaryErrorSeq((seq) => seq + 1);
     focusSummaryNext.current = true;
   }
@@ -632,9 +739,9 @@ export function GenerateForm() {
         </>
       )}
 
-      {summaryError && (
+      {visibleSummaryError && (
         <Callout ref={summaryRef} tabIndex={-1} role="alert" tone="danger">
-          {summaryError}
+          {visibleSummaryError}
         </Callout>
       )}
 
