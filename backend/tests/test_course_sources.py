@@ -260,11 +260,16 @@ def test_a_lesson_with_no_valid_segments_leaves_source_id_null_instead_of_guessi
 
 
 def test_a_two_source_course_with_fallback_lessons_leaves_source_id_null_on_every_lesson():
-    """The bug this guards: lesson_segments falls back to the WHOLE corpus (below
-    SEGMENT_ROUTING_MIN_CHUNKS, or when the outline omitted "segments"), and majority-
+    """The bug this guards: lesson_segments hands back the WHOLE corpus, and majority-
     with-lowest-position over the whole corpus then just picks whichever source owns
     the most chunks. That is a guess dressed up as an anchor, not what the lesson is
-    about, so a fallback lesson over more than one source must stay unanchored.
+    about, so such a lesson over more than one source must stay unanchored.
+
+    This covers the OUTLINE-OMITTED-SEGMENTS half, with a hand-built dict, which is the
+    half that reaches _save_course as segments_fell_back. The other half, a corpus under
+    SEGMENT_ROUTING_MIN_CHUNKS, never sets that flag and is covered through the real
+    pipeline by test_source_mode_endpoints.py::
+    test_a_sub_threshold_two_source_course_anchors_no_lesson_at_all.
     """
     course = {
         "title": "Two Sources, Fell Back",

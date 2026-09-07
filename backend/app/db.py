@@ -127,9 +127,9 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # The CourseSource a source-mode lesson renders. Plain INTEGER with NO REFERENCES:
     # inspector.get_columns, which the upgraded == fresh schema check reads, does not
     # report foreign keys, so a REFERENCES clause here would pass that check silently
-    # while making the two schemas actually differ. Unlike llm_calls.course_id above,
-    # which drops its FK so usage rows survive a course deletion, this omission is
-    # about the migration check, not about surviving a deletion.
+    # while making the two schemas actually differ. Unlike llm_calls.course_id in
+    # models.py, which drops its FK so usage rows survive a course deletion, this
+    # omission is about the migration check, not about surviving a deletion.
     ("lessons", "source_id", "INTEGER"),
 )
 

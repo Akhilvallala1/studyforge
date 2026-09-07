@@ -306,3 +306,67 @@ def test_a_two_source_course_anchors_lessons_to_both_documents(client, monkeypat
         )
     finally:
         session.close()
+# Two documents small enough that the whole corpus is under SEGMENT_ROUTING_MIN_CHUNKS,
+# so generate_outline never routes and lesson_segments hands every lesson every chunk.
+SMALL_A = "Alpha on gradient descent. " * 12
+SMALL_B = "Beta on convolution kernels. " * 12
+
+
+def test_a_sub_threshold_two_source_course_anchors_no_lesson_at_all(client, monkeypatch):
+    """The half of the anchoring guard that no hand-built course dict can reach.
+
+    Under SEGMENT_ROUTING_MIN_CHUNKS nothing is routed, so segments_are_fallback answers
+    False (unrouted material is not a cost surprise, which is what that function measures)
+    and no lesson carries segments_fell_back. The lessons still hold the whole corpus, so
+    anchoring by majority vote would tie and hand every lesson to the first document while
+    each lesson's content actually contains both. Measured before the fix: anchors were
+    ['alpha.txt'] x4 with beta.txt orphaned.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: FakeProvider())
+
+    resp = client.post(
+        "/courses/generate",
+        json={
+            "sources": [
+                {"kind": "text", "value": SMALL_A, "ref": "alpha.txt"},
+                {"kind": "text", "value": SMALL_B, "ref": "beta.txt"},
+            ],
+            "mode": "source",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+    session = SessionLocal()
+    try:
+        course = session.get(models.Course, resp.json()["id"])
+        assert len(course.sources) == 2
+        lessons = [lesson for module in course.modules for lesson in module.lessons]
+        assert lessons
+        assert all(lesson.content_kind == "source" for lesson in lessons)
+        anchored = [lesson.source_id for lesson in lessons if lesson.source_id is not None]
+        assert anchored == [], (
+            "a lesson holding both documents must not claim to come from one of them"
+        )
+    finally:
+        session.close()
+
+
+def test_a_sub_threshold_single_source_course_still_anchors(client, monkeypatch):
+    """The negative half: with one source there is nothing to confuse, so an unrouted
+    corpus must still anchor rather than being swept up by the multi-source guard.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: FakeProvider())
+
+    resp = client.post("/courses/generate", json={"text": SMALL_A, "mode": "source"})
+    assert resp.status_code == 200, resp.text
+
+    session = SessionLocal()
+    try:
+        course = session.get(models.Course, resp.json()["id"])
+        assert len(course.sources) == 1
+        source_id = course.sources[0].id
+        lessons = [lesson for module in course.modules for lesson in module.lessons]
+        assert lessons
+        assert all(lesson.source_id == source_id for lesson in lessons)
+    finally:
+        session.close()

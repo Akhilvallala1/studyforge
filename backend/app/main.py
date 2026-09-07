@@ -529,9 +529,11 @@ def _save_course(
     (_lesson_source_position) and keeps a PDF's original bytes; the default, "lessons",
     never writes a blob. `positions` (chunk index to source position) applies only in
     source mode. A lesson keeps source_id NULL, instead of guessing, when its segments
-    name no valid chunk, or when it fell back to the whole corpus
-    (generation.segments_are_fallback) in a multi-source course; a single-source course
-    keeps its anchor regardless, since there is no other source to confuse it with.
+    name no valid chunk, or when they span the whole corpus in a multi-source course:
+    either because the lesson fell back (generation.segments_are_fallback) or because
+    the corpus was never routed at all, which lesson_segments also answers with every
+    chunk. A single-source course keeps its anchor regardless, since there is no other
+    source to confuse it with.
     """
     row = models.Course(title=course["title"], description=course["description"])
     source_rows: list[models.CourseSource] = []
@@ -555,6 +557,14 @@ def _save_course(
         session.add(row)
         session.flush()
 
+    # Two ways a lesson ends up holding the whole corpus: it fell back, or the corpus was
+    # too small to route at all (lesson_segments answers both with every chunk). Either way
+    # the vote below ties and resolves to the lowest position, handing every lesson to the
+    # first document. A hand-built course dict carrying no segment_routing counts as routed,
+    # which is what the unit tests that call _save_course directly expect.
+    multi_source = len(set(positions or [])) > 1
+    unrouted = not (course.get("segment_routing") or {}).get("routed", True)
+
     for m_pos, module in enumerate(course["modules"]):
         module_row = models.Module(title=module["title"], position=m_pos)
         for l_pos, lesson in enumerate(module["lessons"]):
@@ -566,10 +576,8 @@ def _save_course(
             )
             if mode == "source":
                 lesson_row.content_kind = "source"
-                ambiguous_fallback = lesson.get("segments_fell_back") and len(
-                    set(positions or [])
-                ) > 1
-                if not ambiguous_fallback:
+                spans_whole_corpus = unrouted or lesson.get("segments_fell_back")
+                if not (spans_whole_corpus and multi_source):
                     source_position = _lesson_source_position(
                         lesson.get("segments") or [], positions or []
                     )
