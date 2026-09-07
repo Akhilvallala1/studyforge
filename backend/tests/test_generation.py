@@ -432,6 +432,45 @@ def test_chunk_sources_chunks_each_document_separately():
         assert other not in chunk.lower()
 
 
+def test_chunk_sources_with_positions_maps_chunks_to_source_index_not_ref():
+    """positions[i] is the source's index, exact even when two sources share a ref.
+
+    Two sources both named "notes.pdf" would make owners[i] alone ambiguous (the ref
+    it names could be either one), which is exactly why chunk-to-source anchoring must
+    not be reconstructed by walking owners. positions is written from the same loop
+    that owns the real index, so it stays correct here.
+    """
+    sources = [
+        ingest.from_text("", "notes.pdf", "First document, alpha."),
+        ingest.from_text("", "notes.pdf", "Second document, beta."),
+        ingest.from_text("", "third.txt", "Third document, gamma."),
+    ]
+    chunks, owners, positions = ingest.chunk_sources_with_positions(sources)
+
+    assert len(chunks) == len(owners) == len(positions)
+    assert positions == [0, 1, 2]
+    assert owners == ["notes.pdf", "notes.pdf", "third.txt"]
+    # chunk_sources's own 2-tuple return is unaffected: evals/ and other callers of it
+    # must see exactly the same (chunks, owners) this function derives them from.
+    chunks_only, owners_only = ingest.chunk_sources(sources)
+    assert (chunks_only, owners_only) == (chunks, owners)
+
+
+def test_chunk_sources_with_positions_handles_a_zero_chunk_source():
+    """A source with no text yields no chunks and so contributes nothing to positions,
+    but later sources still get their own correct index rather than shifting down.
+    """
+    sources = [
+        ingest.from_text("", "empty.txt", ""),
+        ingest.from_text("", "real.txt", "Some real content here."),
+    ]
+    chunks, owners, positions = ingest.chunk_sources_with_positions(sources)
+
+    assert owners == ["real.txt"]
+    assert positions == [1]
+    assert len(chunks) == 1
+
+
 # --------------------------------------------------------------------------
 # The fallback, which is what multi-source costs
 # --------------------------------------------------------------------------

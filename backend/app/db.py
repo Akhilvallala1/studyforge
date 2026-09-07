@@ -118,6 +118,19 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # means this row's course still exists, so its id may be resolved. Rows already in
     # the wild backfill to NULL and go on resolving exactly as they did.
     ("llm_calls", "course_title_at_deletion", "VARCHAR(300)"),
+    # Source-anchored study: what a lesson renders. NOT NULL with a constant default, the
+    # matched pair described above: models.Lesson.content_kind carries
+    # server_default=text("'lesson'") and this definition carries the same default, so
+    # upgraded == fresh and every lesson already in the table backfills to "lesson"
+    # rather than to NULL, which is true of every one of them.
+    ("lessons", "content_kind", "VARCHAR(20) NOT NULL DEFAULT 'lesson'"),
+    # The CourseSource a source-mode lesson renders. Plain INTEGER with NO REFERENCES:
+    # inspector.get_columns, which the upgraded == fresh schema check reads, does not
+    # report foreign keys, so a REFERENCES clause here would pass that check silently
+    # while making the two schemas actually differ. Unlike llm_calls.course_id in
+    # models.py, which drops its FK so usage rows survive a course deletion, this
+    # omission is about the migration check, not about surviving a deletion.
+    ("lessons", "source_id", "INTEGER"),
 )
 
 

@@ -101,6 +101,14 @@ MODELS_PATH = "backend/app/models.py"
 NEW_TABLE = "tutor_messages"
 NEW_INDEXES = {"ix_tutor_messages_concept_created", "ix_tutor_messages_created"}
 
+# Tables source-anchored storage added after BOTH pins existed. Named separately from
+# NEW_TABLE rather than folded into it, because NEW_TABLE is scoped to the tutor feature
+# specifically (test_beyond_check_question_and_ask_are_separate_columns and friends read
+# it as "the tutor's table") and these two postdate that feature by an unrelated commit.
+# create_all builds a table it has never seen regardless of which pin is upgraded, so
+# both land in `upgraded` for every entry in BASE_COMMITS and need no pin of their own.
+SOURCE_TABLES = {"course_sources", "course_source_blobs"}
+
 # Work-it-out mode's column on that table. The only ADDED_COLUMNS entry so far that is NOT
 # NULL with a constant default, and therefore the only one for which a row already in the
 # base has to come back reading something rather than NULL.
@@ -502,6 +510,12 @@ def test_upgrade_adds_the_tutor_table_and_nothing_else(databases):
     false there and telling it to tolerate that would destroy it: that assertion is the
     guard against someone advancing a pin past the change it measures, and a version that
     accepts a base which already contains the feature cannot guard anything.
+
+    The diff is measured against NEW_TABLE plus SOURCE_TABLES, not NEW_TABLE alone, because
+    source-anchored storage added two more tables after this pin. Both are absent from
+    every BASE_COMMITS entry, so they show up in this diff regardless of which pin is used;
+    narrowing the comparison to only the tutor's own table would make it fail on a totally
+    unrelated feature adding a table of its own.
     """
     if databases.ref != TUTOR_BASE:
         pytest.skip(f"this claim is about the pin before the tutor, not {databases.ref[:12]}")
@@ -513,7 +527,7 @@ def test_upgrade_adds_the_tutor_table_and_nothing_else(databases):
         f"forward past the change it is supposed to measure."
     )
     assert NEW_TABLE in databases.upgraded
-    assert set(databases.upgraded) - set(databases.base) == {NEW_TABLE}
+    assert set(databases.upgraded) - set(databases.base) == {NEW_TABLE} | SOURCE_TABLES
     assert not set(databases.base) - set(databases.upgraded), "create_all cannot drop a table"
 
 

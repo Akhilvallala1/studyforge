@@ -132,6 +132,36 @@ claim a reader who half-understood the lesson could genuinely believe."""
 # passage in the SOURCE, rather than merely to the lesson, also dropped hallucination candidates
 # from 30 per course to 6.5. Change it only against a fresh run of the same trial.
 
+QUESTIONS_SYSTEM = """You are a teacher preparing the concepts and quiz for one lesson of a \
+course, without writing the lesson itself: the learner reads the source material directly \
+instead of any lesson prose. Given the lesson title, its summary, and the relevant source \
+material, respond with ONLY a JSON object matching:
+{
+  "concepts": [str],         # 2-5 key concepts this lesson teaches
+  "quiz": [
+    {"question": str, "kind": "mcq" | "short", "options": [str], "answer": str, "concept": str}
+  ]
+}
+Output format: the JSON object is the entire reply. Do not put a ``` fence around it and do not \
+write anything before or after it.
+
+Quiz rules:
+- Write 3-6 items. For "mcq" give exactly 4 options and set "answer" to the correct option's \
+text. For "short" leave "options" empty.
+- Every answer must be traceable to the source material: a reader should be able to point at \
+the exact passage it comes from, and that traceability is the only grounding a question has \
+here, since there is no lesson content standing behind it. Do not ask about anything the source \
+does not actually say, and do not require knowledge the source assumes but never states.
+- Write all four MCQ options in the same voice, at similar length and specificity. Never lift \
+the correct option word for word from a sentence in the content while inventing the other three: \
+that makes the item solvable by spotting the familiar phrase. Each wrong option should be a \
+claim a reader who half-understood the lesson could genuinely believe."""
+# The write-count and option-voice bullets are copied verbatim from LESSON_SYSTEM: the
+# measurement above changed only the traceability bullet, so these two were controls, not
+# the effect. The traceability bullet is strengthened rather than copied here, since with no
+# lesson body the source passage is a question's only anchor. "Teach before asking about it"
+# is dropped: there is no "content" field here for it to refer to.
+
 # Sent back with the original prompt when a reply cannot be parsed. Names the one
 # failure mode worth naming: the model narrating around the object, or fencing it.
 REPAIR_INSTRUCTION = """Your previous reply could not be parsed as JSON. Send the same content \
@@ -150,7 +180,12 @@ class Meter(Protocol):
 # that sentence is still true of it, or giving the new stage its own.
 OUTLINE_STAGE = "outline"
 LESSON_STAGE = "lesson"
-STAGES = frozenset({OUTLINE_STAGE, LESSON_STAGE})
+QUESTIONS_STAGE = "questions"
+STAGES = frozenset({OUTLINE_STAGE, LESSON_STAGE, QUESTIONS_STAGE})
+
+# Matches models.Lesson.content_kind's documented values ("lesson" | "source"), not a
+# new spelling of its own: a course-format value has exactly one name and this is it.
+SOURCE_CONTENT_KIND = "source"
 
 
 def _balanced_objects(text: str) -> list[str]:
@@ -544,6 +579,54 @@ def generate_lesson(
     return lesson
 
 
+def generate_questions(
+    meter: Meter,
+    lesson_title: str,
+    lesson_summary: str,
+    chunks: list[str],
+    segments: list[int] | None = None,
+    owners: list[str] | None = None,
+) -> dict:
+    """The questions-only call: concepts and quiz, drawn straight from the source.
+
+    Returns {"concepts": [...], "quiz": [...]} only. There is no "content" key here
+    and never will be: the caller fills that field locally, from the same chunks,
+    which is the whole point of this mode over generate_lesson.
+    """
+    indexes = list(range(len(chunks))) if segments is None else segments
+    prompt = (
+        f"Lesson title: {lesson_title}\n"
+        f"Lesson summary: {lesson_summary}\n\n"
+        f"Source material:\n\n{label_segments(chunks, indexes, owners)}"
+    )
+    stub = generate_json(meter, QUESTIONS_STAGE, QUESTIONS_SYSTEM, prompt)
+    return {
+        "concepts": _clean_concepts(stub.get("concepts")),
+        "quiz": _clean_quiz(stub.get("quiz")),
+    }
+
+
+def source_excerpt(chunks: list[str], segments: list[int]) -> str:
+    """The verbatim window of source text backing one source-mode lesson.
+
+    Spans from the earliest to the latest selected chunk, inclusive, rather than
+    joining only the named ones, so a gap in `segments` still yields one
+    contiguous span instead of two pieces with the source text between them
+    missing from the string but not from what it was cut out of.
+
+    This reproduces an exact substring of the cleaned source wherever chunk_text
+    packed ordinary paragraphs, which is the common case. It is NOT exact across
+    chunk_text's hard split of a single paragraph longer than MAX_CHUNK_CHARS: the
+    "\n\n" this function inserts between such pieces was not actually there in
+    the source. Rare in practice, and every word still comes from the source
+    verbatim; only the joining separator at that one seam is invented.
+    """
+    if not segments or not chunks:
+        return "\n\n".join(chunks)
+    lo, hi = min(segments), max(segments)
+    return "\n\n".join(chunks[lo : hi + 1])
+
+
 def generate_course(meter: Meter, chunks: list[str], owners: list[str] | None = None) -> dict:
     """Full pipeline. Returns {title, description, modules: [{title, lessons: [...]}]}
     where each lesson has title, content, concepts, quiz, and the source segments it
@@ -607,5 +690,80 @@ def generate_course(meter: Meter, chunks: list[str], owners: list[str] | None = 
         "sources": len(set(owners)) if owners else 1,
         "lessons_planned": planned,
         "lessons_fell_back": fell_back,
+    }
+    return course
+
+
+def generate_questions_course(
+    meter: Meter, chunks: list[str], owners: list[str] | None = None
+) -> dict:
+    """The questions-only pipeline. Same outline, same routing, no lesson prose.
+
+    Mirrors generate_course's assembly loop rather than sharing it, deliberately: the
+    two modes diverge in exactly the two lines that matter (generate_questions instead
+    of generate_lesson, and where "content" comes from), and a shared loop parameterized
+    over that difference would be one more layer between a reader and the divergence.
+    generate_outline is untouched and called exactly as generate_course calls it, so a
+    course from this function routes segments identically to a lessons-mode course over
+    the same chunks.
+
+    COURSE-FORMAT ADDITION, in the sense generate_course's own docstring uses the phrase:
+    every lesson here carries "content_kind" (see generation.SOURCE_CONTENT_KIND) as well
+    as the keys generate_course's lessons carry, and "content" is verbatim source text
+    rather than model prose. main.py's _run_generation calls this for mode == "source"
+    requests.
+    """
+    outline = generate_outline(meter, chunks, owners)
+    course = {
+        "title": outline.get("title", "Untitled course"),
+        "description": outline.get("description", ""),
+        "modules": [],
+    }
+    failures: list[dict] = []
+    planned = 0
+    fell_back_count = 0
+    for module in outline["modules"]:
+        built = {"title": module.get("title", "Module"), "lessons": []}
+        for lesson_stub in module.get("lessons", []):
+            title = lesson_stub.get("title", "Lesson")
+            segments = lesson_segments(lesson_stub, len(chunks))
+            fell_back = segments_are_fallback(lesson_stub, len(chunks))
+            planned += 1
+            if fell_back:
+                fell_back_count += 1
+            try:
+                authored = generate_questions(
+                    meter, title, lesson_stub.get("summary", ""), chunks, segments, owners
+                )
+            except ValueError as exc:
+                logger.error("dropping lesson %r: %s", title, exc)
+                failures.append({"lesson": title, "error": str(exc)})
+                continue
+            built["lessons"].append(
+                {
+                    "title": title,
+                    "segments": segments,
+                    # _save_course reads this to know a full-corpus "segments" list is a
+                    # fallback rather than a genuine route, so it does not anchor the
+                    # lesson to whichever source happens to own the most chunks (see
+                    # its docstring).
+                    "segments_fell_back": fell_back,
+                    "content": source_excerpt(chunks, segments),
+                    "content_kind": SOURCE_CONTENT_KIND,
+                    **authored,
+                }
+            )
+        if built["lessons"]:
+            course["modules"].append(built)
+    if not course["modules"]:
+        raise ValueError(f"No lesson could be generated ({len(failures)} failed)")
+    if failures:
+        course["dropped_lessons"] = failures
+    course["segment_routing"] = {
+        "routed": len(chunks) >= SEGMENT_ROUTING_MIN_CHUNKS,
+        "chunks": len(chunks),
+        "sources": len(set(owners)) if owners else 1,
+        "lessons_planned": planned,
+        "lessons_fell_back": fell_back_count,
     }
     return course

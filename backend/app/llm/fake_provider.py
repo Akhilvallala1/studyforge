@@ -1,7 +1,8 @@
 """Deterministic in-process provider for offline QA and tests.
 
-Selected with STUDYFORGE_LLM_PROVIDER=fake. Answers all four stages instantly
-with valid JSON so course generation, re-teaching, and the tutor all run end to
+Selected with STUDYFORGE_LLM_PROVIDER=fake. Answers all five stages (outline,
+lesson, questions, remediation, tutor) instantly with valid JSON so course
+generation, source-mode generation, re-teaching, and the tutor all run end to
 end with no API key and no network. Output is derived from the input text, so
 different sources produce different (but fully reproducible) courses and replies.
 
@@ -78,11 +79,17 @@ OUTLINE_MARKER = "curriculum designer"
 REMEDIATION_MARKER = "re-teaching one concept"
 # The tutor's marker has to avoid both phrases above, or the tutor prompt would
 # dispatch to another branch and the reply would parse as the wrong schema.
-# test_fake_provider.py asserts the three are mutually exclusive against the live
-# system prompts, so a reworded TUTOR_SYSTEM fails there rather than in production.
+# test_fake_provider.py asserts all four stage markers are mutually exclusive against
+# the live system prompts, so a reworded TUTOR_SYSTEM fails there rather than in production.
 TUTOR_MARKER = "answering a learner's question"
+# Source mode's questions-only stage (app.generation.QUESTIONS_SYSTEM): concepts and
+# quiz only, no "content" key, drawn straight from the source rather than authored
+# prose. Without this branch a questions-stage prompt falls through to _lesson() and
+# returns a "content" key generate_questions never reads, which is silent under the
+# fake provider because both replies still parse as JSON; only the shape is wrong.
+QUESTIONS_MARKER = "preparing the concepts and quiz for one lesson"
 
-# NOT a fourth stage marker, and deliberately outside the mutual-exclusion set above.
+# NOT a fifth stage marker, and deliberately outside the mutual-exclusion set above.
 # Guided mode is the tutor stage in a different FORM, built off the same shared prompt
 # body, so a guided prompt matches TUTOR_MARKER exactly like an answer-mode one does and
 # then takes a second decision inside that branch. Adding these to the stage set would
@@ -125,7 +132,14 @@ def _source_material(prompt: str) -> str:
 
 
 def _segment_count(prompt: str) -> int:
-    match = re.search(r"The source material has (\d+) segments", prompt)
+    # Two preambles, one per shape generate_outline emits: "has N segments" for a
+    # single document, "split into N segments in total" once there are several.
+    # Matching only the first made every multi-source run look like a one-segment
+    # corpus, so the deal below put every lesson on segment 0 and no test could see
+    # a lesson routed to the second document.
+    match = re.search(r"The source material has (\d+) segments", prompt) or re.search(
+        r"split into (\d+) segments in total", prompt
+    )
     return int(match.group(1)) if match else 1
 
 
@@ -177,6 +191,8 @@ class FakeProvider:
             text = self._outline(prompt)
         elif REMEDIATION_MARKER in system:
             text = self._remediation(prompt)
+        elif QUESTIONS_MARKER in system:
+            text = self._questions(prompt)
         elif TUTOR_MARKER in system:
             # Guided mode is the same stage in a different form, so the second decision
             # is taken here rather than by a marker of its own. See GUIDED_MARKER.
@@ -537,6 +553,40 @@ class FakeProvider:
                     f"{tail}"
                 )
         return json.dumps(reply)
+
+    def _questions(self, prompt: str) -> str:
+        """Concepts and quiz only, no "content" key: generate_questions() supplies the
+        lesson body itself from the source text, so a "content" key here would just be
+        ignored, not a bug the caller could catch.
+        """
+        match = re.match(r"Lesson title:\s*(.+)", prompt)
+        title = match.group(1).strip() if match else "Lesson"
+        topic = _topic(prompt)
+        concepts = [f"{topic} fundamentals", title, "self-assessment"]
+        mcq_concept = title if title == HOSTILE_LESSON_TITLE else concepts[0]
+        return json.dumps(
+            {
+                "concepts": concepts,
+                "quiz": [
+                    {
+                        "question": (
+                            f"Which lesson are you reading in this course about {topic}?"
+                        ),
+                        "kind": "mcq",
+                        "options": [title, "The glossary", "The appendix", "The preface"],
+                        "answer": title,
+                        "concept": mcq_concept,
+                    },
+                    {
+                        "question": "Type the word 'forge' to confirm you read the source.",
+                        "kind": "short",
+                        "options": [],
+                        "answer": "forge",
+                        "concept": concepts[2],
+                    },
+                ],
+            }
+        )
 
     def _lesson(self, prompt: str) -> str:
         match = re.match(r"Lesson title:\s*(.+)", prompt)

@@ -11,8 +11,9 @@ what is genuinely new about /courses/generate/multipart:
   3. `sources` is a hand-parsed JSON string riding in a form field, so malformed JSON, the
      wrong JSON shape, and an invalid element all have to be caught here rather than by
      FastAPI's own body parsing.
-  4. MAX_UPLOAD_BYTES, checked on UploadFile.size before any file is read, which
-     /courses/generate/pdf does not have.
+  4. MAX_UPLOAD_BYTES, checked on UploadFile.size before any file is read, via the
+     shared `_check_upload_size` helper (test_source_mode_endpoints.py pins the same
+     check on /courses/generate/pdf).
   5. GET /meta/limits, read from the same constants ingest.load_sources enforces.
 
 `extract_pdf` is monkeypatched to decode its own input rather than parsing real PDF bytes,

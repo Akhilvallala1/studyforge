@@ -9,6 +9,7 @@ from app.llm.fake_provider import (
     GUIDED_RUNG2_MARKER,
     HOSTILE_LESSON_TITLE,
     OUTLINE_MARKER,
+    QUESTIONS_MARKER,
     REMEDIATION_MARKER,
     TUTOR_MARKER,
     FakeProvider,
@@ -90,6 +91,17 @@ def test_fake_provider_answers_every_live_system_prompt():
     )
     assert lesson["content"] and lesson["quiz"]
 
+    # The questions stage: concepts and quiz, no "content" key. See
+    # test_fake_provider_questions_stage_has_its_own_branch below for the mutation
+    # that proves this dedicated branch, rather than the lesson fall-through, is
+    # what answers it.
+    questions = generation.parse_json_response(
+        provider.generate(
+            generation.QUESTIONS_SYSTEM, "Lesson title: A\nSource material:\n\nText."
+        ).text
+    )
+    assert questions["concepts"] and questions["quiz"]
+
     # parse_note raises unless both fields are present and non-empty.
     content = remediation.parse_note(
         provider.generate(remediation.REMEDIATION_SYSTEM, _remediation_prompt()).text
@@ -125,6 +137,7 @@ def test_the_stage_markers_are_mutually_exclusive():
     systems = {
         "outline": generation.outline_system(4),
         "lesson": generation.LESSON_SYSTEM,
+        "questions": generation.QUESTIONS_SYSTEM,
         "remediation": remediation.REMEDIATION_SYSTEM,
         "tutor": tutor.TUTOR_SYSTEM,
         "guided_1": tutor.guided_system(1),
@@ -133,12 +146,13 @@ def test_the_stage_markers_are_mutually_exclusive():
     matched = {
         name: [
             marker
-            for marker in (OUTLINE_MARKER, REMEDIATION_MARKER, TUTOR_MARKER)
+            for marker in (OUTLINE_MARKER, QUESTIONS_MARKER, REMEDIATION_MARKER, TUTOR_MARKER)
             if marker in system
         ]
         for name, system in systems.items()
     }
     assert matched["outline"] == [OUTLINE_MARKER]
+    assert matched["questions"] == [QUESTIONS_MARKER]
     assert matched["remediation"] == [REMEDIATION_MARKER]
     assert matched["tutor"] == [TUTOR_MARKER]
     # MUTATION TARGET. Move TUTOR_MARKER's phrase out of the shared body and into the
@@ -151,8 +165,32 @@ def test_the_stage_markers_are_mutually_exclusive():
     assert matched["lesson"] == []
 
 
+def test_fake_provider_questions_stage_has_its_own_branch_not_the_lesson_fallthrough():
+    """MUTATION TARGET, run by hand: delete the `elif QUESTIONS_MARKER in system:` branch
+    in FakeProvider.generate and this fails with
+
+        AssertionError: assert 'content' not in {'content': ..., 'concepts': [...], 'quiz': [...]}
+
+    because the questions-stage prompt then falls through to `_lesson()`, which emits a
+    "content" key the dedicated `_questions()` branch never does. Restoring the branch
+    turns this green again. Both halves were run by hand for this task; see the report.
+
+    The two branches also word their short-answer item differently ("read the source"
+    vs "read the lesson"), so that difference is asserted too as a second, independent
+    signal that the dedicated branch, not the fallback, produced this reply.
+    """
+    provider = FakeProvider()
+    prompt = "Lesson title: A\nLesson summary: s\n\nSource material:\n\nSome text here."
+    parsed = json.loads(provider.generate(generation.QUESTIONS_SYSTEM, prompt).text)
+
+    assert "content" not in parsed
+    assert set(parsed.keys()) == {"concepts", "quiz"}
+    short = next(item for item in parsed["quiz"] if item["kind"] == "short")
+    assert "confirm you read the source" in short["question"]
+
+
 def test_the_guided_markers_select_a_form_not_a_stage():
-    """GUIDED_MARKER is a second decision inside the tutor branch, not a fourth stage.
+    """GUIDED_MARKER is a second decision inside the tutor branch, not a fifth stage.
 
     So it must be absent from answer mode, present at both rungs, and the rung marker has
     to separate the two. Getting this wrong raises nowhere: it serves one rung where the

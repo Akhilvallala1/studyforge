@@ -317,12 +317,21 @@ class Source:
     Lifted from evals/sources.py rather than copied. `key` is a short stable handle the
     eval harness groups by; the app leaves it empty, because nothing in the request path
     needs to name a source twice.
+
+    locator and raw both default to their empty forms, which matters because
+    evals/sources.py constructs Source directly and must keep working unmodified.
+    locator is the stable handle persistence keys off: the 11-character YouTube video id
+    for a YouTube source, plumbed through from youtube.video_id rather than re-parsed
+    from ref, and "" for every other kind. raw is the original bytes for a PDF, kept only
+    long enough for _save_course to persist them, and None otherwise.
     """
 
     key: str
     kind: str  # "url" | "text" | "pdf"
     ref: str
     text: str
+    locator: str = ""
+    raw: bytes | None = None
 
     def meta(self) -> dict:
         return {"key": self.key, "kind": self.kind, "ref": self.ref}
@@ -413,7 +422,9 @@ def from_url(key: str, url: str) -> Source:
 def from_youtube(key: str, url: str, transcript: "youtube.Transcript") -> Source:
     # kind stays "url": the caller submitted a URL (main.py's SourceInput.kind has no
     # "youtube" option), and load_source is the one that noticed it names a video.
-    return Source(key=key, kind="url", ref=url, text=transcript.text())
+    return Source(
+        key=key, kind="url", ref=url, text=transcript.text(), locator=transcript.video_id
+    )
 
 
 def from_text(key: str, label: str, text: str) -> Source:
@@ -421,7 +432,7 @@ def from_text(key: str, label: str, text: str) -> Source:
 
 
 def from_pdf_bytes(key: str, label: str, data: bytes) -> Source:
-    return Source(key=key, kind="pdf", ref=label, text=extract_pdf(data))
+    return Source(key=key, kind="pdf", ref=label, text=extract_pdf(data), raw=data)
 
 
 # What a caller is told when the copy dict is missing an entry. Theoretical today, since
@@ -605,10 +616,30 @@ def chunk_sources(sources: list[Source]) -> tuple[list[str], list[str]]:
     sources are FIVE chunks here and ONE concatenated, so a concatenating measurement
     reports an unrouted run for a routed one. The eval harness had precisely that bug.
     """
+    chunks, owners, _positions = chunk_sources_with_positions(sources)
+    return chunks, owners
+
+
+def chunk_sources_with_positions(
+    sources: list[Source],
+) -> tuple[list[str], list[str], list[int]]:
+    """Same chunking as chunk_sources, plus positions[i]: the 0-based index into
+    `sources` that chunk i came from.
+
+    `owners` (the ref) is not safe to map a chunk back to a source by, because refs are
+    not unique: two uploaded files can share a filename, and reconstructing positions by
+    watching `owners` change value would merge two adjacent sources that happen to share
+    one. `positions` is written from the same loop that owns the real source index, so it
+    is exact rather than reconstructed. chunk_sources keeps its existing 2-tuple return so
+    evals/ and every other caller of it is unaffected; callers that need the mapping (a
+    lesson's segments back to a source) call this function instead.
+    """
     chunks: list[str] = []
     owners: list[str] = []
-    for source in sources:
+    positions: list[int] = []
+    for position, source in enumerate(sources):
         for chunk in chunk_text(source.text):
             chunks.append(chunk)
             owners.append(source.ref)
-    return chunks, owners
+            positions.append(position)
+    return chunks, owners, positions

@@ -1,10 +1,13 @@
 import json
 import logging
 import os
+import re
 import uuid
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, Literal
+from urllib.parse import quote
 
 import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
@@ -28,6 +31,7 @@ from app import (
     remediation,
     review,
     tutor,
+    youtube,
 )
 from app.attempts import (
     _attempt_state,
@@ -263,11 +267,16 @@ class GenerateRequest(BaseModel):
 
     DEPRECATED, and with a date rather than an aspiration: `text` and `url` are removed in
     0.4.0. Until then they are supported, not merely tolerated.
+
+    `mode` defaults to "lessons", so every existing caller and every existing test is
+    unaffected. "source" renders the source material itself (see
+    generation.SOURCE_CONTENT_KIND) instead of model-authored lesson prose.
     """
 
     sources: list[SourceInput] | None = None
     text: str | None = None
     url: str | None = None
+    mode: Literal["lessons", "source"] = "lessons"
 
     @model_validator(mode="after")
     def _normalize_aliases(self) -> "GenerateRequest":
@@ -390,6 +399,29 @@ def upload_too_large_message(total_bytes: int) -> str:
     )
 
 
+def _check_upload_size(uploads: list[UploadFile]) -> None:
+    """Refuse a batch of uploads over ingest.MAX_UPLOAD_BYTES, summed.
+
+    Checked on UploadFile.size, before any file is read: reading every part into memory
+    just to find out afterward that the batch is over budget is the exact cost this cap
+    exists to avoid. A None size is refused rather than summed as zero, because the cap
+    is a memory guard and an upload whose size cannot be trusted is exactly the case it
+    exists to catch. Shared by every route that accepts `file` uploads, so a route that
+    starts accepting them is one call away from being covered rather than one omission
+    away from being an unbounded upload sitting behind a form field that looks capped.
+    """
+    if any(upload.size is None for upload in uploads):
+        raise _unprocessable(
+            "source_too_large",
+            "One of those files did not report its size, so it cannot be checked against "
+            f"the {ingest.MAX_UPLOAD_BYTES:,}-byte limit. Nothing was generated and nothing "
+            "was charged. Try uploading it again.",
+        )
+    total_bytes = sum(upload.size for upload in uploads)
+    if total_bytes > ingest.MAX_UPLOAD_BYTES:
+        raise _unprocessable("source_too_large", upload_too_large_message(total_bytes))
+
+
 INVALID_RATING_MESSAGE = f"rating must be one of {list(fsrs.RATINGS)}"
 
 MESSAGE_EMPTY_MESSAGE = "Type a question before sending it."
@@ -462,8 +494,77 @@ def _cost_limit_exceeded(exc: CostLimitExceeded) -> HTTPException:
     )
 
 
-def _save_course(session: Session, course: dict) -> models.Course:
+def _lesson_source_position(segments: list[int], positions: list[int]) -> int | None:
+    """Which source position (0-based, matching source_rows) a lesson's segments anchor
+    to, or None if they name no valid chunk.
+
+    A lesson's segments are chunk indexes; positions[i] is the source that chunk i came
+    from (ingest.chunk_sources_with_positions). When a lesson's segments span more than
+    one source, it is anchored to the source owning the MAJORITY of its segments, ties
+    broken by lowest source position. This is a judgment call, not a forced one: "most of
+    the material" is a reasonable proxy for "what this lesson is about", but a lesson
+    genuinely split evenly between two sources has no single right answer.
+    """
+    counts: dict[int, int] = {}
+    for index in segments:
+        if 0 <= index < len(positions):
+            position = positions[index]
+            counts[position] = counts.get(position, 0) + 1
+    if not counts:
+        return None
+    best = max(counts.values())
+    return min(position for position, count in counts.items() if count == best)
+
+
+def _save_course(
+    session: Session,
+    course: dict,
+    sources: list[ingest.Source] | None = None,
+    mode: str = "lessons",
+    positions: list[int] | None = None,
+) -> models.Course:
+    """Persist a generated course, and the sources it was built from.
+
+    `mode="source"` ties each lesson to the source owning the majority of its segments
+    (_lesson_source_position) and keeps a PDF's original bytes; the default, "lessons",
+    never writes a blob. `positions` (chunk index to source position) applies only in
+    source mode. A lesson keeps source_id NULL, instead of guessing, when its segments
+    name no valid chunk, or when they span the whole corpus in a multi-source course:
+    either because the lesson fell back (generation.segments_are_fallback) or because
+    the corpus was never routed at all, which lesson_segments also answers with every
+    chunk. A single-source course keeps its anchor regardless, since there is no other
+    source to confuse it with.
+    """
     row = models.Course(title=course["title"], description=course["description"])
+    source_rows: list[models.CourseSource] = []
+    for position, source in enumerate(sources or []):
+        source_row = models.CourseSource(
+            position=position,
+            kind=source.kind,
+            ref=source.ref,
+            title=source.ref,
+            locator=source.locator,
+            char_count=len(source.text),
+            byte_size=len(source.raw) if source.raw is not None else None,
+        )
+        if mode == "source" and source.raw is not None:
+            source_row.blob = models.CourseSourceBlob(data=source.raw)
+        row.sources.append(source_row)
+        source_rows.append(source_row)
+    if source_rows:
+        # Flushed so source_rows carry real ids before the lessons below reference them;
+        # commit happens once, at the end, alongside everything else.
+        session.add(row)
+        session.flush()
+
+    # Two ways a lesson ends up holding the whole corpus: it fell back, or the corpus was
+    # too small to route at all (lesson_segments answers both with every chunk). Either way
+    # the vote below ties and resolves to the lowest position, handing every lesson to the
+    # first document. A hand-built course dict carrying no segment_routing counts as routed,
+    # which is what the unit tests that call _save_course directly expect.
+    multi_source = len(set(positions or [])) > 1
+    unrouted = not (course.get("segment_routing") or {}).get("routed", True)
+
     for m_pos, module in enumerate(course["modules"]):
         module_row = models.Module(title=module["title"], position=m_pos)
         for l_pos, lesson in enumerate(module["lessons"]):
@@ -473,6 +574,15 @@ def _save_course(session: Session, course: dict) -> models.Course:
                 content=lesson.get("content", ""),
                 concepts=lesson.get("concepts", []),
             )
+            if mode == "source":
+                lesson_row.content_kind = "source"
+                spans_whole_corpus = unrouted or lesson.get("segments_fell_back")
+                if not (spans_whole_corpus and multi_source):
+                    source_position = _lesson_source_position(
+                        lesson.get("segments") or [], positions or []
+                    )
+                    if source_position is not None and source_position < len(source_rows):
+                        lesson_row.source_id = source_rows[source_position].id
             for item in lesson.get("quiz", []):
                 lesson_row.quiz_items.append(
                     models.QuizItem(
@@ -491,19 +601,34 @@ def _save_course(session: Session, course: dict) -> models.Course:
     return row
 
 
-def _run_generation(session: Session, chunks: list[str], owners: list[str]) -> dict:
+def _run_generation(
+    session: Session,
+    chunks: list[str],
+    owners: list[str],
+    sources: list[ingest.Source] | None = None,
+    mode: str = "lessons",
+    positions: list[int] | None = None,
+) -> dict:
     """Run the metered generation pipeline, save the course, backfill the run's
-    llm_calls rows with the new course id, and return the generate-endpoint response."""
+    llm_calls rows with the new course id, and return the generate-endpoint response.
+
+    `mode == "source"` routes generation through generate_questions_course instead of
+    generate_course: same outline and routing, but each lesson keeps the source's own
+    text (see generation.SOURCE_CONTENT_KIND) rather than model-authored prose.
+    """
     run_id = uuid.uuid4().hex
     meter = MeteredLLM(get_provider(), run_id)
+    generate = (
+        generation.generate_questions_course if mode == "source" else generation.generate_course
+    )
     try:
-        course = generation.generate_course(meter, chunks, owners)
+        course = generate(meter, chunks, owners)
     except CostLimitExceeded as exc:
         raise _cost_limit_exceeded(exc) from exc
     except Exception as exc:
         raise generation_failure(exc, "generate") from exc
 
-    row = _save_course(session, course)
+    row = _save_course(session, course, sources, mode, positions)
     session.query(models.LlmCall).filter(models.LlmCall.run_id == run_id).update(
         {"course_id": row.id}
     )
@@ -607,10 +732,25 @@ def _legacy_refusal(failure: ingest.SourceFailure, stage: str) -> HTTPException:
     return HTTPException(400, "No usable text found in the source")
 
 
-def _ingest_or_refuse(
-    specs: list[ingest.SourceSpec], *, legacy: bool, stage: str
-) -> tuple[list[str], list[str]]:
-    """Read every source, refuse if any failed, and return its chunks and their labels.
+@dataclass
+class Ingested:
+    """What _ingest_or_refuse hands to _run_generation_from: the sources it read, plus
+    the chunks, owners and positions chunk_sources_with_positions cut from them.
+
+    Internal to this module, not a public API shape. A dataclass rather than a third
+    tuple element so a caller unpacking (chunks, owners) two-at-a-time does not silently
+    start reading the wrong thing; `sources` and `positions` are what persistence needs
+    and `chunks`/`owners` are what generation has always taken.
+    """
+
+    sources: list[ingest.Source]
+    chunks: list[str]
+    owners: list[str]
+    positions: list[int]
+
+
+def _ingest_or_refuse(specs: list[ingest.SourceSpec], *, legacy: bool, stage: str) -> Ingested:
+    """Read every source, refuse if any failed, and return its sources, chunks and labels.
 
     FAIL CLOSED, AND IT COSTS NOTHING TO DO SO. Everything here happens before the first
     token is bought: the fetching and the parsing are done, the caps are applied, and only
@@ -649,13 +789,15 @@ def _ingest_or_refuse(
         if legacy:
             raise HTTPException(422, message)
         raise _unprocessable("source_too_large", message)
-    return ingest.chunk_sources(sources)
+    chunks, owners, positions = ingest.chunk_sources_with_positions(sources)
+    return Ingested(sources=sources, chunks=chunks, owners=owners, positions=positions)
 
 
-def _run_generation_from(session: Session, ingested: tuple[list[str], list[str]]) -> dict:
-    """Unpack what _ingest_or_refuse returns and run the pipeline on both halves."""
-    chunks, owners = ingested
-    return _run_generation(session, chunks, owners)
+def _run_generation_from(session: Session, ingested: Ingested, mode: str = "lessons") -> dict:
+    """Unpack what _ingest_or_refuse returns and run the pipeline on all four parts."""
+    return _run_generation(
+        session, ingested.chunks, ingested.owners, ingested.sources, mode, ingested.positions
+    )
 
 
 def _parse_multipart_sources(raw: str) -> list[SourceInput]:
@@ -720,18 +862,35 @@ def generate_from_text(body: GenerateRequest, session: Session = Depends(get_ses
         for index, source in enumerate(body.sources or [])
     ]
     ingested = _ingest_or_refuse(specs, legacy=not body.used_canonical_field(), stage="url")
-    return _run_generation_from(session, ingested)
+    return _run_generation_from(session, ingested, body.mode)
 
 
 @app.post("/courses/generate/pdf")
-def generate_from_pdf(file: list[UploadFile], session: Session = Depends(get_session)):
+def generate_from_pdf(
+    file: list[UploadFile],
+    mode: Literal["lessons", "source"] = Form(default="lessons"),
+    session: Session = Depends(get_session),
+):
     """One or more PDFs, uploaded under the field name `file`.
 
     STILL `file` AND NOT `files`, which is not a naming slip. FastAPI collects every part
     with that name into the list, so a client sending one part is unchanged and a client
     sending five needs no new field. Renaming it would have broken every existing caller to
     buy nothing.
+
+    `mode` defaults to "lessons", so every existing caller is unaffected; see
+    GenerateRequest.mode for what "source" does. It is accepted HERE and not only on the
+    multipart route for API consistency: this is the single-PDF entry point, and a PDF is
+    the source type source mode exists to display. It currently has no frontend consumer;
+    the web UI's upload path posts to /courses/generate/multipart instead.
+
+    Capped at ingest.MAX_UPLOAD_BYTES total (see _check_upload_size), the same check
+    generate_multipart applies to its own `file` parts: without it, mode="source" turns
+    an unbounded upload into a permanent row in the user's SQLite file rather than a
+    transient one.
     """
+    _check_upload_size(file)
+
     specs = [
         ingest.SourceSpec(
             kind="pdf",
@@ -741,7 +900,7 @@ def generate_from_pdf(file: list[UploadFile], session: Session = Depends(get_ses
         for index, upload in enumerate(file)
     ]
     ingested = _ingest_or_refuse(specs, legacy=len(specs) <= 1, stage="pdf")
-    return _run_generation_from(session, ingested)
+    return _run_generation_from(session, ingested, mode)
 
 
 async def _raw_sources_field(request: Request) -> Any:
@@ -762,6 +921,7 @@ def generate_multipart(
     raw_sources: Any = Depends(_raw_sources_field),
     sources: str | None = Form(default=None),
     file: list[UploadFile] = File(default=[]),
+    mode: Literal["lessons", "source"] = Form(default="lessons"),
     session: Session = Depends(get_session),
 ):
     """One course from URLs, pasted text and PDFs combined in a single request.
@@ -770,6 +930,9 @@ def generate_multipart(
     {"kind", "value", "ref"} shape /courses/generate takes in its body. `file` is the same
     field the PDF-only route uses, so an upload behaves identically on both. Either part may
     be omitted, but not both.
+
+    `mode` defaults to "lessons", so every existing caller is unaffected; see
+    GenerateRequest.mode for what "source" does.
 
     COMBINED ORDER IS `sources` THEN `file`, both in the order their parts arrived. That
     order is what `index` in a refusal counts from, and what the outline prompt sees the
@@ -805,28 +968,7 @@ def generate_multipart(
     if combined_count > ingest.MAX_SOURCES:
         raise _unprocessable("too_many_sources", too_many_sources_message(combined_count))
 
-    # Checked on UploadFile.size, before any file is read. upload.file.read() below pulls a
-    # whole file into memory, and doing that for every part before finding out the batch is
-    # over budget is the accidental-huge-request this cap exists to avoid.
-    #
-    # A None size is refused rather than summed as zero. UNKNOWN IS TREATED AS OVER THE
-    # CAP, NOT UNDER IT, because the cap is a memory guard: an upload whose size cannot be
-    # trusted is exactly the case it exists to catch, and letting it through because the
-    # one signal available is missing would make the guard a no-op for the one input it
-    # cannot vouch for. Not reachable through this app's own multipart parser today, which
-    # always sets size before an UploadFile reaches a route, but that is a fact about the
-    # library version pinned today, not a promise, and this must not become a guard that
-    # quietly fails open the day it stops being true.
-    if any(upload.size is None for upload in file):
-        raise _unprocessable(
-            "source_too_large",
-            "One of those files did not report its size, so it cannot be checked against "
-            f"the {ingest.MAX_UPLOAD_BYTES:,}-byte limit. Nothing was generated and nothing "
-            "was charged. Try uploading it again.",
-        )
-    upload_total_bytes = sum(upload.size for upload in file)
-    if upload_total_bytes > ingest.MAX_UPLOAD_BYTES:
-        raise _unprocessable("source_too_large", upload_too_large_message(upload_total_bytes))
+    _check_upload_size(file)
 
     specs = [
         ingest.SourceSpec(
@@ -848,7 +990,7 @@ def generate_multipart(
     )
 
     ingested = _ingest_or_refuse(specs, legacy=False, stage="multipart")
-    return _run_generation_from(session, ingested)
+    return _run_generation_from(session, ingested, mode)
 
 
 @app.get("/meta/limits")
@@ -896,6 +1038,132 @@ def get_course(course_id: int, session: Session = Depends(get_session)):
             for m in row.modules
         ],
     }
+
+
+# CR, LF, double quotes (Content-Disposition's own delimiter) and either path separator.
+# ref is untrusted (a pasted label, an uploaded filename, a URL) and lands in an HTTP
+# response header below; this is what keeps it from being able to inject a second header
+# or escape the quoted filename parameter.
+# Control bytes too, not just CR and LF: a NUL in a filename makes h11 reject the
+# whole response, so an odd upload could deny itself its own download.
+_FILENAME_UNSAFE = re.compile(r'[\x00-\x1f\x7f"/\\]')
+
+
+def _sanitize_source_filename(ref: str) -> str:
+    """`ref` made safe to quote inside a Content-Disposition filename parameter.
+
+    Keeps non-ASCII codepoints; this is the display name carried in filename*, not the
+    ASCII fallback in the plain filename parameter (see _content_disposition). Falls
+    back to a fixed name if stripping leaves nothing usable, and always ends in .pdf
+    since this only ever names a stored PDF blob.
+    """
+    cleaned = _FILENAME_UNSAFE.sub("", ref).strip()
+    if not cleaned:
+        cleaned = "source"
+    if not cleaned.lower().endswith(".pdf"):
+        cleaned += ".pdf"
+    return cleaned
+
+
+def _content_disposition(ref: str) -> str:
+    """RFC 6266 header value for serving a source file inline.
+
+    filename carries an ASCII-only name: Starlette encodes header values as latin-1,
+    and a codepoint above U+00FF there raises UnicodeEncodeError. filename* carries the
+    real name percent-encoded per RFC 5987, which browsers that support it show in
+    full instead of the ASCII fallback.
+    """
+    display = _sanitize_source_filename(ref)
+    ascii_only = display.encode("ascii", "ignore").decode("ascii").strip()
+    base = ascii_only[:-4] if ascii_only.lower().endswith(".pdf") else ascii_only
+    ascii_name = ascii_only if base.strip() else "source.pdf"
+    encoded = quote(display, safe="")
+    return f'inline; filename="{ascii_name}"; filename*=UTF-8\'\'{encoded}'
+
+
+@app.get("/courses/{course_id}/sources")
+def list_course_sources(course_id: int, session: Session = Depends(get_session)):
+    """The sources a course was built from, in the order the outline saw them.
+
+    Never returns blob bytes, only whether one is stored, so a client can decide to ask
+    for GET .../sources/{source_id}/file rather than being handed the file inline.
+
+    locator is re-validated against youtube.WATCH_ID here, not just at write time: it
+    is stored data a future migration or a bug could corrupt, and this is the last
+    checkpoint before it reaches a client. An invalid one is reported as "" rather than
+    echoed, the same "absent, not wrong" choice ingest.chunk_text makes elsewhere.
+    """
+    course = session.get(models.Course, course_id)
+    if not course:
+        raise HTTPException(404, "Course not found")
+    rows = (
+        session.query(models.CourseSource)
+        .filter(models.CourseSource.course_id == course_id)
+        .order_by(models.CourseSource.position)
+        .all()
+    )
+    # A set of ids, not row.blob is not None: the latter lazy-loads the whole blob,
+    # data column included, once per source just to test it for nullness.
+    ids_with_blob = {
+        sid
+        for (sid,) in session.query(models.CourseSourceBlob.source_id).filter(
+            models.CourseSourceBlob.source_id.in_([row.id for row in rows])
+        )
+    }
+    return [
+        {
+            "id": row.id,
+            "position": row.position,
+            "kind": row.kind,
+            "ref": row.ref,
+            "title": row.title,
+            "locator": row.locator if youtube.WATCH_ID.fullmatch(row.locator or "") else "",
+            "char_count": row.char_count,
+            "byte_size": row.byte_size,
+            "has_file": row.id in ids_with_blob,
+        }
+        for row in rows
+    ]
+
+
+@app.get("/courses/{course_id}/sources/{source_id}/file")
+def get_course_source_file(
+    course_id: int, source_id: int, session: Session = Depends(get_session)
+):
+    """The original bytes behind a PDF source.
+
+    Serves PDFs only. The Content-Type sent is the fixed literal "application/pdf",
+    never CourseSourceBlob.media_type: that column always holds its fixed default today
+    (nothing sets it from upload data), and this endpoint does not read it anyway. A
+    source whose kind is not "pdf" is answered the same 404 as one with no blob
+    at all, since neither has a file to serve.
+
+    A source_id that belongs to a DIFFERENT course is also a 404, the same message as
+    "no such source", rather than leaking that the id exists at all.
+    """
+    course = session.get(models.Course, course_id)
+    if not course:
+        raise HTTPException(404, "Course not found")
+    source = session.get(models.CourseSource, source_id)
+    if not source or source.course_id != course_id:
+        raise HTTPException(404, "Source not found")
+    if source.kind != "pdf" or source.blob is None:
+        raise HTTPException(404, "Source has no file")
+
+    disposition = _content_disposition(source.ref or source.title)
+    return Response(
+        content=source.blob.data,
+        media_type="application/pdf",
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": disposition,
+            # sandbox with no allow-* keeps a PDF a browser renders inline from running
+            # script or navigating the top frame if it ever contains anything active;
+            # default-src 'none' denies it any other capability besides being displayed.
+            "Content-Security-Policy": "default-src 'none'; sandbox",
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 @app.get("/courses/{course_id}/deletion-preview")
