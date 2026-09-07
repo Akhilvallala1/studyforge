@@ -107,7 +107,8 @@ def test_generate_questions_returns_only_concepts_and_quiz():
 
 
 def test_questions_system_carries_the_two_measured_bullets_verbatim():
-    """The write-count and option-voice rules are the ones the trial measured; copy them."""
+    """The write-count and option-voice rules were held constant across the trial that
+    measured the traceability bullet, not the effect it measured; copy them unchanged."""
     write_count_bullet = (
         '- Write 3-6 items. For "mcq" give exactly 4 options and set "answer" to the correct '
         'option\'s text. For "short" leave "options" empty.'
@@ -159,6 +160,48 @@ def test_generate_questions_course_never_asks_the_model_for_content():
     generate_questions_course(meter, chunks)
     assert meter.stages.count(generation.QUESTIONS_STAGE) == 2
     assert generation.LESSON_STAGE not in meter.stages
+
+
+class FallbackAndRoutedMeter:
+    """One outline: a lesson the outline routed to real segments, and one it gave no
+    "segments" field at all, so lesson_segments falls back to the whole corpus.
+    """
+
+    def generate(self, stage, system, prompt, max_tokens=64000):
+        if "curriculum designer" in system:
+            return json.dumps(
+                {
+                    "title": "Course",
+                    "description": "",
+                    "modules": [
+                        {
+                            "title": "Module 1",
+                            "lessons": [
+                                {"title": "Routed", "summary": "", "segments": [0]},
+                                {"title": "Fell Back", "summary": ""},
+                            ],
+                        }
+                    ],
+                }
+            )
+        return json.dumps({"concepts": ["c"], "quiz": []})
+
+
+def test_generate_questions_course_flags_a_fallback_lesson_but_not_a_routed_one():
+    """_save_course reads "segments_fell_back" off each lesson to decide whether a
+    multi-source anchor is a real route or a guess (see main._save_course); this pins
+    the flag this PR's fix depends on actually reaching the lesson dict.
+    """
+    meter = FallbackAndRoutedMeter()
+    chunks = ["chunk zero", "chunk one", "chunk two", "chunk three"]
+    course = generate_questions_course(meter, chunks)
+    lessons = course["modules"][0]["lessons"]
+    routed, fell_back = lessons[0], lessons[1]
+    assert routed["title"] == "Routed"
+    assert routed["segments_fell_back"] is False
+    assert fell_back["title"] == "Fell Back"
+    assert fell_back["segments_fell_back"] is True
+    assert fell_back["segments"] == [0, 1, 2, 3]
 
 
 def _seed_source_lesson():

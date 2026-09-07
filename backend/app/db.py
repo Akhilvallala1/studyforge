@@ -124,14 +124,12 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     # upgraded == fresh and every lesson already in the table backfills to "lesson"
     # rather than to NULL, which is true of every one of them.
     ("lessons", "content_kind", "VARCHAR(20) NOT NULL DEFAULT 'lesson'"),
-    # The CourseSource a source-mode lesson renders. Plain INTEGER with NO REFERENCES,
-    # and the reason is specific to this column rather than a house style: the ALTER
-    # below and create_all's DDL must produce IDENTICAL schemas for upgraded == fresh,
-    # and that comparison reads inspector.get_columns, which does not report foreign
-    # keys at all. A REFERENCES clause here would pass that comparison silently while
-    # making the two schemas actually differ. This is a DIFFERENT reason from
-    # llm_calls.course_id's missing FK above, which exists so usage rows survive a
-    # course deletion; do not conflate the two.
+    # The CourseSource a source-mode lesson renders. Plain INTEGER with NO REFERENCES:
+    # inspector.get_columns, which the upgraded == fresh schema check reads, does not
+    # report foreign keys, so a REFERENCES clause here would pass that check silently
+    # while making the two schemas actually differ. Unlike llm_calls.course_id above,
+    # which drops its FK so usage rows survive a course deletion, this omission is
+    # about the migration check, not about surviving a deletion.
     ("lessons", "source_id", "INTEGER"),
 )
 

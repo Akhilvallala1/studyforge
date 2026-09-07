@@ -531,9 +531,9 @@ def test_every_stage_actually_recorded_is_one_the_page_can_explain(client, monke
     was written about something else. So this reads the stages the app ACTUALLY
     recorded, after driving both the paths that record any.
 
-    The questions stage has no endpoint yet (Phase B lands generate_questions before
-    anything can reach it over HTTP), so it is driven straight through generation.py
-    rather than through client.post, the same way the pipeline itself will call it.
+    The questions stage is reachable over HTTP too (mode="source" on the generate
+    endpoints), but it is driven straight through generation.py here instead, to record
+    one call without a multipart upload and a full course to get there.
     """
     monkeypatch.setattr(main, "get_provider", lambda: FakeProvider())
     assert client.post("/courses/generate", json={"text": "Whales breathe air."}).status_code == 200

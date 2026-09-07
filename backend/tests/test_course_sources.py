@@ -1,10 +1,12 @@
 """Source-anchored storage: the two new tables and what a course generation writes to them.
 
 Phase B1/B3 add course_sources and course_source_blobs and plumb ingest.Source through
-_save_course, with no endpoint yet choosing "source" mode. Two things matter most here: the
-default "lessons" path must behave exactly as before (that is the whole risk of touching
-_save_course at all), and a course's sources must not outlive the course except in the one
-place (llm_calls) that is supposed to survive deletion.
+_save_course. Two things matter most here: the default "lessons" path must behave
+exactly as before (that is the whole risk of touching _save_course at all), and a
+course's sources must not outlive the course except in the one place (llm_calls) that
+is supposed to survive deletion. mode="source" is exercised directly against
+_save_course below rather than through an endpoint, since the endpoints (added later
+in this same PR) are covered by their own tests.
 """
 
 from uuid import uuid4
@@ -253,6 +255,112 @@ def test_a_lesson_with_no_valid_segments_leaves_source_id_null_instead_of_guessi
         lesson = row.modules[0].lessons[0]
         assert lesson.content_kind == "source"
         assert lesson.source_id is None
+    finally:
+        session.close()
+
+
+def test_a_two_source_course_with_fallback_lessons_leaves_source_id_null_on_every_lesson():
+    """The bug this guards: lesson_segments falls back to the WHOLE corpus (below
+    SEGMENT_ROUTING_MIN_CHUNKS, or when the outline omitted "segments"), and majority-
+    with-lowest-position over the whole corpus then just picks whichever source owns
+    the most chunks. That is a guess dressed up as an anchor, not what the lesson is
+    about, so a fallback lesson over more than one source must stay unanchored.
+    """
+    course = {
+        "title": "Two Sources, Fell Back",
+        "description": "",
+        "modules": [
+            {
+                "title": "Module 1",
+                "lessons": [
+                    {
+                        "title": "Fell Back",
+                        "content": "",
+                        "segments": [0, 1, 2, 3],
+                        "segments_fell_back": True,
+                    },
+                ],
+            }
+        ],
+    }
+    sources = [
+        ingest.Source(key="", kind="text", ref="a.txt", text="a", locator=""),
+        ingest.Source(key="", kind="text", ref="b.txt", text="b", locator=""),
+    ]
+    session = SessionLocal()
+    try:
+        row = main._save_course(session, course, sources, mode="source", positions=[0, 0, 1, 1])
+        session.refresh(row)
+        lesson = row.modules[0].lessons[0]
+        assert lesson.content_kind == "source"
+        assert lesson.source_id is None
+    finally:
+        session.close()
+
+
+def test_a_single_source_fallback_course_still_anchors():
+    """A single-source course has no ambiguity to protect against: even a lesson whose
+    segments fell back to the whole (one-source) corpus keeps its anchor.
+    """
+    course = {
+        "title": "One Source, Fell Back",
+        "description": "",
+        "modules": [
+            {
+                "title": "Module 1",
+                "lessons": [
+                    {
+                        "title": "Fell Back",
+                        "content": "",
+                        "segments": [0, 1],
+                        "segments_fell_back": True,
+                    },
+                ],
+            }
+        ],
+    }
+    sources = [ingest.Source(key="", kind="text", ref="only.txt", text="only", locator="")]
+    session = SessionLocal()
+    try:
+        row = main._save_course(session, course, sources, mode="source", positions=[0, 0])
+        session.refresh(row)
+        lesson = row.modules[0].lessons[0]
+        assert lesson.source_id == row.sources[0].id
+    finally:
+        session.close()
+
+
+def test_a_genuinely_routed_multi_source_lesson_still_anchors_by_majority():
+    """segments_fell_back: False (a real route, not a guess) must not trip the
+    ambiguity guard just because the course has more than one source.
+    """
+    course = {
+        "title": "Routed",
+        "description": "",
+        "modules": [
+            {
+                "title": "Module 1",
+                "lessons": [
+                    {
+                        "title": "Mostly Second",
+                        "content": "",
+                        "segments": [0, 1, 2],
+                        "segments_fell_back": False,
+                    },
+                ],
+            }
+        ],
+    }
+    sources = [
+        ingest.Source(key="", kind="text", ref="first.txt", text="one", locator=""),
+        ingest.Source(key="", kind="text", ref="second.txt", text="two three", locator=""),
+    ]
+    session = SessionLocal()
+    try:
+        row = main._save_course(session, course, sources, mode="source", positions=[0, 1, 1])
+        session.refresh(row)
+        lesson = row.modules[0].lessons[0]
+        assert lesson.source_id == row.sources[1].id
     finally:
         session.close()
 

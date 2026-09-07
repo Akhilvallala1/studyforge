@@ -79,8 +79,8 @@ OUTLINE_MARKER = "curriculum designer"
 REMEDIATION_MARKER = "re-teaching one concept"
 # The tutor's marker has to avoid both phrases above, or the tutor prompt would
 # dispatch to another branch and the reply would parse as the wrong schema.
-# test_fake_provider.py asserts the three are mutually exclusive against the live
-# system prompts, so a reworded TUTOR_SYSTEM fails there rather than in production.
+# test_fake_provider.py asserts all four stage markers are mutually exclusive against
+# the live system prompts, so a reworded TUTOR_SYSTEM fails there rather than in production.
 TUTOR_MARKER = "answering a learner's question"
 # Source mode's questions-only stage (app.generation.QUESTIONS_SYSTEM): concepts and
 # quiz only, no "content" key, drawn straight from the source rather than authored
@@ -89,7 +89,7 @@ TUTOR_MARKER = "answering a learner's question"
 # fake provider because both replies still parse as JSON; only the shape is wrong.
 QUESTIONS_MARKER = "preparing the concepts and quiz for one lesson"
 
-# NOT a fourth stage marker, and deliberately outside the mutual-exclusion set above.
+# NOT a fifth stage marker, and deliberately outside the mutual-exclusion set above.
 # Guided mode is the tutor stage in a different FORM, built off the same shared prompt
 # body, so a guided prompt matches TUTOR_MARKER exactly like an answer-mode one does and
 # then takes a second decision inside that branch. Adding these to the stage set would

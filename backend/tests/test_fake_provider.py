@@ -190,7 +190,7 @@ def test_fake_provider_questions_stage_has_its_own_branch_not_the_lesson_fallthr
 
 
 def test_the_guided_markers_select_a_form_not_a_stage():
-    """GUIDED_MARKER is a second decision inside the tutor branch, not a fourth stage.
+    """GUIDED_MARKER is a second decision inside the tutor branch, not a fifth stage.
 
     So it must be absent from answer mode, present at both rungs, and the rung marker has
     to separate the two. Getting this wrong raises nowhere: it serves one rung where the

@@ -8,9 +8,16 @@ comes out anchored correctly through the whole pipeline, not just through a hand
 course dict.
 """
 
+import io
+
+import pytest
+from fastapi import HTTPException
+from starlette.datastructures import UploadFile
+
 from app import ingest, main, models
 from app.db import SessionLocal
 from app.llm.fake_provider import FakeProvider
+from tests.test_multi_source import NeverCalledProvider
 
 # Long enough, and paragraph-shaped enough, to be chunked into several pieces by
 # ingest.chunk_text (MAX_CHUNK_CHARS=8000), so the fake outline's round-robin dealing
@@ -152,9 +159,9 @@ def test_multipart_route_mode_defaults_to_lessons_when_omitted(client, monkeypat
 
 
 def test_pdf_route_mode_source_writes_a_blob_and_tags_the_lesson(client, monkeypatch):
-    """The PDF-only route takes `mode` too, and it is the one the web UI posts uploads
-    to (frontend/src/lib/api.ts), so without this a PDF could not be studied as itself
-    from the UI at all.
+    """The PDF-only route takes `mode` too, for API consistency with the multipart
+    route, even though the web UI itself posts uploads to /courses/generate/multipart
+    (frontend/src/lib/api.ts) rather than this one.
     """
     monkeypatch.setattr(main, "get_provider", lambda: FakeProvider())
     monkeypatch.setattr(ingest, "extract_pdf", lambda data: data.decode())
@@ -218,3 +225,41 @@ def test_pdf_route_mode_defaults_to_lessons_when_omitted(client, monkeypatch):
         assert blobs == [], "lessons mode must never write the original bytes to a blob"
     finally:
         session.close()
+
+
+def test_pdf_route_over_cap_uploads_are_refused_without_reading_any_file(client, monkeypatch):
+    """Finding 7: /courses/generate/pdf shares _check_upload_size with the multipart
+    route (see test_generate_multipart.test_over_cap_uploads_are_refused_without_reading_any_file,
+    the test this mirrors), so an over-budget batch is refused before extract_pdf runs.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: NeverCalledProvider())
+    pdf_reads: list[bytes] = []
+    monkeypatch.setattr(ingest, "extract_pdf", lambda data: pdf_reads.append(data) or data.decode())
+    each = ingest.MAX_UPLOAD_BYTES // 2 + 1
+
+    resp = client.post(
+        "/courses/generate/pdf",
+        files=[
+            ("file", ("a.pdf", b"x" * each, "application/pdf")),
+            ("file", ("b.pdf", b"x" * each, "application/pdf")),
+        ],
+    )
+
+    assert resp.status_code == 422, resp.text
+    detail = resp.json()["detail"]
+    assert detail["error"] == "source_too_large"
+    assert str(ingest.MAX_UPLOAD_BYTES) in detail["message"].replace(",", "")
+    assert pdf_reads == [], "the byte cap must refuse before any uploaded PDF is read"
+
+
+def test_pdf_route_unknown_upload_size_is_refused_as_over_cap_not_under():
+    """Finding 7's direct-call sibling of test_generate_multipart's own version: an
+    UploadFile with no known size must be refused, not summed as zero, on this route too.
+    """
+    upload = UploadFile(file=io.BytesIO(b"x" * 10), size=None, filename="huge.pdf")
+
+    with pytest.raises(HTTPException) as exc_info:
+        main.generate_from_pdf(file=[upload], mode="lessons", session=None)
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail["error"] == "source_too_large"

@@ -7,6 +7,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, Literal
+from urllib.parse import quote
 
 import httpx
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
@@ -398,6 +399,29 @@ def upload_too_large_message(total_bytes: int) -> str:
     )
 
 
+def _check_upload_size(uploads: list[UploadFile]) -> None:
+    """Refuse a batch of uploads over ingest.MAX_UPLOAD_BYTES, summed.
+
+    Checked on UploadFile.size, before any file is read: reading every part into memory
+    just to find out afterward that the batch is over budget is the exact cost this cap
+    exists to avoid. A None size is refused rather than summed as zero, because the cap
+    is a memory guard and an upload whose size cannot be trusted is exactly the case it
+    exists to catch. Shared by every route that accepts `file` uploads, so a route that
+    starts accepting them is one call away from being covered rather than one omission
+    away from being an unbounded upload sitting behind a form field that looks capped.
+    """
+    if any(upload.size is None for upload in uploads):
+        raise _unprocessable(
+            "source_too_large",
+            "One of those files did not report its size, so it cannot be checked against "
+            f"the {ingest.MAX_UPLOAD_BYTES:,}-byte limit. Nothing was generated and nothing "
+            "was charged. Try uploading it again.",
+        )
+    total_bytes = sum(upload.size for upload in uploads)
+    if total_bytes > ingest.MAX_UPLOAD_BYTES:
+        raise _unprocessable("source_too_large", upload_too_large_message(total_bytes))
+
+
 INVALID_RATING_MESSAGE = f"rating must be one of {list(fsrs.RATINGS)}"
 
 MESSAGE_EMPTY_MESSAGE = "Type a question before sending it."
@@ -501,20 +525,13 @@ def _save_course(
 ) -> models.Course:
     """Persist a generated course, and the sources it was built from.
 
-    `mode` defaults to "lessons" so every existing caller is unaffected: no blob is ever
-    written and every lesson keeps content_kind's own default of "lesson". "source" is
-    for the endpoints that render the source itself rather than prose about it; when it
-    is passed, each lesson is tied to the source owning the majority of its segments (see
-    _lesson_source_position), and a PDF source's original bytes are kept alongside it so
-    the source can be displayed as itself.
-
-    `positions` is chunk-index-to-source-position, from
-    ingest.chunk_sources_with_positions, and is only consulted when mode == "source". A
-    lesson whose segments are empty or index nothing in `positions` keeps source_id NULL
-    rather than guessing.
-
-    byte_size is recorded whenever a source carried raw bytes, regardless of mode: it is
-    a fact about the source, not about whether this run chose to keep the blob.
+    `mode="source"` ties each lesson to the source owning the majority of its segments
+    (_lesson_source_position) and keeps a PDF's original bytes; the default, "lessons",
+    never writes a blob. `positions` (chunk index to source position) applies only in
+    source mode. A lesson keeps source_id NULL, instead of guessing, when its segments
+    name no valid chunk, or when it fell back to the whole corpus
+    (generation.segments_are_fallback) in a multi-source course; a single-source course
+    keeps its anchor regardless, since there is no other source to confuse it with.
     """
     row = models.Course(title=course["title"], description=course["description"])
     source_rows: list[models.CourseSource] = []
@@ -549,11 +566,15 @@ def _save_course(
             )
             if mode == "source":
                 lesson_row.content_kind = "source"
-                source_position = _lesson_source_position(
-                    lesson.get("segments") or [], positions or []
-                )
-                if source_position is not None and source_position < len(source_rows):
-                    lesson_row.source_id = source_rows[source_position].id
+                ambiguous_fallback = lesson.get("segments_fell_back") and len(
+                    set(positions or [])
+                ) > 1
+                if not ambiguous_fallback:
+                    source_position = _lesson_source_position(
+                        lesson.get("segments") or [], positions or []
+                    )
+                    if source_position is not None and source_position < len(source_rows):
+                        lesson_row.source_id = source_rows[source_position].id
             for item in lesson.get("quiz", []):
                 lesson_row.quiz_items.append(
                     models.QuizItem(
@@ -851,9 +872,17 @@ def generate_from_pdf(
 
     `mode` defaults to "lessons", so every existing caller is unaffected; see
     GenerateRequest.mode for what "source" does. It is accepted HERE and not only on the
-    multipart route because this is the route the web UI posts uploads to
-    (frontend/src/lib/api.ts), and a PDF is the source type source mode exists to display.
+    multipart route for API consistency: this is the single-PDF entry point, and a PDF is
+    the source type source mode exists to display. It currently has no frontend consumer;
+    the web UI's upload path posts to /courses/generate/multipart instead.
+
+    Capped at ingest.MAX_UPLOAD_BYTES total (see _check_upload_size), the same check
+    generate_multipart applies to its own `file` parts: without it, mode="source" turns
+    an unbounded upload into a permanent row in the user's SQLite file rather than a
+    transient one.
     """
+    _check_upload_size(file)
+
     specs = [
         ingest.SourceSpec(
             kind="pdf",
@@ -931,28 +960,7 @@ def generate_multipart(
     if combined_count > ingest.MAX_SOURCES:
         raise _unprocessable("too_many_sources", too_many_sources_message(combined_count))
 
-    # Checked on UploadFile.size, before any file is read. upload.file.read() below pulls a
-    # whole file into memory, and doing that for every part before finding out the batch is
-    # over budget is the accidental-huge-request this cap exists to avoid.
-    #
-    # A None size is refused rather than summed as zero. UNKNOWN IS TREATED AS OVER THE
-    # CAP, NOT UNDER IT, because the cap is a memory guard: an upload whose size cannot be
-    # trusted is exactly the case it exists to catch, and letting it through because the
-    # one signal available is missing would make the guard a no-op for the one input it
-    # cannot vouch for. Not reachable through this app's own multipart parser today, which
-    # always sets size before an UploadFile reaches a route, but that is a fact about the
-    # library version pinned today, not a promise, and this must not become a guard that
-    # quietly fails open the day it stops being true.
-    if any(upload.size is None for upload in file):
-        raise _unprocessable(
-            "source_too_large",
-            "One of those files did not report its size, so it cannot be checked against "
-            f"the {ingest.MAX_UPLOAD_BYTES:,}-byte limit. Nothing was generated and nothing "
-            "was charged. Try uploading it again.",
-        )
-    upload_total_bytes = sum(upload.size for upload in file)
-    if upload_total_bytes > ingest.MAX_UPLOAD_BYTES:
-        raise _unprocessable("source_too_large", upload_too_large_message(upload_total_bytes))
+    _check_upload_size(file)
 
     specs = [
         ingest.SourceSpec(
@@ -1036,8 +1044,10 @@ _FILENAME_UNSAFE = re.compile(r'[\x00-\x1f\x7f"/\\]')
 def _sanitize_source_filename(ref: str) -> str:
     """`ref` made safe to quote inside a Content-Disposition filename parameter.
 
-    Falls back to a fixed name if stripping leaves nothing usable, and always ends in
-    .pdf since this only ever names a stored PDF blob.
+    Keeps non-ASCII codepoints; this is the display name carried in filename*, not the
+    ASCII fallback in the plain filename parameter (see _content_disposition). Falls
+    back to a fixed name if stripping leaves nothing usable, and always ends in .pdf
+    since this only ever names a stored PDF blob.
     """
     cleaned = _FILENAME_UNSAFE.sub("", ref).strip()
     if not cleaned:
@@ -1045,6 +1055,22 @@ def _sanitize_source_filename(ref: str) -> str:
     if not cleaned.lower().endswith(".pdf"):
         cleaned += ".pdf"
     return cleaned
+
+
+def _content_disposition(ref: str) -> str:
+    """RFC 6266 header value for serving a source file inline.
+
+    filename carries an ASCII-only name: Starlette encodes header values as latin-1,
+    and a codepoint above U+00FF there raises UnicodeEncodeError. filename* carries the
+    real name percent-encoded per RFC 5987, which browsers that support it show in
+    full instead of the ASCII fallback.
+    """
+    display = _sanitize_source_filename(ref)
+    ascii_only = display.encode("ascii", "ignore").decode("ascii").strip()
+    base = ascii_only[:-4] if ascii_only.lower().endswith(".pdf") else ascii_only
+    ascii_name = ascii_only if base.strip() else "source.pdf"
+    encoded = quote(display, safe="")
+    return f'inline; filename="{ascii_name}"; filename*=UTF-8\'\'{encoded}'
 
 
 @app.get("/courses/{course_id}/sources")
@@ -1068,6 +1094,14 @@ def list_course_sources(course_id: int, session: Session = Depends(get_session))
         .order_by(models.CourseSource.position)
         .all()
     )
+    # A set of ids, not row.blob is not None: the latter lazy-loads the whole blob,
+    # data column included, once per source just to test it for nullness.
+    ids_with_blob = {
+        sid
+        for (sid,) in session.query(models.CourseSourceBlob.source_id).filter(
+            models.CourseSourceBlob.source_id.in_([row.id for row in rows])
+        )
+    }
     return [
         {
             "id": row.id,
@@ -1078,7 +1112,7 @@ def list_course_sources(course_id: int, session: Session = Depends(get_session))
             "locator": row.locator if youtube.WATCH_ID.fullmatch(row.locator or "") else "",
             "char_count": row.char_count,
             "byte_size": row.byte_size,
-            "has_file": row.blob is not None,
+            "has_file": row.id in ids_with_blob,
         }
         for row in rows
     ]
@@ -1091,9 +1125,9 @@ def get_course_source_file(
     """The original bytes behind a PDF source.
 
     Serves PDFs only. The Content-Type sent is the fixed literal "application/pdf",
-    never CourseSourceBlob.media_type: that column is data the upload request supplied
-    and this endpoint does not trust it to pick what a browser is told to do with the
-    bytes. A source whose kind is not "pdf" is answered the same 404 as one with no blob
+    never CourseSourceBlob.media_type: that column always holds its fixed default today
+    (nothing sets it from upload data), and this endpoint does not read it anyway. A
+    source whose kind is not "pdf" is answered the same 404 as one with no blob
     at all, since neither has a file to serve.
 
     A source_id that belongs to a DIFFERENT course is also a 404, the same message as
@@ -1108,13 +1142,13 @@ def get_course_source_file(
     if source.kind != "pdf" or source.blob is None:
         raise HTTPException(404, "Source has no file")
 
-    filename = _sanitize_source_filename(source.ref or source.title)
+    disposition = _content_disposition(source.ref or source.title)
     return Response(
         content=source.blob.data,
         media_type="application/pdf",
         headers={
             "X-Content-Type-Options": "nosniff",
-            "Content-Disposition": f'inline; filename="{filename}"',
+            "Content-Disposition": disposition,
             # sandbox with no allow-* keeps a PDF a browser renders inline from running
             # script or navigating the top frame if it ever contains anything active;
             # default-src 'none' denies it any other capability besides being displayed.

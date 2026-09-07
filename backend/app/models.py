@@ -161,8 +161,10 @@ class CourseSourceBlob(Base):
     reads never touch it.
 
     Keyed on source_id as its own primary key (a 1:1, not a 1:many) because a source has
-    at most one original file. media_type is the MIME type the upload declared, needed to
-    serve the bytes back with a correct Content-Type.
+    at most one original file. media_type always holds its fixed default: nothing in
+    this codebase sets it from upload data, and nothing reads it back (the file endpoint
+    sends a fixed literal Content-Type instead). It is a column for a future non-PDF
+    source kind, not a live value today.
     """
 
     __tablename__ = "course_source_blobs"

@@ -156,12 +156,11 @@ does not actually say, and do not require knowledge the source assumes but never
 the correct option word for word from a sentence in the content while inventing the other three: \
 that makes the item solvable by spotting the familiar phrase. Each wrong option should be a \
 claim a reader who half-understood the lesson could genuinely believe."""
-# The first and third quiz-rule bullets are copied verbatim from LESSON_SYSTEM (see the
-# measurement note above it): those two carried the measured result and are not being
-# retested here. The middle bullet, "teach a thing in content before asking about it", is
-# dropped outright because there is no "content" field in this mode for it to refer to.
-# The traceability bullet is strengthened rather than copied, because with no lesson body
-# the source passage is the only anchor a question has at all.
+# The write-count and option-voice bullets are copied verbatim from LESSON_SYSTEM: the
+# measurement above changed only the traceability bullet, so these two were controls, not
+# the effect. The traceability bullet is strengthened rather than copied here, since with no
+# lesson body the source passage is a question's only anchor. "Teach before asking about it"
+# is dropped: there is no "content" field here for it to refer to.
 
 # Sent back with the original prompt when a reply cannot be parsed. Names the one
 # failure mode worth naming: the model narrating around the object, or fencing it.
@@ -711,8 +710,8 @@ def generate_questions_course(
     COURSE-FORMAT ADDITION, in the sense generate_course's own docstring uses the phrase:
     every lesson here carries "content_kind" (see generation.SOURCE_CONTENT_KIND) as well
     as the keys generate_course's lessons carry, and "content" is verbatim source text
-    rather than model prose. Nothing reads this course dict yet: no endpoint calls this
-    function, so the shape is only a promise to the caller that will.
+    rather than model prose. main.py's _run_generation calls this for mode == "source"
+    requests.
     """
     outline = generate_outline(meter, chunks, owners)
     course = {
@@ -722,15 +721,16 @@ def generate_questions_course(
     }
     failures: list[dict] = []
     planned = 0
-    fell_back = 0
+    fell_back_count = 0
     for module in outline["modules"]:
         built = {"title": module.get("title", "Module"), "lessons": []}
         for lesson_stub in module.get("lessons", []):
             title = lesson_stub.get("title", "Lesson")
             segments = lesson_segments(lesson_stub, len(chunks))
+            fell_back = segments_are_fallback(lesson_stub, len(chunks))
             planned += 1
-            if segments_are_fallback(lesson_stub, len(chunks)):
-                fell_back += 1
+            if fell_back:
+                fell_back_count += 1
             try:
                 authored = generate_questions(
                     meter, title, lesson_stub.get("summary", ""), chunks, segments, owners
@@ -743,6 +743,11 @@ def generate_questions_course(
                 {
                     "title": title,
                     "segments": segments,
+                    # _save_course reads this to know a full-corpus "segments" list is a
+                    # fallback rather than a genuine route, so it does not anchor the
+                    # lesson to whichever source happens to own the most chunks (see
+                    # its docstring).
+                    "segments_fell_back": fell_back,
                     "content": source_excerpt(chunks, segments),
                     "content_kind": SOURCE_CONTENT_KIND,
                     **authored,
@@ -759,6 +764,6 @@ def generate_questions_course(
         "chunks": len(chunks),
         "sources": len(set(owners)) if owners else 1,
         "lessons_planned": planned,
-        "lessons_fell_back": fell_back,
+        "lessons_fell_back": fell_back_count,
     }
     return course
