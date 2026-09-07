@@ -132,7 +132,14 @@ def _source_material(prompt: str) -> str:
 
 
 def _segment_count(prompt: str) -> int:
-    match = re.search(r"The source material has (\d+) segments", prompt)
+    # Two preambles, one per shape generate_outline emits: "has N segments" for a
+    # single document, "split into N segments in total" once there are several.
+    # Matching only the first made every multi-source run look like a one-segment
+    # corpus, so the deal below put every lesson on segment 0 and no test could see
+    # a lesson routed to the second document.
+    match = re.search(r"The source material has (\d+) segments", prompt) or re.search(
+        r"split into (\d+) segments in total", prompt
+    )
     return int(match.group(1)) if match else 1
 
 

@@ -26,6 +26,11 @@ from tests.test_multi_source import NeverCalledProvider
 WIDE_SOURCE = "\n\n".join(f"Paragraph {i} about gradient descent walks downhill." * 80 for i in range(8))
 
 
+# Two documents whose chunks do not interleave: alpha owns the first half of the corpus
+# and beta the second, so a lesson routed into beta's half has an unambiguous owner.
+TWO_SOURCE_A = "\n\n".join(f"Alpha paragraph {i} on gradient descent." * 80 for i in range(6))
+TWO_SOURCE_B = "\n\n".join(f"Beta paragraph {i} on convolution kernels." * 80 for i in range(6))
+
 def _lessons(client, course_id):
     course = client.get(f"/courses/{course_id}").json()
     return [
@@ -263,3 +268,41 @@ def test_pdf_route_unknown_upload_size_is_refused_as_over_cap_not_under():
 
     assert exc_info.value.status_code == 422
     assert exc_info.value.detail["error"] == "source_too_large"
+def test_a_two_source_course_anchors_lessons_to_both_documents(client, monkeypatch):
+    """The orphaning symptom at the endpoint, not at _save_course.
+
+    Before the anchoring fix a multi-source course pointed every lesson at whichever
+    document owned the most chunks, leaving the other with no lesson at all. This needs
+    FakeProvider._segment_count to understand the multi-source preamble: while it only
+    matched the single-source one it read every multi-source corpus as one segment, dealt
+    segment 0 to every lesson, and this assertion passed vacuously.
+    """
+    monkeypatch.setattr(main, "get_provider", lambda: FakeProvider())
+
+    resp = client.post(
+        "/courses/generate",
+        json={
+            "sources": [
+                {"kind": "text", "value": TWO_SOURCE_A, "ref": "alpha.txt"},
+                {"kind": "text", "value": TWO_SOURCE_B, "ref": "beta.txt"},
+            ],
+            "mode": "source",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+
+    session = SessionLocal()
+    try:
+        course = session.get(models.Course, resp.json()["id"])
+        refs = {source.id: source.ref for source in course.sources}
+        assert len(refs) == 2
+        lessons = [lesson for module in course.modules for lesson in module.lessons]
+        assert len(lessons) > 1
+        anchored = {
+            refs[lesson.source_id] for lesson in lessons if lesson.source_id is not None
+        }
+        assert anchored == {"alpha.txt", "beta.txt"}, (
+            f"lessons anchored only to {anchored}, so a document was orphaned"
+        )
+    finally:
+        session.close()
